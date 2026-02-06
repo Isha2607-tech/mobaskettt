@@ -14,6 +14,8 @@ import {
     X
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { CategoryFoodsContent } from './CategoryFoodsPage';
 
 // Assets Imports
 // Vegetables
@@ -24,9 +26,15 @@ import imgOnion from '@/assets/bestseller/onion-removebg-preview.png';
 
 // Chips
 import imgLaysBlue from '@/assets/bestseller/BlueLays-removebg-preview.png';
-import imgKurkure from '@/assets/bestseller/kurkure-removebg-preview.png';
+import imgKurkure from '@/assets/bestseller/KurkureImage-removebg-preview.png';
 import imgLaysGreen from '@/assets/bestseller/GreenLays-removebg-preview.png';
 import imgUncle from '@/assets/bestseller/uncleChips-removebg-preview.png';
+
+//sweet
+import imgChoclate from '@/assets/bestseller/choclate-removebg-preview.png';
+import imgchoclate2 from '@/assets/bestseller/choclate2-removebg-preview.png';
+import imgicecream2 from '@/assets/bestseller/icecream2-removebg-preview.png';
+
 
 // Oil
 import imgOil1 from '@/assets/bestseller/oil-removebg-preview.png';
@@ -41,17 +49,31 @@ import imgButter from '@/assets/bestseller/butter-removebg-preview.png';
 import imgCheese from '@/assets/bestseller/cheese-removebg-preview.png';
 
 import imgAtta from '@/assets/bestseller/aata-removebg-preview.png';
-import imgBakery from '@/assets/bestseller/bakery-removebg-preview.png';
+import imgBakery from '@/assets/bestseller/bakery-removebg-preview1.png';
+import imgBiscuits from '@/assets/bestseller/bakery-removebg-preview.png';
 // Grocery
+import vegetables from '@/assets/grocery&kitchen/vegetable1-removebg-preview.png'
+import dryfruits from '@/assets/grocery&kitchen/dryFruits-removebg-preview.png'
+import fishmeat from '@/assets/grocery&kitchen/fishMeat-removebg-preview.png'
+import noodles from '@/assets/grocery&kitchen/noodles-removebg-preview.png'
+import teaCoffee from '@/assets/grocery&kitchen/teaCoffee-removebg-preview.png'
+import oilMasala from '@/assets/grocery&kitchen/oilMasala-removebg-preview.png'
+import frozenFood from '@/assets/grocery&kitchen/frozenfood-removebg-preview.png'
+import kitchenWare from '@/assets/grocery&kitchen/kitchenWare1-removebg-preview.png'
+
 import imgBathBody from '@/assets/Beauty&PersonalCare/Bath_Body-removebg-preview.png';
 import imgHair from '@/assets/Beauty&PersonalCare/Hair-removebg-preview.png';
 import imgSkinFace from '@/assets/Beauty&PersonalCare/Skin_Face-removebg-preview.png';
 import imgCosmetics from '@/assets/Beauty&PersonalCare/Beauty_Cosmetics-removebg-preview.png';
 import imgHealth from '@/assets/Beauty&PersonalCare/Health_pharma-removebg-preview.png';
+import babyCare from '@/assets/Beauty&PersonalCare/baby-care-removebg-preview.png';
+import stayFree from '@/assets/Beauty&PersonalCare/stayfree-removebg-preview.png';
+import oralcare from '@/assets/Beauty&PersonalCare/oralcare-removebg-preview.png';
 // Drinks
 import imgCoke from '@/assets/ColdDrinks/cocacola-removebg-preview.png';
 import imgSprite from '@/assets/ColdDrinks/sprite-removebg-preview.png';
 import imgIceCream from '@/assets/Beauty&PersonalCare/icecream-removebg-preview.png';
+import imgJuice from '@/assets/ColdDrinks/coldDrink-removebg-preview.png';
 
 // Banners
 import imgBanner1 from '@/assets/offerpagebanner.png';
@@ -64,6 +86,11 @@ const GroceryPage = () => {
     const [showBottomOffer, setShowBottomOffer] = useState(true);
     const [isScrolled, setIsScrolled] = useState(false);
     const [currentBanner, setCurrentBanner] = useState(0);
+    const [showCategorySheet, setShowCategorySheet] = useState(false);
+
+    const openCategorySheet = () => {
+        setShowCategorySheet(true);
+    };
 
     // Auto-slide carousel
     useEffect(() => {
@@ -103,19 +130,29 @@ const GroceryPage = () => {
         },
         {
             title: "Oil, Ghee & Masala",
-            count: "+109 more",
+            count: "+96 more",
             images: [imgOil1, imgOil2, imgOil3, imgOil4]
         },
         {
+            title: "Bakery & Biscuits",
+            count: "+118 more",
+            images: [imgBakery, imgBread, imgBiscuits, imgAtta]
+        },
+        {
+            title: "Sweets & Chocolates",
+            count: "+54 more",
+            images: [imgIceCream, imgChoclate, imgchoclate2, imgicecream2]
+        },
+        {
             title: "Dairy, Bread & Eggs",
-            count: "+85 more",
+            count: "+6 more",
             images: [imgMilk, imgBread, imgButter, imgCheese]
         }
     ];
 
     return (
         // Main Container with Single Continuous Gradient
-        <div className="min-h-screen text-slate-800 pb-24 font-sans md:max-w-md md:mx-auto shadow-2xl overflow-hidden relative bg-gradient-to-b from-[#fec007] via-[#fff176] to-[#ffffff]">
+        <div className="min-h-screen text-slate-800 pb-24 font-sans md:max-w-md md:mx-auto shadow-2xl overflow-hidden relative" style={{ background: "linear-gradient(to bottom, #fad961 20%, #e6ffb3 85%)" }}>
 
             {/* --- 1. HEADER (Transparent to blend with main gradient) --- */}
             <div className={`sticky top-0 z-40 transition-all duration-300 ${isScrolled ? 'bg-[#fec007]/95 backdrop-blur-md shadow-sm' : 'bg-transparent'}`}>
@@ -146,8 +183,8 @@ const GroceryPage = () => {
 
                         {/* Profile Icons */}
                         <div className="flex gap-2 mt-1">
-                            <button className="w-9 h-9 bg-[#283810] bg-opacity-30 rounded-full flex items-center justify-center backdrop-blur-sm active:scale-95 transition-transform">
-                                <span className="text-[#1a1a1a] font-bold text-lg">₹</span>
+                            <button className="w-9 h-9 bg-[#1a1a1a] bg-opacity-30 rounded-full flex items-center justify-center backdrop-blur-sm active:scale-95 transition-transform">
+                                <span className="text-white font-bold text-lg">₹</span>
                             </button>
                             <button className="w-9 h-9 bg-[#1a1a1a] rounded-full flex items-center justify-center shadow-sm active:scale-95 transition-transform">
                                 <User size={18} className="text-white" />
@@ -193,7 +230,7 @@ const GroceryPage = () => {
             </div>
 
             {/* --- 2. DYNAMIC BANNER CAROUSEL --- */}
-            <div className="relative z-0 -mt-2 animate-fade-in-up px-4 pt-3 pb-2">
+            <div className="relative z-0 -mt-2 animate-fade-in-up px-4 pt-3 pb-2" >
                 {/* Carousel Container */}
                 <div className="relative w-full aspect-[2.4/1] bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg border border-white/30 overflow-hidden">
                     {[
@@ -251,27 +288,40 @@ const GroceryPage = () => {
 
 
             {/* --- 4. BESTSELLERS (Transparent) --- */}
-            <div className="px-4 pt-4 pb-20 relative z-10">
+            <div className="px-4 pt-4 pb-2 relative z-10">
                 <h3 className="text-lg font-[800] text-[#3e2723] mb-4">Bestsellers</h3>
 
-                <div className="flex gap-4 overflow-x-auto scrollbar-hide no-scrollbar pb-4">
+                <div className="flex gap-4 overflow-x-auto scrollbar-hide no-scrollbar pb-4 px-2">
                     {bestsellers.map((item, idx) => (
-                        <div key={idx} className="min-w-[150px] flex flex-col gap-2 group cursor-pointer active:scale-95 transition-transform" onClick={() => navigate('/usermain/category/vegetables')}>
-                            <div className="bg-white/70 backdrop-blur-sm rounded-[1.2rem] p-2 aspect-[4/4.5] relative shadow-sm border border-white/40">
-                                <div className="grid grid-cols-2 gap-2 h-full">
-                                    {item.images.map((img, i) => (
-                                        <div key={i} className="bg-white rounded-lg flex items-center justify-center p-1 shadow-sm h-full w-full">
-                                            <img src={img} alt="" className="w-full h-full object-contain" />
-                                        </div>
-                                    ))}
-                                </div>
-                                {/* Count Badge Overlay */}
-                                <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 bg-white text-slate-900 text-[9px] font-bold px-2 py-1 rounded-md shadow-sm border border-slate-100 whitespace-nowrap z-10">
-                                    {item.count}
-                                </div>
+                        <div
+                            key={idx}
+                            className="min-w-[160px] max-w-[160px] p-2.5 bg-[#eff3f6] rounded-[24px] flex flex-col relative group cursor-pointer active:scale-95 transition-transform shadow-sm border border-white/60"
+                            onClick={openCategorySheet}
+                        >
+                            {/* Image Grid */}
+                            <div className="grid grid-cols-2 gap-1.5 w-full h-[128px] mb-3">
+                                {item.images.map((img, i) => (
+                                    <div
+                                        key={i}
+                                        className="bg-white rounded-[14px] flex items-center justify-center p-1.5 overflow-hidden relative shadow-sm"
+                                    >
+                                        <img
+                                            src={img}
+                                            alt=""
+                                            className="w-full h-full object-contain drop-shadow-md group-hover:scale-110 transition-transform duration-500 ease-out"
+                                        />
+                                    </div>
+                                ))}
                             </div>
-                            <div className="text-center mt-1 px-1">
-                                <p className="text-[11px] font-[700] text-[#4e342e] leading-tight">
+
+                            {/* Floating Badge */}
+                            <div className="absolute top-[68%] left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gray-200 px-3 py-1.5 rounded-full shadow-[0_4px_12px_rgba(0,0,0,0.1)] border border-white z-10 whitespace-nowrap leading-none transform scale-90">
+                                <span className="text-[11px] font-[800] text-[#1a1a1a] tracking-tight">{item.count}</span>
+                            </div>
+
+                            {/* Title */}
+                            <div className="mt-auto text-center flex items-end justify-center pb-1">
+                                <p className="text-[15px] font-[800] text-[#1a1a1a] leading-[1.2] tracking-tight whitespace-pre-line">
                                     {item.title.replace('&', '&\n')}
                                 </p>
                             </div>
@@ -285,16 +335,16 @@ const GroceryPage = () => {
                 <h3 className="text-lg font-[800] text-[#3e2723] mb-4">Grocery & Kitchen</h3>
                 <div className="grid grid-cols-4 gap-2">
                     {[
-                        { name: "Vegetables & Fruits", img: imgCoriander },
+                        { name: "Vegetables & Fruits", img: vegetables },
                         { name: "Atta, Rice & Dal", img: imgAtta },
-                        { name: "Oil, Ghee & Masala", img: imgOil1 },
+                        { name: "Oil, Ghee & Masala", img: oilMasala },
                         { name: "Dairy, Bread & Eggs", img: imgMilk },
                         { name: "Bakery & Biscuits", img: imgBakery },
-                        { name: "Dry Fruits & Cereals", img: imgPotato },
-                        { name: "Chicken, Meat & Fish", img: imgKurkure },
-                        { name: "Kitchenware & Appliances", img: imgOil2 },
+                        { name: "Dry Fruits & Cereals", img: dryfruits },
+                        { name: "Chicken, Meat & Fish", img: fishmeat },
+                        { name: "Kitchenware & Appliances", img: kitchenWare },
                     ].map((item, idx) => (
-                        <div key={idx} className="flex flex-col items-center gap-2 cursor-pointer active:scale-95 transition-transform">
+                        <div key={idx} className="flex flex-col items-center gap-2 cursor-pointer active:scale-95 transition-transform" onClick={openCategorySheet}>
                             <div className="w-full aspect-square bg-sky-50 rounded-2xl flex items-center justify-center p-2 shadow-sm border border-sky-100 overflow-hidden">
                                 <img src={item.img} alt={item.name} className="w-full h-full object-contain drop-shadow-sm mix-blend-multiply" />
                             </div>
@@ -314,15 +364,15 @@ const GroceryPage = () => {
                 <div className="grid grid-cols-4 gap-2">
                     {[
                         { name: "Chips & Namkeen", img: imgLaysBlue },
-                        { name: "Sweets & Chocolates", img: imgIceCream },
-                        { name: "Cold Drinks & Juices", img: imgCoke },
-                        { name: "Noodles & Pasta", img: imgUncle },
+                        { name: "Sweets & Chocolates", img: imgChoclate },
+                        { name: "Cold Drinks & Juices", img: imgJuice },
+                        { name: "Noodles & Pasta", img: noodles },
                         { name: "Ice Creams", img: imgIceCream },
-                        { name: "Frozen Food", img: imgKurkure },
-                        { name: "Tea & Coffee", img: imgSprite },
+                        { name: "Frozen Food", img: frozenFood },
+                        { name: "Tea & Coffee", img: teaCoffee },
                         { name: "Biscuits", img: imgBakery },
                     ].map((item, idx) => (
-                        <div key={idx} className="flex flex-col items-center gap-2 cursor-pointer active:scale-95 transition-transform">
+                        <div key={idx} className="flex flex-col items-center gap-2 cursor-pointer active:scale-95 transition-transform" onClick={openCategorySheet}>
                             <div className="w-full aspect-square bg-sky-50 rounded-2xl flex items-center justify-center p-2 shadow-sm border border-sky-100 overflow-hidden">
                                 <img src={item.img} alt={item.name} className="w-full h-full object-contain drop-shadow-sm mix-blend-multiply" />
                             </div>
@@ -346,11 +396,11 @@ const GroceryPage = () => {
                         { name: "Skin & Face", img: imgSkinFace },
                         { name: "Beauty & Cosmetics", img: imgCosmetics },
                         { name: "Health & Pharma", img: imgHealth },
-                        { name: "Feminine Hygiene", img: imgBathBody },
-                        { name: "Baby Care", img: imgSkinFace },
-                        { name: "Oral Care", img: imgHealth },
+                        { name: "Feminine Hygiene", img: stayFree },
+                        { name: "Baby Care", img: babyCare },
+                        { name: "Oral Care", img: oralcare },
                     ].map((item, idx) => (
-                        <div key={idx} className="flex flex-col items-center gap-2 cursor-pointer active:scale-95 transition-transform">
+                        <div key={idx} className="flex flex-col items-center gap-2 cursor-pointer active:scale-95 transition-transform" onClick={openCategorySheet}>
                             <div className="w-full aspect-square bg-sky-50 rounded-2xl flex items-center justify-center p-2 shadow-sm border border-sky-100 overflow-hidden">
                                 <img src={item.img} alt={item.name} className="w-full h-full object-contain drop-shadow-sm mix-blend-multiply" />
                             </div>
@@ -400,7 +450,7 @@ const GroceryPage = () => {
                     <span className="text-[10px] font-medium">Plan</span>
                 </div>
 
-                <div className="flex flex-col items-center gap-1 cursor-pointer text-slate-400 hover:text-slate-600" onClick={() => navigate('/usermain/categories')}>
+                <div className="flex flex-col items-center gap-1 cursor-pointer text-slate-400 hover:text-slate-600" onClick={openCategorySheet}>
                     <LayoutGrid size={24} />
                     <span className="text-[10px] font-medium">Categories</span>
                 </div>
@@ -440,6 +490,58 @@ const GroceryPage = () => {
                     animation: slide-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1);
                 }
             `}</style>
+            {/* --- BOTTOM SHEET MODAL --- */}
+            <AnimatePresence>
+                {showCategorySheet && (
+                    <>
+                        {/* Backdrop */}
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setShowCategorySheet(false)}
+                            className="fixed inset-0 bg-black/50 z-50 backdrop-blur-sm"
+                        />
+
+                        {/* Sheet Container (Wrapper for Button + Content) */}
+                        <motion.div
+                            initial={{ y: '100%' }}
+                            animate={{ y: 0 }}
+                            exit={{ y: '100%' }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                            drag="y"
+                            dragConstraints={{ top: 0 }}
+                            dragElastic={0.2}
+                            onDragEnd={(_, info) => {
+                                if (info.offset.y > 100) {
+                                    setShowCategorySheet(false);
+                                }
+                            }}
+                            className="fixed bottom-0 left-0 right-0 h-[75vh] z-[60] md:max-w-md md:mx-auto"
+                        >
+                            {/* Floating Close Button */}
+                            <button
+                                onClick={() => setShowCategorySheet(false)}
+                                className="absolute -top-14 left-1/2 -translate-x-1/2 bg-[#1a1a1a] p-2.5 rounded-full shadow-lg border border-white/20 active:scale-95 transition-transform z-[80] flex items-center justify-center cursor-pointer"
+                            >
+                                <X size={22} className="text-white" strokeWidth={2.5} />
+                            </button>
+
+                            {/* Actual Sheet Content */}
+                            <div className="h-full bg-white rounded-t-[20px] overflow-hidden relative shadow-2xl">
+                                {/* Drag Handle */}
+                                <div className="w-full flex justify-center pt-3 pb-1 absolute top-0 left-0 z-[70] pointer-events-none">
+                                    <div className="w-12 h-1.5 bg-slate-200 rounded-full" />
+                                </div>
+
+                                <div className="h-full pt-2">
+                                    <CategoryFoodsContent onClose={() => setShowCategorySheet(false)} isModal={true} />
+                                </div>
+                            </div>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
         </div >
     );
 };

@@ -95,34 +95,33 @@ const products = [
   }
 ];
 
-export default function CategoryFoodsPage() {
-  const navigate = useNavigate();
-  const { categoryName } = useParams();
+export function CategoryFoodsContent({ onClose, isModal = false }) {
   const [selectedCategory, setSelectedCategory] = useState('all');
 
   // Filter products based on selected sidebar category
   const filteredProducts = selectedCategory === 'all'
     ? products
-    : products.filter(p => p.category === selectedCategory || selectedCategory === 'all'); // Logic simplified for mock
+    : products.filter(p => p.category === selectedCategory || selectedCategory === 'all');
 
   return (
-    <div className="bg-[#f4f6fb] min-h-screen h-full flex flex-col md:max-w-md md:mx-auto shadow-2xl overflow-hidden font-sans">
+    <div className={`bg-[#f4f6fb] flex flex-col md:max-w-md md:mx-auto shadow-2xl overflow-hidden font-sans ${isModal ? 'h-full rounded-t-[20px]' : 'min-h-screen h-full'}`}>
 
       {/* Header */}
-      <div className="bg-white sticky top-0 z-50 px-4 py-3 flex items-center justify-between border-b border-gray-100 shadow-sm">
+      <div className="bg-white sticky top-0 z-50 px-4 py-3 flex items-center justify-between border-b border-gray-100 shadow-sm rounded-t-[20px] relative">
         <div className="flex flex-col">
           <h1 className="text-sm font-black text-slate-800 tracking-wide">
             Vegetables, Fruits & More
           </h1>
           <span className="text-[10px] text-slate-500 font-bold">1285 items</span>
         </div>
-        {/* Close Button / Search */}
-        <div className="flex items-center gap-4">
-          <Search size={20} className="text-slate-800" />
-          <button onClick={() => navigate(-1)} className="bg-slate-100 p-1 rounded-full">
-            <X size={18} className="text-slate-800" />
-          </button>
-        </div>
+
+        {/* Floating Close Button Center Top */}
+        <button
+          onClick={onClose}
+          className="absolute -top-10 left-1/2 -translate-x-1/2 bg-[#1a1a1a] p-2 rounded-full shadow-lg border border-white/20 active:scale-95 transition-transform z-[80]"
+        >
+          <X size={20} className="text-white" strokeWidth={2.5} />
+        </button>
       </div>
 
       {/* Main Content Area: Sidebar + Grid */}
@@ -162,7 +161,7 @@ export default function CategoryFoodsPage() {
             {filteredProducts.map((item) => (
               <div key={item.id} className="flex flex-col gap-1 relative group">
                 {/* Card Image Container */}
-                <div className="relative w-full aspect-[4/4.5] bg-white border border-slate-100 rounded-xl p-2 flex items-center justify-center shadow-sm">
+                <div className="relative w-full h-[170px] bg-white border border-slate-100 rounded-[12px] p-2 flex items-center justify-center shadow-sm">
                   <img src={item.image} alt={item.name} className="w-full h-full object-contain drop-shadow-sm" />
 
                   {/* Discount Badge */}
@@ -177,12 +176,16 @@ export default function CategoryFoodsPage() {
 
                   {/* ADD Button Floating */}
                   <div className="absolute -bottom-3 right-0 md:right-auto md:left-1/2 md:-translate-x-1/2 flex flex-col items-center">
-                    <button className="bg-white border border-[#26a541] text-[#26a541] text-[10px] font-extrabold px-5 py-1.5 rounded-lg shadow-sm uppercase active:scale-95 transition-transform bg-[#f7fff9]">
-                      ADD
-                    </button>
-                    {item.options && (
-                      <span className="text-[8px] text-slate-400 font-bold bg-white px-1 shadow-sm mt-0.5 rounded border border-slate-100">{item.options}</span>
-                    )}
+                    <div className="relative flex flex-col items-center">
+                      <button className="bg-white border border-[#26a541] text-[#26a541] text-[12px] font-extrabold px-6 py-2 rounded-lg shadow-sm uppercase active:scale-95 transition-transform bg-[#f7fff9] pb-3">
+                        ADD
+                      </button>
+                      {item.options && (
+                        <div className="absolute bottom-[2px] left-0 right-0 text-center">
+                          <span className="text-[8px] text-slate-400 font-bold uppercase tracking-tight">{item.options}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -230,4 +233,9 @@ export default function CategoryFoodsPage() {
             `}</style>
     </div>
   );
+}
+
+export default function CategoryFoodsPage() {
+  const navigate = useNavigate();
+  return <CategoryFoodsContent onClose={() => navigate(-1)} />;
 }
