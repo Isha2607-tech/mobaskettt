@@ -1,32 +1,33 @@
-import { useState, useEffect } from "react"
-import { useNavigate } from "react-router-dom"
-import { motion } from "framer-motion"
-import Lenis from "lenis"
-import { ArrowLeft, Heart, Star, Clock, Trash2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import Lenis from "lenis";
+import { ArrowLeft, Heart, Star, Clock, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export default function WishlistPage() {
-  const navigate = useNavigate()
-  const [wishlist, setWishlist] = useState([])
+  const navigate = useNavigate();
+  const [wishlist, setWishlist] = useState([]);
 
   // Load wishlist from localStorage
   const loadWishlist = () => {
-    const saved = localStorage.getItem('wishlist')
+    const saved = localStorage.getItem("wishlist");
     if (saved) {
       try {
-        const parsed = JSON.parse(saved)
+        const parsed = JSON.parse(saved);
         // Remove duplicates based on id
-        const unique = parsed.filter((item, index, self) => 
-          index === self.findIndex((t) => t.id === item.id)
-        )
-        setWishlist(unique)
+        const unique = parsed.filter(
+          (item, index, self) =>
+            index === self.findIndex((t) => t.id === item.id),
+        );
+        setWishlist(unique);
       } catch (error) {
-        setWishlist([])
+        setWishlist([]);
       }
     } else {
-      setWishlist([])
+      setWishlist([]);
     }
-  }
+  };
 
   useEffect(() => {
     // Initialize Lenis for smooth scrolling
@@ -34,58 +35,58 @@ export default function WishlistPage() {
       duration: 1.2,
       easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
       smoothWheel: true,
-    })
+    });
 
     function raf(time) {
-      lenis.raf(time)
-      requestAnimationFrame(raf)
+      lenis.raf(time);
+      requestAnimationFrame(raf);
     }
 
-    requestAnimationFrame(raf)
+    requestAnimationFrame(raf);
 
     // Load wishlist on mount
-    loadWishlist()
+    loadWishlist();
 
     // Listen for storage changes (when wishlist is updated from other tabs/pages)
     const handleStorageChange = (e) => {
-      if (e.key === 'wishlist') {
-        loadWishlist()
+      if (e.key === "wishlist") {
+        loadWishlist();
       }
-    }
+    };
 
     // Listen for custom event (when wishlist is updated in same tab)
     const handleWishlistUpdate = () => {
-      loadWishlist()
-    }
+      loadWishlist();
+    };
 
-    window.addEventListener('storage', handleStorageChange)
-    window.addEventListener('wishlistUpdated', handleWishlistUpdate)
+    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("wishlistUpdated", handleWishlistUpdate);
 
     // Poll for changes (fallback for same-tab updates)
     const interval = setInterval(() => {
-      loadWishlist()
-    }, 1000) // Check every second
+      loadWishlist();
+    }, 1000); // Check every second
 
     return () => {
-      lenis.destroy()
-      window.removeEventListener('storage', handleStorageChange)
-      window.removeEventListener('wishlistUpdated', handleWishlistUpdate)
-      clearInterval(interval)
-    }
-  }, [])
+      lenis.destroy();
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("wishlistUpdated", handleWishlistUpdate);
+      clearInterval(interval);
+    };
+  }, []);
 
   // Remove item from wishlist
   const removeFromWishlist = (itemId) => {
-    const updated = wishlist.filter((item) => item.id !== itemId)
-    setWishlist(updated)
-    localStorage.setItem('wishlist', JSON.stringify(updated))
-  }
+    const updated = wishlist.filter((item) => item.id !== itemId);
+    setWishlist(updated);
+    localStorage.setItem("wishlist", JSON.stringify(updated));
+  };
 
   // Clear all wishlist
   const clearWishlist = () => {
-    setWishlist([])
-    localStorage.setItem('wishlist', JSON.stringify([]))
-  }
+    setWishlist([]);
+    localStorage.setItem("wishlist", JSON.stringify([]));
+  };
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -95,7 +96,7 @@ export default function WishlistPage() {
         staggerChildren: 0.1,
       },
     },
-  }
+  };
 
   const itemVariants = {
     hidden: { opacity: 0, y: 20 },
@@ -107,7 +108,7 @@ export default function WishlistPage() {
         ease: [0.4, 0, 0.2, 1],
       },
     },
-  }
+  };
 
   return (
     <div className="min-h-screen bg-[#f6e9dc] overflow-x-hidden pb-20">
@@ -145,12 +146,14 @@ export default function WishlistPage() {
           >
             <Heart className="w-12 h-12 text-gray-400" />
           </motion.div>
-          <h3 className="text-xl font-bold text-gray-900 mb-2">Your Wishlist is Empty</h3>
+          <h3 className="text-xl font-bold text-gray-900 mb-2">
+            Your Wishlist is Empty
+          </h3>
           <p className="text-gray-600 text-center mb-6 max-w-sm">
             Start adding your favorite foods and restaurants to your wishlist!
           </p>
           <Button
-            onClick={() => navigate('/usermain')}
+            onClick={() => navigate("/grocery")}
             className="bg-[#ff8100] hover:bg-[#e67300] text-white"
           >
             Explore Foods
@@ -171,11 +174,15 @@ export default function WishlistPage() {
                 whileHover={{ y: -5 }}
                 className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow"
               >
-                {item.type === 'food' ? (
+                {item.type === "food" ? (
                   // Food Item Card
-                  <div 
+                  <div
                     className="flex gap-4 p-4 cursor-pointer"
-                    onClick={() => navigate(`/usermain/food/${item.originalId || item.id.replace('food-', '')}`)}
+                    onClick={() =>
+                      navigate(
+                        `/food/${item.originalId || item.id.replace("food-", "")}`,
+                      )
+                    }
                   >
                     <div className="relative w-24 h-24 flex-shrink-0 rounded-lg overflow-hidden">
                       <img
@@ -183,7 +190,7 @@ export default function WishlistPage() {
                         alt={item.name}
                         className="w-full h-full object-cover"
                         onError={(e) => {
-                          e.target.src = `https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&h=400&fit=crop`
+                          e.target.src = `https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&h=400&fit=crop`;
                         }}
                       />
                     </div>
@@ -219,8 +226,8 @@ export default function WishlistPage() {
                         </div>
                         <button
                           onClick={(e) => {
-                            e.stopPropagation()
-                            removeFromWishlist(item.id)
+                            e.stopPropagation();
+                            removeFromWishlist(item.id);
                           }}
                           className="p-2 hover:bg-red-50 rounded-full transition-colors flex-shrink-0"
                         >
@@ -231,7 +238,7 @@ export default function WishlistPage() {
                   </div>
                 ) : (
                   // Restaurant Item Card
-                  <div 
+                  <div
                     className="p-4 cursor-pointer"
                     onClick={() => {
                       // Navigate to restaurant page
@@ -245,7 +252,7 @@ export default function WishlistPage() {
                           alt={item.name}
                           className="w-full h-full object-cover"
                           onError={(e) => {
-                            e.target.src = `https://images.unsplash.com/photo-1512058564366-18510be2db19?w=400&h=300&fit=crop`
+                            e.target.src = `https://images.unsplash.com/photo-1512058564366-18510be2db19?w=400&h=300&fit=crop`;
                           }}
                         />
                       </div>
@@ -284,8 +291,8 @@ export default function WishlistPage() {
                           </div>
                           <button
                             onClick={(e) => {
-                              e.stopPropagation()
-                              removeFromWishlist(item.id)
+                              e.stopPropagation();
+                              removeFromWishlist(item.id);
                             }}
                             className="p-2 hover:bg-red-50 rounded-full transition-colors flex-shrink-0"
                           >
@@ -302,5 +309,5 @@ export default function WishlistPage() {
         </div>
       )}
     </div>
-  )
+  );
 }

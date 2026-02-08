@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react"
-import { useNavigate, useSearchParams } from "react-router-dom"
-import { 
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import {
   ArrowLeft,
   CreditCard,
   Lock,
@@ -9,145 +9,150 @@ import {
   Heart,
   ShoppingBag,
   Menu,
-  ChefHat
-} from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+  ChefHat,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export default function PaymentPage() {
-  const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  const paymentMethod = searchParams.get("method") || "card"
-  
-  const [cardNumber, setCardNumber] = useState("")
-  const [cardName, setCardName] = useState("")
-  const [expiryDate, setExpiryDate] = useState("")
-  const [cvv, setCvv] = useState("")
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [isSuccess, setIsSuccess] = useState(false)
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const paymentMethod = searchParams.get("method") || "card";
+
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardName, setCardName] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
+  const [cvv, setCvv] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   // Get order data from localStorage (set by CheckoutPage)
   const getOrderData = () => {
-    const orderData = localStorage.getItem('usermain_current_order')
+    const orderData = localStorage.getItem("usermain_current_order");
     if (orderData) {
       try {
-        return JSON.parse(orderData)
+        return JSON.parse(orderData);
       } catch (error) {
-        console.error('Error parsing order data:', error)
+        console.error("Error parsing order data:", error);
       }
     }
     // Default fallback
     return {
       items: [],
       subtotal: 88.98,
-      deliveryFee: 5.00,
+      deliveryFee: 5.0,
       discount: 0,
       total: 93.98,
-      deliveryAddress: "202, Princess Centre, 2nd Floor, 6/3, 452001, New Delhi",
-      estimatedTime: "30-40 min"
-    }
-  }
+      deliveryAddress:
+        "202, Princess Centre, 2nd Floor, 6/3, 452001, New Delhi",
+      estimatedTime: "30-40 min",
+    };
+  };
 
-  const [orderData] = useState(getOrderData())
-  const totalAmount = orderData.total || 93.98
+  const [orderData] = useState(getOrderData());
+  const totalAmount = orderData.total || 93.98;
 
   // Save order to localStorage
   const saveOrder = () => {
     const newOrder = {
       id: `ORD-${Date.now()}`,
       date: new Date().toISOString(),
-      time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+      time: new Date().toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      }),
       items: orderData.items?.length || 0,
       total: totalAmount,
       status: "Preparing",
       restaurant: "Hungry Puppets", // You can get this from orderData if available
       paymentMethod: paymentMethod,
-      orderDetails: orderData
-    }
+      orderDetails: orderData,
+    };
 
     // Get existing orders
-    const savedOrders = localStorage.getItem('usermain_orders')
-    let orders = []
+    const savedOrders = localStorage.getItem("usermain_orders");
+    let orders = [];
     if (savedOrders) {
       try {
-        orders = JSON.parse(savedOrders)
+        orders = JSON.parse(savedOrders);
       } catch (error) {
-        console.error('Error parsing saved orders:', error)
+        console.error("Error parsing saved orders:", error);
       }
     }
 
     // Add new order at the beginning
-    orders.unshift(newOrder)
+    orders.unshift(newOrder);
 
     // Save back to localStorage
-    localStorage.setItem('usermain_orders', JSON.stringify(orders))
+    localStorage.setItem("usermain_orders", JSON.stringify(orders));
 
     // Clear current order
-    localStorage.removeItem('usermain_current_order')
-  }
+    localStorage.removeItem("usermain_current_order");
+  };
 
   // Auto-process Cash on Delivery
   useEffect(() => {
     if (paymentMethod === "cash") {
-      setIsProcessing(true)
+      setIsProcessing(true);
       setTimeout(() => {
-        saveOrder()
-        setIsProcessing(false)
-        setIsSuccess(true)
+        saveOrder();
+        setIsProcessing(false);
+        setIsSuccess(true);
         setTimeout(() => {
-          navigate('/usermain/orders')
-        }, 2000)
-      }, 1500)
+          navigate("/orders");
+        }, 2000);
+      }, 1500);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paymentMethod, navigate])
+  }, [paymentMethod, navigate]);
 
   const handleCardNumberChange = (e) => {
-    let value = e.target.value.replace(/\s/g, "")
+    let value = e.target.value.replace(/\s/g, "");
     if (value.length <= 16) {
-      value = value.match(/.{1,4}/g)?.join(" ") || value
-      setCardNumber(value)
+      value = value.match(/.{1,4}/g)?.join(" ") || value;
+      setCardNumber(value);
     }
-  }
+  };
 
   const handleExpiryChange = (e) => {
-    let value = e.target.value.replace(/\D/g, "")
+    let value = e.target.value.replace(/\D/g, "");
     if (value.length <= 4) {
-      value = value.match(/.{1,2}/g)?.join("/") || value
-      setExpiryDate(value)
+      value = value.match(/.{1,2}/g)?.join("/") || value;
+      setExpiryDate(value);
     }
-  }
+  };
 
   const handleCvvChange = (e) => {
-    let value = e.target.value.replace(/\D/g, "")
+    let value = e.target.value.replace(/\D/g, "");
     if (value.length <= 3) {
-      setCvv(value)
+      setCvv(value);
     }
-  }
+  };
 
   const handlePayment = () => {
     if (paymentMethod === "cash") {
-      return // Already handled by useEffect
+      return; // Already handled by useEffect
     }
-    
+
     if (!cardNumber || !cardName || !expiryDate || !cvv) {
-      return
+      return;
     }
-    
-    setIsProcessing(true)
-    
+
+    setIsProcessing(true);
+
     // Simulate payment processing
     setTimeout(() => {
-      saveOrder()
-      setIsProcessing(false)
-      setIsSuccess(true)
-      
+      saveOrder();
+      setIsProcessing(false);
+      setIsSuccess(true);
+
       // Navigate to success page after 2 seconds
       setTimeout(() => {
-        navigate('/usermain/orders')
-      }, 2000)
-    }, 2000)
-  }
+        navigate("/orders");
+      }, 2000);
+    }, 2000);
+  };
 
   if (isSuccess) {
     return (
@@ -160,19 +165,19 @@ export default function PaymentPage() {
             {paymentMethod === "cash" ? "Order Placed!" : "Payment Successful!"}
           </h2>
           <p className="text-sm md:text-base text-gray-600 mb-4 md:mb-6">
-            {paymentMethod === "cash" 
-              ? "Your order has been placed. Pay cash on delivery." 
+            {paymentMethod === "cash"
+              ? "Your order has been placed. Pay cash on delivery."
               : "Your order has been placed successfully."}
           </p>
           <Button
             className="w-full bg-[#ff8100] hover:bg-[#e67300] text-white font-semibold py-2.5 md:py-3 rounded-lg text-sm md:text-base"
-            onClick={() => navigate('/usermain/orders')}
+            onClick={() => navigate("/orders")}
           >
             View Orders
           </Button>
         </div>
       </div>
-    )
+    );
   }
 
   // Show processing for Cash on Delivery
@@ -181,11 +186,13 @@ export default function PaymentPage() {
       <div className="min-h-screen bg-[#f6e9dc] flex items-center justify-center px-4">
         <div className="bg-white rounded-2xl p-6 text-center max-w-md w-full shadow-lg">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-[#ff8100] border-t-transparent mx-auto mb-4"></div>
-          <h2 className="text-lg font-bold text-gray-900 mb-2">Placing Order...</h2>
+          <h2 className="text-lg font-bold text-gray-900 mb-2">
+            Placing Order...
+          </h2>
           <p className="text-sm text-gray-600">Please wait</p>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -199,7 +206,9 @@ export default function PaymentPage() {
           >
             <ArrowLeft className="w-4 h-4 md:w-5 md:h-5 text-gray-800" />
           </button>
-          <h1 className="text-base md:text-lg font-bold text-gray-900">Payment</h1>
+          <h1 className="text-base md:text-lg font-bold text-gray-900">
+            Payment
+          </h1>
         </div>
       </div>
 
@@ -207,8 +216,12 @@ export default function PaymentPage() {
       <div className="px-4 py-3 md:py-4">
         <div className="bg-white rounded-xl p-3 md:p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs md:text-sm font-medium text-gray-600">Total Amount</span>
-            <span className="text-xl md:text-2xl font-bold text-[#ff8100]">${totalAmount.toFixed(2)}</span>
+            <span className="text-xs md:text-sm font-medium text-gray-600">
+              Total Amount
+            </span>
+            <span className="text-xl md:text-2xl font-bold text-[#ff8100]">
+              ${totalAmount.toFixed(2)}
+            </span>
           </div>
         </div>
       </div>
@@ -218,13 +231,17 @@ export default function PaymentPage() {
         <div className="bg-white rounded-xl p-3 md:p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-3 md:mb-4">
             <CreditCard className="w-4 h-4 md:w-5 md:h-5 text-[#ff8100]" />
-            <h3 className="text-xs md:text-sm font-bold text-gray-900">Card Details</h3>
+            <h3 className="text-xs md:text-sm font-bold text-gray-900">
+              Card Details
+            </h3>
           </div>
 
           <div className="space-y-3 md:space-y-4">
             {/* Card Number */}
             <div>
-              <label className="text-[10px] md:text-xs font-medium text-gray-700 mb-1 block">Card Number</label>
+              <label className="text-[10px] md:text-xs font-medium text-gray-700 mb-1 block">
+                Card Number
+              </label>
               <Input
                 type="text"
                 placeholder="1234 5678 9012 3456"
@@ -237,7 +254,9 @@ export default function PaymentPage() {
 
             {/* Card Holder Name */}
             <div>
-              <label className="text-[10px] md:text-xs font-medium text-gray-700 mb-1 block">Card Holder Name</label>
+              <label className="text-[10px] md:text-xs font-medium text-gray-700 mb-1 block">
+                Card Holder Name
+              </label>
               <Input
                 type="text"
                 placeholder="John Doe"
@@ -250,7 +269,9 @@ export default function PaymentPage() {
             {/* Expiry and CVV */}
             <div className="grid grid-cols-2 gap-2 md:gap-3">
               <div>
-                <label className="text-[10px] md:text-xs font-medium text-gray-700 mb-1 block">Expiry Date</label>
+                <label className="text-[10px] md:text-xs font-medium text-gray-700 mb-1 block">
+                  Expiry Date
+                </label>
                 <Input
                   type="text"
                   placeholder="MM/YY"
@@ -261,7 +282,9 @@ export default function PaymentPage() {
                 />
               </div>
               <div>
-                <label className="text-[10px] md:text-xs font-medium text-gray-700 mb-1 block">CVV</label>
+                <label className="text-[10px] md:text-xs font-medium text-gray-700 mb-1 block">
+                  CVV
+                </label>
                 <Input
                   type="text"
                   placeholder="123"
@@ -289,7 +312,9 @@ export default function PaymentPage() {
         <Button
           className="w-full bg-[#ff8100] hover:bg-[#e67300] text-white font-bold py-3 md:py-4 rounded-xl text-sm md:text-base disabled:opacity-50"
           onClick={handlePayment}
-          disabled={isProcessing || !cardNumber || !cardName || !expiryDate || !cvv}
+          disabled={
+            isProcessing || !cardNumber || !cardName || !expiryDate || !cvv
+          }
         >
           {isProcessing ? "Processing..." : `Pay $${totalAmount.toFixed(2)}`}
         </Button>
@@ -298,15 +323,15 @@ export default function PaymentPage() {
       {/* Bottom Navigation Bar - Mobile Only */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
         <div className="flex items-center justify-around py-2 px-4">
-          <button 
-            onClick={() => navigate('/usermain')}
+          <button
+            onClick={() => navigate("/grocery")}
             className="flex flex-col items-center gap-1 p-2 text-gray-600 hover:text-[#ff8100] transition-colors"
           >
             <Home className="w-6 h-6" />
             <span className="text-xs text-gray-600 font-medium">Home</span>
           </button>
-          <button 
-            onClick={() => navigate('/usermain/wishlist')}
+          <button
+            onClick={() => navigate("/wishlist")}
             className="flex flex-col items-center gap-1 p-2 text-gray-600 hover:text-[#ff8100] transition-colors"
           >
             <Heart className="w-6 h-6" />
@@ -328,5 +353,5 @@ export default function PaymentPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }
