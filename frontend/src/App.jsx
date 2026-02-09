@@ -6,19 +6,9 @@ import AuthRedirect from "@/components/AuthRedirect";
 import UserRouter from "@/module/user/components/UserRouter";
 import HomePage from "@/module/usermain/pages/HomePage";
 
-import CategoryFoodsPage from "@/module/usermain/pages/CategoryFoodsPage";
+import CategoryPage from "@/module/user/pages/CategoryPage";
 import CategoryDirectoryPage from "@/module/usermain/pages/CategoryDirectoryPage";
 import FoodDetailPage from "@/module/usermain/pages/FoodDetailPage";
-import CartPage from "@/module/usermain/pages/CartPage";
-import CheckoutPage from "@/module/usermain/pages/CheckoutPage";
-import PaymentPage from "@/module/usermain/pages/PaymentPage";
-import OrdersPage from "@/module/usermain/pages/OrdersPage";
-import OrderDetailsPage from "@/module/usermain/pages/OrderDetailsPage";
-import WishlistPage from "@/module/usermain/pages/WishlistPage";
-import GroceryPage from "@/module/usermain/pages/GroceryPage";
-import PlansPage from "@/module/usermain/pages/PlansPage";
-import Profile from "@/module/user/pages/profile/Profile";
-import GroceryProfile from "@/module/usermain/pages/GroceryProfile";
 import Wallet from "@/module/user/pages/Wallet";
 import { ProfileProvider } from "@/module/user/context/ProfileContext";
 
@@ -212,19 +202,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-
-        <Route path="/grocery" element={<GroceryPage />} />
-        <Route path="/grocery/profile" element={<GroceryProfile />} />
-        <Route path="/plans" element={<PlansPage />} />
-        <Route path="/categories" element={<CategoryDirectoryPage />} />
-        <Route path="/wishlist" element={<WishlistPage />} />
-        <Route path="/category/:id" element={<CategoryFoodsPage />} />
-        <Route path="/food/:id" element={<FoodDetailPage />} />
-        <Route path="/cart" element={<CartPage />} />
-        <Route path="/checkout" element={<CheckoutPage />} />
-        <Route path="/payment" element={<PaymentPage />} />
-        <Route path="/orders" element={<OrdersPage />} />
-        <Route path="/orders/:orderId" element={<OrderDetailsPage />} />
 
         {/* Restaurant Protected Routes - Old Routes */}
         <Route

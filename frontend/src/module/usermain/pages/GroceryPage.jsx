@@ -5,6 +5,7 @@ import {
   ChevronDown,
   User,
   ShoppingBag,
+  ShoppingCart,
   Zap,
   Heart,
   Home,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { useCart } from "../../user/context/CartContext";
 import { CategoryFoodsContent } from "./CategoryFoodsPage";
 
 // Assets Imports
@@ -88,6 +90,8 @@ import imgMedicine3D from "@/assets/icons/medicine_5488699.png";
 
 const GroceryPage = () => {
   const navigate = useNavigate();
+  const { getGroceryCartCount } = useCart();
+  const itemCount = getGroceryCartCount();
   const [activeTab, setActiveTab] = useState("All");
 
   const [isScrolled, setIsScrolled] = useState(false);
@@ -183,11 +187,11 @@ const GroceryPage = () => {
   ];
 
   return (
-    // Main Container with Single Continuous Gradient
-    <div className="min-h-screen text-slate-800 pb-24 font-sans w-full shadow-none overflow-x-hidden relative bg-gradient-to-b from-[#fde047] via-[#fff176] to-[#C7EA46]">
-      {/* --- 1. HEADER (Transparent to blend with main gradient) --- */}
+    // Main Container with White Background
+    <div className="min-h-screen text-slate-800 pb-24 font-sans w-full shadow-none overflow-x-hidden relative bg-white">
+      {/* --- 1. HEADER (Yellow) --- */}
       <div
-        className={`sticky top-0 z-40 transition-all duration-300 ${isScrolled ? "bg-[#fde047]/95 backdrop-blur-md shadow-sm" : "bg-transparent"}`}
+        className={`sticky top-0 z-40 transition-all duration-300 bg-[#FACC15] rounded-b-[30px] ${isScrolled ? "shadow-sm" : ""}`}
       >
         <div className="pt-3 pb-0 relative z-20">
           {/* Top Info Row */}
@@ -255,8 +259,26 @@ const GroceryPage = () => {
                 ))}
               </div>
 
-              {/* Profile Icons */}
+              {/* Profile & Cart Icons */}
               <div className="flex gap-2 mt-1">
+                {/* Cart Icon */}
+                <button
+                  className="relative w-8 h-8 bg-[#1a1a1a] rounded-full flex items-center justify-center shadow-sm active:scale-95 transition-transform"
+                  onClick={() => navigate("/grocery/cart")}
+                >
+                  <ShoppingCart size={16} className="text-white" />
+                  {itemCount > 0 && (
+                    <motion.div
+                      key={itemCount}
+                      initial={{ scale: 0.5, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center border border-white"
+                    >
+                      {itemCount}
+                    </motion.div>
+                  )}
+                </button>
+
                 <button
                   className="w-8 h-8 bg-[#1a1a1a] rounded-full flex items-center justify-center shadow-sm active:scale-95 transition-transform"
                   onClick={() => navigate("/grocery/profile")}
@@ -529,7 +551,7 @@ const GroceryPage = () => {
                 className={`w-full ${item.aspect || "aspect-square"} rounded-[20px] flex items-center justify-center p-2 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-white overflow-hidden relative`}
                 style={{
                   background:
-                    "radial-gradient(circle at center, #ffffff 40%, #f6ffd9 100%)",
+                    "radial-gradient(circle at center, #ffffff 40%, #fef3c7 100%)",
                 }}
               >
                 <img

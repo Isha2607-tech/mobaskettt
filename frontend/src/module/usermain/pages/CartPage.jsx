@@ -15,8 +15,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+import { toast } from "sonner";
+import DeliveryScheduler from "@/components/DeliveryScheduler";
+
 export default function CartPage() {
   const navigate = useNavigate();
+  const [deliveryOptions, setDeliveryOptions] = useState({
+    deliveryType: "now",
+    deliveryDate: null,
+    deliveryTimeSlot: null,
+  });
 
   // Mock cart items - in real app, this would come from cart context/state
   const [cartItems, setCartItems] = useState([
@@ -88,6 +96,23 @@ export default function CartPage() {
   };
 
   const total = calculateTotal();
+
+  const handleCheckout = () => {
+    if (deliveryOptions.deliveryType === "scheduled") {
+      if (!deliveryOptions.deliveryDate || !deliveryOptions.deliveryTimeSlot) {
+        toast.error("Please select a delivery date and time slot.");
+        return;
+      }
+    }
+
+    navigate("/checkout", {
+      state: {
+        ...deliveryOptions,
+        items: cartItems,
+        total,
+      },
+    });
+  };
 
   return (
     <div className="min-h-screen bg-[#f6e9dc] pb-24">
@@ -195,6 +220,11 @@ export default function CartPage() {
         </div>
       </div>
 
+      {/* Delivery Scheduler */}
+      <div className="px-4 mb-4">
+        <DeliveryScheduler type="food" onScheduleChange={setDeliveryOptions} />
+      </div>
+
       {/* Total Section */}
       <div className="px-4 mb-4">
         <div className="bg-white rounded-xl p-4">
@@ -211,9 +241,7 @@ export default function CartPage() {
       <div className="px-4 pb-20">
         <Button
           className="w-full bg-[#ff8100] hover:bg-[#e67300] text-white font-bold py-4 rounded-xl text-base"
-          onClick={() => {
-            navigate("/checkout");
-          }}
+          onClick={handleCheckout}
         >
           Checkout
         </Button>

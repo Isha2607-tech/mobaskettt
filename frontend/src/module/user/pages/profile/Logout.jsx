@@ -1,76 +1,86 @@
-import { Link, useNavigate } from "react-router-dom"
-import { ArrowLeft, Power, AlertCircle } from "lucide-react"
-import AnimatedPage from "../../components/AnimatedPage"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { useState } from "react"
-import { authAPI } from "@/lib/api"
-import { firebaseAuth } from "@/lib/firebase"
+import { Link, useNavigate } from "react-router-dom";
+import { ArrowLeft, Power, AlertCircle } from "lucide-react";
+import AnimatedPage from "../../components/AnimatedPage";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { useState } from "react";
+import { authAPI } from "@/lib/api";
+import { firebaseAuth } from "@/lib/firebase";
 
 export default function Logout() {
-  const navigate = useNavigate()
-  const [isLoggingOut, setIsLoggingOut] = useState(false)
-  const [error, setError] = useState("")
+  const navigate = useNavigate();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [error, setError] = useState("");
 
   const handleLogout = async () => {
-    setIsLoggingOut(true)
-    setError("")
+    setIsLoggingOut(true);
+    setError("");
 
     try {
       // Call backend logout API to invalidate refresh token
       try {
-        await authAPI.logout()
+        await authAPI.logout();
       } catch (apiError) {
         // Continue with logout even if API call fails (network issues, etc.)
-        console.warn("Logout API call failed, continuing with local cleanup:", apiError)
+        console.warn(
+          "Logout API call failed, continuing with local cleanup:",
+          apiError,
+        );
       }
 
       // Sign out from Firebase if user logged in via Google
       try {
-        const { signOut } = await import("firebase/auth")
-        const currentUser = firebaseAuth.currentUser
+        const { signOut } = await import("firebase/auth");
+        const currentUser = firebaseAuth.currentUser;
         if (currentUser) {
-          await signOut(firebaseAuth)
+          await signOut(firebaseAuth);
         }
       } catch (firebaseError) {
         // Continue even if Firebase logout fails
-        console.warn("Firebase logout failed, continuing with local cleanup:", firebaseError)
+        console.warn(
+          "Firebase logout failed, continuing with local cleanup:",
+          firebaseError,
+        );
       }
 
       // Clear all authentication data from localStorage
-      localStorage.removeItem("accessToken")
-      localStorage.removeItem("user_authenticated")
-      localStorage.removeItem("user_user")
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("user_authenticated");
+      localStorage.removeItem("user_user");
+      localStorage.removeItem("mobasket_preference");
 
       // Clear sessionStorage
-      sessionStorage.removeItem("userAuthData")
+      sessionStorage.removeItem("userAuthData");
 
       // Dispatch auth change event to notify other components
-      window.dispatchEvent(new Event("userAuthChanged"))
+      window.dispatchEvent(new Event("userAuthChanged"));
 
       // Small delay for UX, then navigate to sign in
       setTimeout(() => {
-        navigate("/user/auth/sign-in", { replace: true })
-      }, 500)
+        navigate("/user/auth/sign-in", { replace: true });
+      }, 500);
     } catch (err) {
       // Even if there's an error, we should still clear local data and logout
-      console.error("Error during logout:", err)
-      
-      // Clear local data anyway
-      localStorage.removeItem("accessToken")
-      localStorage.removeItem("user_authenticated")
-      localStorage.removeItem("user_user")
-      sessionStorage.removeItem("userAuthData")
-      window.dispatchEvent(new Event("userAuthChanged"))
+      console.error("Error during logout:", err);
 
-      setError("An error occurred during logout, but you have been signed out locally.")
-      
+      // Clear local data anyway
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("user_authenticated");
+      localStorage.removeItem("user_user");
+      localStorage.removeItem("mobasket_preference");
+      sessionStorage.removeItem("userAuthData");
+      window.dispatchEvent(new Event("userAuthChanged"));
+
+      setError(
+        "An error occurred during logout, but you have been signed out locally.",
+      );
+
       // Still navigate after showing error
       setTimeout(() => {
-        navigate("/user/auth/sign-in", { replace: true })
-      }, 2000)
+        navigate("/user/auth/sign-in", { replace: true });
+      }, 2000);
     }
-  }
+  };
 
   return (
     <AnimatedPage className="min-h-screen bg-[#f5f5f5]">
@@ -78,11 +88,17 @@ export default function Logout() {
         {/* Header */}
         <div className="flex items-center gap-3 md:gap-4 mb-4 md:mb-6 lg:mb-8">
           <Link to="/user/profile">
-            <Button variant="ghost" size="icon" className="h-8 w-8 md:h-10 md:w-10 p-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 md:h-10 md:w-10 p-0"
+            >
               <ArrowLeft className="h-4 w-4 md:h-5 md:w-5 text-black dark:text-white" />
             </Button>
           </Link>
-          <h1 className="text-xl md:text-2xl lg:text-3xl font-bold text-black dark:text-white">Log out</h1>
+          <h1 className="text-xl md:text-2xl lg:text-3xl font-bold text-black dark:text-white">
+            Log out
+          </h1>
         </div>
 
         {!isLoggingOut ? (
@@ -93,9 +109,12 @@ export default function Logout() {
                 <div className="w-16 h-16 md:w-20 md:h-20 lg:w-24 lg:h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4 md:mb-5 lg:mb-6">
                   <Power className="h-8 w-8 md:h-10 md:w-10 lg:h-12 lg:w-12 text-gray-700 dark:text-gray-300" />
                 </div>
-                <h2 className="text-xl md:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mb-2 md:mb-3">Log out?</h2>
+                <h2 className="text-xl md:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mb-2 md:mb-3">
+                  Log out?
+                </h2>
                 <p className="text-sm md:text-base lg:text-lg text-gray-600 dark:text-gray-400 mb-4 md:mb-6">
-                  Are you sure you want to log out? You'll need to sign in again to access your account.
+                  Are you sure you want to log out? You'll need to sign in again
+                  to access your account.
                 </p>
               </CardContent>
             </Card>
@@ -112,7 +131,8 @@ export default function Logout() {
                       Before you go
                     </h3>
                     <p className="text-sm md:text-base text-yellow-700 dark:text-yellow-300">
-                      Make sure you've saved any important information. Your cart and preferences will be saved for next time.
+                      Make sure you've saved any important information. Your
+                      cart and preferences will be saved for next time.
                     </p>
                   </div>
                 </div>
@@ -144,13 +164,17 @@ export default function Logout() {
               <div className="w-16 h-16 md:w-20 md:h-20 lg:w-24 lg:h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4 md:mb-5 lg:mb-6">
                 <Power className="h-8 w-8 md:h-10 md:w-10 lg:h-12 lg:w-12 text-gray-700 dark:text-gray-300 animate-pulse" />
               </div>
-              <h2 className="text-xl md:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mb-2 md:mb-3">Logging out...</h2>
+              <h2 className="text-xl md:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mb-2 md:mb-3">
+                Logging out...
+              </h2>
               <p className="text-sm md:text-base lg:text-lg text-gray-600 dark:text-gray-400 mb-3 md:mb-4">
                 Please wait while we sign you out.
               </p>
               {error && (
                 <div className="mt-4 p-3 md:p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                  <p className="text-xs md:text-sm text-yellow-800 dark:text-yellow-200">{error}</p>
+                  <p className="text-xs md:text-sm text-yellow-800 dark:text-yellow-200">
+                    {error}
+                  </p>
                 </div>
               )}
             </CardContent>
@@ -158,6 +182,5 @@ export default function Logout() {
         )}
       </div>
     </AnimatedPage>
-  )
+  );
 }
-

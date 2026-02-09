@@ -15,18 +15,22 @@ export default function BottomNavigation() {
     !isUnder250 &&
     !isProfile &&
     (location.pathname === "/" ||
+      location.pathname === "/home" ||
       location.pathname === "/user" ||
       (location.pathname.startsWith("/") &&
         !location.pathname.startsWith("/restaurant") &&
         !location.pathname.startsWith("/delivery") &&
         !location.pathname.startsWith("/admin")));
 
+  const preference = localStorage.getItem("mobasket_preference");
+  const deliveryPath = preference === "grocery" ? "/grocery" : "/home";
+
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 w-full bg-white p-4 border-t border-gray-200 z-50">
       <div className="flex items-center justify-between max-w-md mx-auto">
         {/* 1. Delivery Option (Active/Red) */}
         <Link
-          to="/"
+          to={deliveryPath}
           className="flex flex-col items-center gap-1 cursor-pointer"
         >
           <div className={isDelivery ? "text-red-500" : "text-gray-500"}>
@@ -77,16 +81,54 @@ export default function BottomNavigation() {
 
         {/* 4. MoBasket Button */}
         <Link to="/grocery" className="cursor-pointer">
-          <div className="bg-gradient-to-r from-violet-600 to-purple-600 text-white px-3 py-2 rounded-lg shadow-sm flex items-center gap-1 transition-transform active:scale-95">
+          <div className="relative overflow-hidden bg-green-600 text-white px-3 py-2 rounded-lg shadow-sm flex items-center gap-1 transition-transform active:scale-95 border border-green-700">
+            <span className="absolute left-0 w-[3px] h-full bg-[#006400] animate-border-left"></span>
+            <span className="absolute bottom-0 h-[3px] w-full bg-[#006400] animate-border-bottom"></span>
+            <span className="absolute right-0 w-[3px] h-full bg-[#006400] animate-border-right"></span>
+            <span className="absolute top-0 h-[3px] w-full bg-[#006400] animate-border-top"></span>
             <span
-              className="font-extrabold text-sm italic tracking-wide lowercase"
+              className="font-extrabold text-sm italic tracking-wide"
               style={{ fontFamily: "sans-serif" }}
             >
-              mobasket
+              MoGrocery
             </span>
             <ArrowUpRight size={16} strokeWidth={3} />
           </div>
         </Link>
+        <style>{`
+          @keyframes border-left {
+            0% { top: -100%; }
+            100% { top: 100%; }
+          }
+          @keyframes border-bottom {
+            0% { left: -100%; }
+            100% { left: 100%; }
+          }
+          @keyframes border-right {
+            0% { bottom: -100%; }
+            100% { bottom: 100%; }
+          }
+          @keyframes border-top {
+            0% { right: -100%; }
+            100% { right: 100%; }
+          }
+          .animate-border-left {
+            animation: border-left 2s linear infinite;
+            animation-delay: 0s;
+          }
+          .animate-border-bottom {
+            animation: border-bottom 2s linear infinite;
+            animation-delay: 0.5s;
+          }
+          .animate-border-right {
+            animation: border-right 2s linear infinite;
+            animation-delay: 1s;
+          }
+          .animate-border-top {
+            animation: border-top 2s linear infinite;
+            animation-delay: 1.5s;
+          }
+        `}</style>
       </div>
     </div>
   );

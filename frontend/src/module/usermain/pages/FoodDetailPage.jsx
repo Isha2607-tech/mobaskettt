@@ -207,7 +207,8 @@ export default function FoodDetailPage() {
             </div>
           </div>
 
-          {/* White Gradient Shadow Overlay */}
+          {/* White Gradient Shadow Overlays */}
+          <div className="absolute top-0 left-0 right-0 h-24 bg-gradient-to-b from-white/70 to-transparent z-10"></div>
           <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-white via-white/80 to-transparent z-10"></div>
         </div>
 

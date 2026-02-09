@@ -12,7 +12,7 @@ export default function HeroSection() {
       {/* Top info */}
       <div className="flex justify-between items-center mb-3">
         <div>
-          <p className="text-sm opacity-90">Blinkit in</p>
+          <p className="text-sm opacity-90">MoBasket in</p>
           <h1 className="text-3xl font-bold">8 minutes</h1>
           <p className="text-xs opacity-90">Pipliyahana, Indore</p>
         </div>

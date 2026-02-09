@@ -1,7 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { X, Heart, Clock, Search, ChevronRight, ArrowLeft } from "lucide-react";
+import {
+  X,
+  Heart,
+  Clock,
+  Search,
+  ChevronRight,
+  ArrowLeft,
+  CheckCircle,
+} from "lucide-react";
 import { toast } from "sonner";
+import { motion } from "framer-motion";
+import { useCart } from "../../user/context/CartContext";
 import WishlistButton from "@/components/WishlistButton";
 
 // Assets
@@ -370,6 +380,7 @@ export function CategoryFoodsContent({
   initialCategory = "all",
 }) {
   const navigate = useNavigate();
+  const { addToCart } = useCart();
   /* End of change */
   const [selectedCategory, setSelectedCategory] = useState(initialCategory);
 
@@ -431,18 +442,18 @@ export function CategoryFoodsContent({
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id)}
                 className={`relative flex flex-col items-center gap-1 py-4 px-1 cursor-pointer transition-all ${
-                  selectedCategory === cat.id ? "bg-[#ebf7e8]" : "bg-white"
+                  selectedCategory === cat.id ? "bg-[#fefce8]" : "bg-white"
                 }`}
               >
-                {/* Green Indicator Bar */}
+                {/* Yellow Indicator Bar */}
                 {selectedCategory === cat.id && (
-                  <div className="absolute right-0 top-0 bottom-0 w-1 bg-[#1aa03f] rounded-l-lg"></div>
+                  <div className="absolute right-0 top-0 bottom-0 w-1 bg-[#facd01] rounded-l-lg"></div>
                 )}
 
                 {/* Icon Container */}
                 <div
                   className={`w-16 h-16 rounded-full flex items-center justify-center ${
-                    selectedCategory === cat.id ? "bg-[#d8edd6]" : "bg-slate-50"
+                    selectedCategory === cat.id ? "bg-[#fef3c7]" : "bg-slate-50"
                   } ${cat.id === "fresh-fruit" ? "p-0.5" : "p-1.5"}`}
                 >
                   <img
@@ -502,10 +513,52 @@ export function CategoryFoodsContent({
 
                     {/* ADD Button */}
                     <button
-                      className="absolute bottom-1 right-2 bg-white border border-[#23bb49] text-[#23bb49] text-[10px] font-black px-4 py-1 rounded shadow-sm hover:bg-[#23bb49] hover:text-white transition-colors z-20"
+                      className="absolute bottom-1 right-2 bg-white border border-[#facd01] text-gray-900 text-[10px] font-black px-4 py-1 rounded shadow-sm hover:bg-[#facd01] transition-colors z-20"
                       onClick={(e) => {
                         e.stopPropagation();
-                        // Add to cart logic here
+                        addToCart({
+                          ...item,
+                          restaurantId: "grocery-store", // Default for grocery
+                          restaurant: "MoGrocery",
+                        });
+
+                        // Custom React Toastify style toast
+                        toast.custom(
+                          (t) => (
+                            <div className="bg-white border-l-4 border-yellow-400 shadow-lg rounded-lg p-4 flex flex-col gap-3 min-w-[300px] animate-in slide-in-from-right duration-300 overflow-hidden relative">
+                              <div className="flex items-center gap-3">
+                                <div className="bg-yellow-100 p-1.5 rounded-full">
+                                  <CheckCircle className="text-yellow-600 w-5 h-5" />
+                                </div>
+                                <div className="flex-1">
+                                  <p className="text-sm font-bold text-gray-900">
+                                    Added to Cart!
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    {item.name} is now in your basket.
+                                  </p>
+                                </div>
+                                <button
+                                  onClick={() => toast.dismiss(t)}
+                                  className="text-gray-400 hover:text-gray-600"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                              {/* Progress bar animation */}
+                              <motion.div
+                                initial={{ width: "100%" }}
+                                animate={{ width: "0%" }}
+                                transition={{ duration: 2, ease: "linear" }}
+                                className="absolute bottom-0 left-0 h-1 bg-yellow-400"
+                              />
+                            </div>
+                          ),
+                          {
+                            duration: 2000,
+                            position: "bottom-right",
+                          },
+                        );
                       }}
                     >
                       ADD
@@ -546,7 +599,7 @@ export function CategoryFoodsContent({
 
                     {/* Recipe Link Footer */}
                     <div className="mt-3 pt-2 border-t border-dashed border-slate-100">
-                      <div className="flex items-center justify-between text-[#23bb49] bg-[#f0fdf4] px-2 py-1 rounded-md">
+                      <div className="flex items-center justify-between text-yellow-700 bg-yellow-50 px-2 py-1 rounded-md">
                         <span className="text-[9px] font-bold">
                           See {item.recipeCount || 8} recipes
                         </span>
