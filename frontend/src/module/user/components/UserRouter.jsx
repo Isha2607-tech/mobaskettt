@@ -1,7 +1,8 @@
 import React from "react";
-import { Routes, Route, useNavigate } from "react-router-dom";
+import { Routes, Route, useNavigate, Navigate } from "react-router-dom";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AuthRedirect from "@/components/AuthRedirect";
+import { isModuleAuthenticated } from "@/lib/utils/auth";
 import UserLayout from "./UserLayout";
 
 // Home & Discovery
@@ -95,14 +96,8 @@ export default function UserRouter() {
   return (
     <Routes>
       <Route element={<UserLayout />}>
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute requiredRole="user" loginPath="/user/auth/sign-in">
-              <WelcomeRedirect />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/sign-in" element={<SignIn />} />
+        <Route path="/" element={<RootLanding />} />
         <Route
           path="/home"
           element={
@@ -467,18 +462,17 @@ export default function UserRouter() {
 }
 
 // Helper component for redirection
-function WelcomeRedirect() {
-  const navigate = useNavigate();
+// Helper component for redirection
+function RootLanding() {
   const preference = localStorage.getItem("mobasket_preference");
 
-  React.useEffect(() => {
+  if (isModuleAuthenticated("user")) {
     if (preference === "food") {
-      navigate("/home", { replace: true });
+      return <Navigate to="/home" replace />;
     } else if (preference === "grocery") {
-      navigate("/grocery", { replace: true });
+      return <Navigate to="/grocery" replace />;
     }
-  }, [preference, navigate]);
-
-  if (preference) return null;
-  return <WelcomeSelectionPage />;
+    return <Navigate to="/welcome" replace />;
+  }
+  return <SignIn />;
 }

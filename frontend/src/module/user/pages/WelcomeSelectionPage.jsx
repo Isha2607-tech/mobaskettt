@@ -7,14 +7,7 @@ import { Button } from "@/components/ui/button";
 export default function WelcomeSelectionPage() {
   const navigate = useNavigate();
 
-  React.useEffect(() => {
-    const preference = localStorage.getItem("mobasket_preference");
-    if (preference === "food") {
-      navigate("/home", { replace: true });
-    } else if (preference === "grocery") {
-      navigate("/grocery", { replace: true });
-    }
-  }, [navigate]);
+
 
   const handleSelection = (module, path) => {
     localStorage.setItem("mobasket_preference", module);

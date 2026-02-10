@@ -333,7 +333,7 @@ const GroceryPage = () => {
       {/* --- 2. DYNAMIC BANNER CAROUSEL --- */}
       <div className="relative z-0 -mt-1 animate-fade-in-up px-4 pt-2 pb-1 md:max-w-6xl mx-auto">
         {/* Carousel Container */}
-        <div className="relative w-full aspect-[2.4/1] md:aspect-[4.8/1] bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg border border-white/30 overflow-hidden">
+        <div className="relative w-full aspect-[1.8/1] md:aspect-[3/1] bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg border border-white/30 overflow-hidden">
           {[
             { id: 1, img: imgBanner1 },
             { id: 2, img: imgBanner2 },
@@ -341,9 +341,8 @@ const GroceryPage = () => {
           ].map((banner, index) => (
             <div
               key={banner.id}
-              className={`absolute inset-0 transition-opacity duration-1000 ease-in-out flex items-center justify-center ${
-                index === currentBanner ? "opacity-100 z-10" : "opacity-0 z-0"
-              }`}
+              className={`absolute inset-0 transition-opacity duration-1000 ease-in-out flex items-center justify-center ${index === currentBanner ? "opacity-100 z-10" : "opacity-0 z-0"
+                }`}
             >
               <img
                 src={banner.img}
@@ -358,9 +357,8 @@ const GroceryPage = () => {
             {[0, 1, 2].map((i) => (
               <div
                 key={i}
-                className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
-                  i === currentBanner ? "bg-white w-4" : "bg-white/50"
-                }`}
+                className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === currentBanner ? "bg-white w-4" : "bg-white/50"
+                  }`}
               ></div>
             ))}
           </div>
