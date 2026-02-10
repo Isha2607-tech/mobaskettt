@@ -6,6 +6,8 @@ import { useLocation as useLocationHook } from "../hooks/useLocation";
 import { useCart } from "../context/CartContext";
 import { useLocationSelector } from "./UserLayout";
 import { FaLocationDot } from "react-icons/fa6";
+import { getCachedSettings, loadBusinessSettings } from "@/lib/utils/businessSettings";
+import appzetoFoodLogo from "@/assets/appzetologo.png";
 
 export default function DesktopNavbar() {
   const location = useLocation();
@@ -16,6 +18,22 @@ export default function DesktopNavbar() {
   const cartCount = getCartCount();
   const [isVisible, setIsVisible] = useState(true);
   const lastScrollY = useRef(0);
+  const [logoUrl, setLogoUrl] = useState(null);
+
+  useEffect(() => {
+    const loadLogo = async () => {
+      try {
+        const cached = getCachedSettings();
+        if (cached?.logo?.url) setLogoUrl(cached.logo.url);
+
+        const settings = await loadBusinessSettings();
+        if (settings?.logo?.url) setLogoUrl(settings.logo.url);
+      } catch (error) {
+        console.error('Error loading logo:', error);
+      }
+    };
+    loadLogo();
+  }, []);
 
   // Show area if available, otherwise show city
   // Priority: area > city > "Select"
@@ -97,9 +115,8 @@ export default function DesktopNavbar() {
 
   return (
     <nav
-      className={`hidden md:block fixed top-0 left-0 right-0 z-50 transition-transform duration-300 ease-in-out ${
-        isVisible ? "translate-y-0" : "-translate-y-full"
-      }`}
+      className={`hidden md:block fixed top-0 left-0 right-0 z-50 transition-transform duration-300 ease-in-out ${isVisible ? "translate-y-0" : "-translate-y-full"
+        }`}
     >
       {/* Background */}
       <div className="absolute inset-0 bg-white/98 dark:bg-[#1a1a1a]/98 border-b border-gray-200/50 dark:border-gray-800/50 shadow-sm" />
@@ -144,6 +161,21 @@ export default function DesktopNavbar() {
                   </div>
                 )}
               </Button>
+
+              {/* Logo aligned with location */}
+              <div className="ml-6 flex-shrink-0">
+                <img
+                  src={logoUrl || appzetoFoodLogo}
+                  alt="MoBasket"
+                  className="h-10 w-auto object-contain"
+                  onError={(e) => {
+                    // Fallback to imported logo if dynamic url fails
+                    if (e.target.src !== appzetoFoodLogo) {
+                      e.target.src = appzetoFoodLogo;
+                    }
+                  }}
+                />
+              </div>
             </div>
 
             {/* Center: Navigation Tabs */}
@@ -151,11 +183,10 @@ export default function DesktopNavbar() {
               {/* Delivery Tab */}
               <Link
                 to="/"
-                className={`px-6 py-2.5 text-sm font-medium transition-all duration-200 relative ${
-                  isDelivery
-                    ? "text-green-600 dark:text-green-500"
-                    : "text-gray-600 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-500"
-                }`}
+                className={`px-6 py-2.5 text-sm font-medium transition-all duration-200 relative ${isDelivery
+                  ? "text-green-600 dark:text-green-500"
+                  : "text-gray-600 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-500"
+                  }`}
               >
                 <span className="relative z-10">Delivery</span>
                 {isDelivery && (
@@ -169,11 +200,10 @@ export default function DesktopNavbar() {
               {/* Under 250 Tab */}
               <Link
                 to="/under-250"
-                className={`px-6 py-2.5 text-sm font-medium transition-all duration-200 relative ${
-                  isUnder250
-                    ? "text-green-600 dark:text-green-500"
-                    : "text-gray-600 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-500"
-                }`}
+                className={`px-6 py-2.5 text-sm font-medium transition-all duration-200 relative ${isUnder250
+                  ? "text-green-600 dark:text-green-500"
+                  : "text-gray-600 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-500"
+                  }`}
               >
                 <span className="relative z-10">Under 250</span>
                 {isUnder250 && (
@@ -187,11 +217,10 @@ export default function DesktopNavbar() {
               {/* Profile Tab */}
               <Link
                 to="/profile"
-                className={`px-6 py-2.5 text-sm font-medium transition-all duration-200 relative ${
-                  isProfile
-                    ? "text-green-600 dark:text-green-500"
-                    : "text-gray-600 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-500"
-                }`}
+                className={`px-6 py-2.5 text-sm font-medium transition-all duration-200 relative ${isProfile
+                  ? "text-green-600 dark:text-green-500"
+                  : "text-gray-600 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-500"
+                  }`}
               >
                 <span className="relative z-10">Profile</span>
                 {isProfile && (
@@ -242,6 +271,6 @@ export default function DesktopNavbar() {
           </div>
         </div>
       </div>
-    </nav>
+    </nav >
   );
 }

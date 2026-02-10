@@ -15,11 +15,24 @@ export default function WishlistPage() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+
+        // Ensure it's an array
+        if (!Array.isArray(parsed)) {
+          setWishlist([]);
+          return;
+        }
+
+        // Filter valid items (must have id at minimum)
+        const validItems = parsed.filter((item) => {
+          return item && typeof item === "object" && item.id;
+        });
+
         // Remove duplicates based on id
-        const unique = parsed.filter(
+        const unique = validItems.filter(
           (item, index, self) =>
             index === self.findIndex((t) => t.id === item.id),
         );
+
         setWishlist(unique);
       } catch (error) {
         setWishlist([]);
@@ -62,16 +75,10 @@ export default function WishlistPage() {
     window.addEventListener("storage", handleStorageChange);
     window.addEventListener("wishlistUpdated", handleWishlistUpdate);
 
-    // Poll for changes (fallback for same-tab updates)
-    const interval = setInterval(() => {
-      loadWishlist();
-    }, 1000); // Check every second
-
     return () => {
       lenis.destroy();
       window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener("wishlistUpdated", handleWishlistUpdate);
-      clearInterval(interval);
     };
   }, []);
 
@@ -174,8 +181,8 @@ export default function WishlistPage() {
                 whileHover={{ y: -5 }}
                 className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow"
               >
-                {item.type === "food" ? (
-                  // Food Item Card
+                {item.type === "restaurant" ? (
+                  // Restaurant Item Card
                   <div
                     className="flex gap-4 p-4 cursor-pointer"
                     onClick={() =>
@@ -205,21 +212,28 @@ export default function WishlistPage() {
                               {item.description}
                             </p>
                           )}
-                          <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-1">
-                              <Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />
-                              <span className="text-xs font-semibold text-gray-900">
-                                {item.rating}
-                              </span>
-                              {item.reviews && (
-                                <span className="text-xs text-gray-500">
-                                  ({item.reviews}+)
+                          {item.weight && (
+                            <p className="text-xs text-gray-500 mb-1 font-medium">
+                              {item.weight}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-3 mt-1">
+                            {item.rating && (
+                              <div className="flex items-center gap-1">
+                                <Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />
+                                <span className="text-xs font-semibold text-gray-900">
+                                  {item.rating}
                                 </span>
-                              )}
-                            </div>
+                                {item.reviews && (
+                                  <span className="text-xs text-gray-500">
+                                    ({item.reviews}+)
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             {item.price && (
                               <span className="text-sm font-bold text-[#ff8100]">
-                                {item.price}
+                                ₹{item.price}
                               </span>
                             )}
                           </div>

@@ -158,7 +158,7 @@ export default function CategoryDirectoryPage() {
               {section.items.map((item) => (
                 <Link
                   key={item.id}
-                  to={`/category/${item.id}`}
+                  to={`/grocery/category/${item.id}`}
                   className="flex flex-col items-center gap-2 cursor-pointer group"
                 >
                   <div className="w-full aspect-square bg-[#e6f7f5] rounded-2xl p-2.5 flex items-center justify-center relative overflow-hidden group-hover:bg-[#d8edd6] transition-colors">

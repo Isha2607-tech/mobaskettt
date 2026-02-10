@@ -670,7 +670,7 @@ const GroceryPage = () => {
           <span className="text-[10px] font-medium">Categories</span>
         </div>
 
-        <button className="mb-1" onClick={() => navigate("/")}>
+        <button className="mb-1" onClick={() => navigate("/home")}>
           <span className="text-red-600 font-black italic text-xl tracking-tighter">
             Mofood
           </span>

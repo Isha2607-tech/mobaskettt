@@ -7,8 +7,6 @@ import { Button } from "@/components/ui/button";
 export default function WelcomeSelectionPage() {
   const navigate = useNavigate();
 
-
-
   const handleSelection = (module, path) => {
     localStorage.setItem("mobasket_preference", module);
     navigate(path);
@@ -100,7 +98,13 @@ export default function WelcomeSelectionPage() {
 
               {/* Action Button */}
               <div className="w-full mt-1">
-                <Button className="w-full py-4 text-sm font-bold bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white shadow-lg shadow-orange-200 dark:shadow-none rounded-xl transition-all group-hover:shadow-orange-300 dark:group-hover:shadow-none">
+                <Button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelection("food", "/home");
+                  }}
+                  className="w-full py-4 text-sm font-bold bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white shadow-lg shadow-orange-200 dark:shadow-none rounded-xl transition-all group-hover:shadow-orange-300 dark:group-hover:shadow-none"
+                >
                   Order Food{" "}
                   <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </Button>
@@ -137,8 +141,8 @@ export default function WelcomeSelectionPage() {
                   }}
                 />
                 <img
-                  src="https://cdn-icons-png.flaticon.com/512/2905/2905831.png"
-                  alt="Grocery Basket"
+                  src="https://cdn-icons-png.flaticon.com/512/766/766023.png"
+                  alt="Grocery Cart"
                   className="w-20 h-20 md:w-24 md:h-24 object-contain drop-shadow-xl transform group-hover:rotate-3 transition-transform duration-500"
                 />
               </div>
@@ -155,7 +159,13 @@ export default function WelcomeSelectionPage() {
 
               {/* Action Button */}
               <div className="w-full mt-1">
-                <Button className="w-full py-4 text-sm font-bold bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-lg shadow-green-200 dark:shadow-none rounded-xl transition-all group-hover:shadow-green-300 dark:group-hover:shadow-none">
+                <Button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelection("grocery", "/grocery");
+                  }}
+                  className="w-full py-4 text-sm font-bold bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-lg shadow-green-200 dark:shadow-none rounded-xl transition-all group-hover:shadow-green-300 dark:group-hover:shadow-none"
+                >
                   Shop Grocery{" "}
                   <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </Button>

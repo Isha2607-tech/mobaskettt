@@ -90,6 +90,7 @@ import PlansPage from "@/module/usermain/pages/PlansPage";
 import CategoryDirectoryPage from "@/module/usermain/pages/CategoryDirectoryPage";
 import WishlistPage from "@/module/usermain/pages/WishlistPage";
 import FoodDetailPage from "@/module/usermain/pages/FoodDetailPage";
+import CategoryFoodsPage from "@/module/usermain/pages/CategoryFoodsPage";
 import WelcomeSelectionPage from "@/module/user/pages/WelcomeSelectionPage";
 
 export default function UserRouter() {
@@ -98,6 +99,14 @@ export default function UserRouter() {
       <Route element={<UserLayout />}>
         <Route path="/sign-in" element={<SignIn />} />
         <Route path="/" element={<RootLanding />} />
+        <Route
+          path="/welcome"
+          element={
+            <ProtectedRoute requiredRole="user" loginPath="/user/auth/sign-in">
+              <WelcomeSelectionPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/home"
           element={
@@ -455,6 +464,7 @@ export default function UserRouter() {
         <Route path="/plans" element={<PlansPage />} />
         <Route path="/categories" element={<CategoryDirectoryPage />} />
         <Route path="/wishlist" element={<WishlistPage />} />
+        <Route path="/grocery/category/:id" element={<CategoryFoodsPage />} />
         <Route path="/food/:id" element={<FoodDetailPage />} />
       </Route>
     </Routes>

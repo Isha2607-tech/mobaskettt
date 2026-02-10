@@ -52,10 +52,10 @@ const WishlistButton = ({ item, type = "food", className = "" }) => {
       toast.success("Removed from Wishlist");
     } else {
       const wishlistItem = {
+        ...item,
         id: itemId,
         type,
         originalId: item.id,
-        ...item,
       };
       wishlist.push(wishlistItem);
       setIsWishlisted(true);
@@ -73,7 +73,7 @@ const WishlistButton = ({ item, type = "food", className = "" }) => {
         "rounded-full flex items-center justify-center transition-all duration-300 shadow-sm active:scale-90 w-10 h-10 bg-white text-slate-800 hover:scale-110",
         className,
         isWishlisted &&
-          "bg-[#ffe0e8] text-[#ff3269] fill-[#ff3269] hover:bg-[#ffe0e8]",
+        "bg-[#ffe0e8] text-[#ff3269] fill-[#ff3269] hover:bg-[#ffe0e8]",
       )}
     >
       <Heart
