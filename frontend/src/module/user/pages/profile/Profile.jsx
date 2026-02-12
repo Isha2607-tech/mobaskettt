@@ -446,8 +446,8 @@ export default function Profile() {
                   <div className="flex items-center gap-2">
                     <motion.span
                       className={`text-xs font-medium px-2 py-1 rounded ${isComplete
-                          ? "bg-red-100 text-red-700 border border-red-300"
-                          : "bg-yellow-200 text-yellow-800"
+                        ? "bg-red-100 text-red-700 border border-red-300"
+                        : "bg-yellow-200 text-yellow-800"
                         }`}
                       whileHover={{ scale: 1.1 }}
                       transition={{ duration: 0.2 }}
@@ -849,15 +849,15 @@ export default function Profile() {
                 setVegModeOpen(false);
               }}
               className={`w-full p-3 rounded-xl border-2 transition-all flex items-center justify-between ${vegMode
-                  ? "border-green-600 bg-green-50"
-                  : "border-gray-200 bg-white hover:border-gray-300"
+                ? "border-[#BE2F2F] bg-[#BE2F2F]/10"
+                : "border-gray-200 bg-white hover:border-gray-300"
                 }`}
             >
               <div className="flex items-center gap-3">
                 <div
                   className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${vegMode
-                      ? "border-green-600 bg-green-600"
-                      : "border-gray-300"
+                    ? "border-[#BE2F2F] bg-[#BE2F2F]"
+                    : "border-gray-300"
                     }`}
                 >
                   {vegMode && <Check className="h-3 w-3 text-white" />}
@@ -872,7 +872,7 @@ export default function Profile() {
                 </div>
               </div>
               <Leaf
-                className={`h-5 w-5 ${vegMode ? "text-green-600" : "text-gray-400"}`}
+                className={`h-5 w-5 ${vegMode ? "text-[#BE2F2F]" : "text-gray-400"}`}
               />
             </button>
             <button
@@ -881,8 +881,8 @@ export default function Profile() {
                 setVegModeOpen(false);
               }}
               className={`w-full p-3 rounded-xl border-2 transition-all flex items-center justify-between ${!vegMode
-                  ? "border-red-600 bg-red-50"
-                  : "border-gray-200 bg-white hover:border-gray-300"
+                ? "border-red-600 bg-red-50"
+                : "border-gray-200 bg-white hover:border-gray-300"
                 }`}
             >
               <div className="flex items-center gap-3">
@@ -922,14 +922,14 @@ export default function Profile() {
                 setAppearanceOpen(false);
               }}
               className={`w-full p-3 rounded-xl border-2 transition-all flex items-center gap-3 ${appearance === "light"
-                  ? "border-blue-600 bg-blue-50 dark:border-blue-500 dark:bg-blue-900/20"
-                  : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600"
+                ? "border-blue-600 bg-blue-50 dark:border-blue-500 dark:bg-blue-900/20"
+                : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600"
                 }`}
             >
               <div
                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${appearance === "light"
-                    ? "border-blue-600 bg-blue-600 dark:border-blue-500 dark:bg-blue-500"
-                    : "border-gray-300 dark:border-gray-600"
+                  ? "border-blue-600 bg-blue-600 dark:border-blue-500 dark:bg-blue-500"
+                  : "border-gray-300 dark:border-gray-600"
                   }`}
               >
                 {appearance === "light" && (
@@ -952,14 +952,14 @@ export default function Profile() {
                 setAppearanceOpen(false);
               }}
               className={`w-full p-3 rounded-xl border-2 transition-all flex items-center gap-3 ${appearance === "dark"
-                  ? "border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/20"
-                  : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600"
+                ? "border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600"
                 }`}
             >
               <div
                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${appearance === "dark"
-                    ? "border-blue-600 bg-blue-600 dark:border-blue-500 dark:bg-blue-500"
-                    : "border-gray-300 dark:border-gray-600"
+                  ? "border-blue-600 bg-blue-600 dark:border-blue-500 dark:bg-blue-500"
+                  : "border-gray-300 dark:border-gray-600"
                   }`}
               >
                 {appearance === "dark" && (

@@ -39,7 +39,7 @@ export default function AuthCallback() {
         if (!code) {
           // Simulate OAuth flow for demo
           await new Promise((resolve) => setTimeout(resolve, 2000))
-          
+
           // In a real app, you would:
           // 1. Exchange the code for tokens
           // 2. Get user info from the provider
@@ -48,7 +48,7 @@ export default function AuthCallback() {
 
           // For demo, simulate success
           setStatus("success")
-          
+
           // Store auth success in sessionStorage
           sessionStorage.setItem("oauthSuccess", JSON.stringify({
             provider: providerParam,
@@ -57,7 +57,7 @@ export default function AuthCallback() {
 
           // Redirect to home after short delay
           setTimeout(() => {
-            navigate("/user")
+            navigate("/welcome")
           }, 1500)
           return
         }
@@ -65,7 +65,7 @@ export default function AuthCallback() {
         // In a real app, exchange code for tokens
         // This is a simplified version
         setStatus("loading")
-        
+
         // Simulate API call to exchange code for tokens
         const response = await fetch("/api/auth/oauth/callback", {
           method: "POST",
@@ -97,7 +97,7 @@ export default function AuthCallback() {
 
         // Redirect to home
         setTimeout(() => {
-          navigate("/user")
+          navigate("/welcome")
         }, 1500)
       } catch (err) {
         setStatus("error")
@@ -115,7 +115,7 @@ export default function AuthCallback() {
   }
 
   const handleGoHome = () => {
-    navigate("/user")
+    navigate("/welcome")
   }
 
   return (

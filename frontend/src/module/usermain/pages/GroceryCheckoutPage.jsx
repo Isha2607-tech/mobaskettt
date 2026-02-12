@@ -13,15 +13,18 @@ import {
   ChevronRight,
   AlertCircle,
   Truck,
+  CalendarDays,
 } from "lucide-react";
 import { useCart } from "../../user/context/CartContext";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function GroceryCheckoutPage() {
   const navigate = useNavigate();
   const { cart, total, clearCart } = useCart();
   const [paymentMethod, setPaymentMethod] = useState("card");
   const [deliveryOption, setDeliveryOption] = useState("now");
+  const [scheduledDate, setScheduledDate] = useState(new Date());
+  const [scheduledTime, setScheduledTime] = useState("");
 
   // Filter grocery items
   const groceryItems = cart.filter(
@@ -166,34 +169,146 @@ export default function GroceryCheckoutPage() {
               Delivery Options
             </h3>
           </div>
+          {/* Delivery Options Buttons */}
           <div className="flex gap-3">
             <button
               onClick={() => setDeliveryOption("now")}
-              className={`flex-1 py-3 px-2 rounded-xl border-2 font-bold text-sm transition-all ${
-                deliveryOption === "now"
-                  ? "border-orange-400 bg-orange-50/50 text-orange-600"
-                  : "border-gray-100 bg-gray-50 text-gray-400"
-              }`}
+              className={`flex-1 py-3 px-3 rounded-xl border-2 font-bold text-sm transition-all flex items-center justify-between group ${deliveryOption === "now"
+                ? "border-[#facd01] bg-yellow-50 text-gray-900"
+                : "border-gray-100 bg-white text-gray-400"
+                }`}
             >
-              Deliver Now
-              <p className="text-[10px] font-medium opacity-80 mt-0.5">
-                8-12 mins
-              </p>
+              <div className="flex flex-col items-start">
+                <span>Deliver Now</span>
+                <span className="text-[10px] font-medium opacity-60">
+                  8-12 mins
+                </span>
+              </div>
+              <div
+                className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${deliveryOption === "now"
+                  ? "border-[#facd01] bg-[#facd01]"
+                  : "border-gray-300"
+                  }`}
+              >
+                {deliveryOption === "now" && (
+                  <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                )}
+              </div>
             </button>
+
             <button
               onClick={() => setDeliveryOption("schedule")}
-              className={`flex-1 py-3 px-2 rounded-xl border-2 font-bold text-sm transition-all ${
-                deliveryOption === "schedule"
-                  ? "border-orange-400 bg-orange-50/50 text-orange-600"
-                  : "border-gray-100 bg-gray-50 text-gray-400"
-              }`}
+              className={`flex-1 py-3 px-3 rounded-xl border-2 font-bold text-sm transition-all flex items-center justify-between group ${deliveryOption === "schedule"
+                ? "border-[#facd01] bg-yellow-50 text-gray-900"
+                : "border-gray-100 bg-white text-gray-400"
+                }`}
             >
-              Schedule
-              <p className="text-[10px] font-medium opacity-80 mt-0.5">
-                Select time
-              </p>
+              <div className="flex flex-col items-start">
+                <span>Schedule</span>
+                <span className="text-[10px] font-medium opacity-60">
+                  Select time
+                </span>
+              </div>
+              <div
+                className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${deliveryOption === "schedule"
+                  ? "border-[#facd01] bg-[#facd01]"
+                  : "border-gray-300"
+                  }`}
+              >
+                {deliveryOption === "schedule" && (
+                  <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                )}
+              </div>
             </button>
           </div>
+
+          {/* Schedule Picker */}
+          <AnimatePresence>
+            {deliveryOption === "schedule" && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="pt-4 mt-2 border-t border-dashed border-gray-100">
+                  {/* Date Selection with Calendar Icon */}
+                  <div className="mb-4">
+                    <p className="text-xs font-bold text-gray-500 mb-2">
+                      Select Date
+                    </p>
+                    <div className="relative">
+                      <button
+                        className="w-full flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm hover:border-[#facd01] transition-colors"
+                        onClick={() => document.getElementById("date-picker").showPicker()}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="bg-yellow-50 p-2 rounded-lg text-yellow-700">
+                            <CalendarDays size={18} />
+                          </div>
+                          <div className="flex flex-col items-start">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Date</span>
+                            <span className="text-sm font-bold text-gray-900">
+                              {scheduledDate.toLocaleDateString("en-US", {
+                                weekday: "long",
+                                month: "short",
+                                day: "numeric",
+                              })}
+                            </span>
+                          </div>
+                        </div>
+                        <ChevronRight size={16} className="text-gray-400" />
+                      </button>
+                      <input
+                        id="date-picker"
+                        type="date"
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-[-1]"
+                        value={
+                          !isNaN(scheduledDate.getTime())
+                            ? scheduledDate.toISOString().split("T")[0]
+                            : ""
+                        }
+                        min={new Date().toISOString().split("T")[0]}
+                        onChange={(e) => {
+                          const date = new Date(e.target.value);
+                          if (!isNaN(date.getTime())) {
+                            setScheduledDate(date);
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Time Selection */}
+                  <div>
+                    <p className="text-xs font-bold text-gray-500 mb-2">
+                      Select Time Slot
+                    </p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        "09:00 AM - 11:00 AM",
+                        "11:00 AM - 01:00 PM",
+                        "02:00 PM - 04:00 PM",
+                        "04:00 PM - 06:00 PM",
+                        "06:00 PM - 08:00 PM",
+                      ].map((slot) => (
+                        <button
+                          key={slot}
+                          onClick={() => setScheduledTime(slot)}
+                          className={`p-2 rounded-lg border text-[10px] font-bold transition-all ${scheduledTime === slot
+                            ? "border-[#facd01] bg-yellow-50 text-gray-900"
+                            : "border-gray-100 bg-white text-gray-600 hover:border-orange-200"
+                            }`}
+                        >
+                          {slot.replace(" - ", "\nto\n")}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
@@ -206,11 +321,10 @@ export default function GroceryCheckoutPage() {
           <div className="space-y-2 mt-3">
             <button
               onClick={() => setPaymentMethod("card")}
-              className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all ${
-                paymentMethod === "card"
-                  ? "border-[#facd01] bg-yellow-50/50"
-                  : "border-gray-100 bg-white"
-              }`}
+              className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all ${paymentMethod === "card"
+                ? "border-[#facd01] bg-yellow-50/50"
+                : "border-gray-100 bg-white"
+                }`}
             >
               <div className="flex items-center gap-3">
                 <div
@@ -230,11 +344,10 @@ export default function GroceryCheckoutPage() {
             </button>
             <button
               onClick={() => setPaymentMethod("cash")}
-              className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all ${
-                paymentMethod === "cash"
-                  ? "border-[#facd01] bg-yellow-50/50"
-                  : "border-gray-100 bg-white"
-              }`}
+              className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all ${paymentMethod === "cash"
+                ? "border-[#facd01] bg-yellow-50/50"
+                : "border-gray-100 bg-white"
+                }`}
             >
               <div className="flex items-center gap-3">
                 <div

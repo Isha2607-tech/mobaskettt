@@ -209,11 +209,10 @@ export default function CheckoutPage() {
           <div className="space-y-2">
             <button
               onClick={() => setPaymentMethod("card")}
-              className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${
-                paymentMethod === "card"
+              className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${paymentMethod === "card"
                   ? "border-[#ff8100] bg-[#ff8100]/10"
                   : "border-gray-200 bg-white"
-              }`}
+                }`}
             >
               <CreditCard
                 className={`w-5 h-5 ${paymentMethod === "card" ? "text-[#ff8100]" : "text-gray-400"}`}
@@ -226,11 +225,10 @@ export default function CheckoutPage() {
             </button>
             <button
               onClick={() => setPaymentMethod("cash")}
-              className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${
-                paymentMethod === "cash"
+              className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${paymentMethod === "cash"
                   ? "border-[#ff8100] bg-[#ff8100]/10"
                   : "border-gray-200 bg-white"
-              }`}
+                }`}
             >
               <ShoppingBag
                 className={`w-5 h-5 ${paymentMethod === "cash" ? "text-[#ff8100]" : "text-gray-400"}`}

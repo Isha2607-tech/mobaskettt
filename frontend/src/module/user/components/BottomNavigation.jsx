@@ -30,69 +30,61 @@ export default function BottomNavigation() {
       <div className="flex items-center justify-between max-w-md mx-auto">
         {/* 1. Delivery Option (Active/Red) */}
         <Link
-          to={deliveryPath}
+          to="/home"
           className="flex flex-col items-center gap-1 cursor-pointer"
         >
-          <div className={isDelivery ? "text-red-500" : "text-gray-500"}>
+          <div className={isDelivery ? "text-[#BE2F2F]" : "text-gray-500"}>
             <Bike size={26} strokeWidth={2} />
           </div>
           <span
-            className={`text-xs font-bold ${isDelivery ? "text-red-500" : "text-gray-500 font-medium"}`}
+            className={`text-xs font-bold ${isDelivery ? "text-[#BE2F2F]" : "text-gray-500 font-medium"}`}
           >
             Delivery
           </span>
           {/* Active Line Indicator */}
           {isDelivery && (
-            <div className="h-0.5 w-full bg-red-500 mt-1 rounded-full"></div>
+            <div className="h-0.5 w-full bg-[#BE2F2F] mt-1 rounded-full"></div>
           )}
         </Link>
 
         {/* 2. Under ₹250 Option */}
         <Link
           to="/under-250"
-          className={`flex flex-col items-center gap-1 cursor-pointer ${isUnder250 ? "text-red-500" : "text-gray-500 hover:text-gray-700"}`}
+          className={`flex flex-col items-center gap-1 cursor-pointer ${isUnder250 ? "text-[#BE2F2F]" : "text-gray-500 hover:text-gray-700"}`}
         >
           <Tag size={24} strokeWidth={1.5} />
           <span
-            className={`text-xs ${isUnder250 ? "font-bold text-red-500" : "font-medium text-gray-500"}`}
+            className={`text-xs ${isUnder250 ? "font-bold text-[#BE2F2F]" : "font-medium text-gray-500"}`}
           >
             Under ₹250
           </span>
           {isUnder250 && (
-            <div className="h-0.5 w-full bg-red-500 mt-1 rounded-full"></div>
+            <div className="h-0.5 w-full bg-[#BE2F2F] mt-1 rounded-full"></div>
           )}
         </Link>
 
         {/* 3. Profile Option */}
         <Link
           to="/profile"
-          className={`flex flex-col items-center gap-1 cursor-pointer ${isProfile ? "text-red-500" : "text-gray-500 hover:text-gray-700"}`}
+          className={`flex flex-col items-center gap-1 cursor-pointer ${isProfile ? "text-[#BE2F2F]" : "text-gray-500 hover:text-gray-700"}`}
         >
           <User size={24} strokeWidth={1.5} />
           <span
-            className={`text-xs ${isProfile ? "font-bold text-red-500" : "font-medium text-gray-500"}`}
+            className={`text-xs ${isProfile ? "font-bold text-[#BE2F2F]" : "font-medium text-gray-500"}`}
           >
             Profile
           </span>
           {isProfile && (
-            <div className="h-0.5 w-full bg-red-500 mt-1 rounded-full"></div>
+            <div className="h-0.5 w-full bg-[#BE2F2F] mt-1 rounded-full"></div>
           )}
         </Link>
 
         {/* 4. MoBasket Button */}
         <Link to="/grocery" className="cursor-pointer">
-          <div className="relative overflow-hidden bg-green-600 text-white px-3 py-2 rounded-lg shadow-sm flex items-center gap-1 transition-transform active:scale-95 border border-green-700">
-            <span className="absolute left-0 w-[3px] h-full bg-[#006400] animate-border-left"></span>
-            <span className="absolute bottom-0 h-[3px] w-full bg-[#006400] animate-border-bottom"></span>
-            <span className="absolute right-0 w-[3px] h-full bg-[#006400] animate-border-right"></span>
-            <span className="absolute top-0 h-[3px] w-full bg-[#006400] animate-border-top"></span>
-            <span
-              className="font-extrabold text-sm italic tracking-wide"
-              style={{ fontFamily: "sans-serif" }}
-            >
+          <div className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-full shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2">
+            <span className="font-black italic text-lg tracking-tighter">
               MoGrocery
             </span>
-            <ArrowUpRight size={16} strokeWidth={3} />
           </div>
         </Link>
         <style>{`

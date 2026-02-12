@@ -352,10 +352,10 @@ export const restaurantAPI = {
     // If data is FormData, set appropriate headers
     const config = data instanceof FormData
       ? {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        }
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
       : {};
     return apiClient.post(API_ENDPOINTS.RESTAURANT.STAFF, data, config);
   },
@@ -648,7 +648,7 @@ export const deliveryAPI = {
   getDashboard: () => {
     return apiClient.get(API_ENDPOINTS.DELIVERY.DASHBOARD);
   },
-  
+
   // Wallet
   getWallet: () => {
     return apiClient.get(API_ENDPOINTS.DELIVERY.WALLET);
@@ -1116,7 +1116,7 @@ export const adminAPI = {
 
   updateBusinessSettings: (data, files = {}) => {
     const formData = new FormData();
-    
+
     // Add text fields
     Object.keys(data).forEach(key => {
       if (key !== 'logo' && key !== 'favicon') {

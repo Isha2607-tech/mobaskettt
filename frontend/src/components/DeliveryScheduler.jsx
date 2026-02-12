@@ -1,28 +1,63 @@
 import React, { useState, useEffect } from "react";
-import { Calendar, Clock, Truck } from "lucide-react";
+import { Calendar, Clock, Truck, ChevronDown } from "lucide-react";
 import {
   format,
   addDays,
   setHours,
   setMinutes,
   isAfter,
-  startOfHour,
+  addMinutes,
   addHours,
+  startOfHour,
 } from "date-fns";
 
 const DeliveryScheduler = ({ type = "food", onScheduleChange }) => {
-  const [deliveryType, setDeliveryType] = useState("now");
-  const [selectedDate, setSelectedDate] = useState("");
+  const [deliveryType, setDeliveryType] = useState("now"); // 'now' | 'scheduled'
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTimeSlot, setSelectedTimeSlot] = useState("");
   const [availableTimeSlots, setAvailableTimeSlots] = useState([]);
 
-  // Initialize default date (Today)
+  // Generate slots on mount or date change
   useEffect(() => {
-    const today = new Date();
-    setSelectedDate(format(today, "yyyy-MM-dd"));
-  }, []);
+    const slots = [];
+    const now = new Date();
+    const isToday =
+      format(selectedDate, "yyyy-MM-dd") === format(now, "yyyy-MM-dd");
 
-  // Sync state with parent
+    // Standard business hours: 8 AM to 10 PM
+    const startHour = 8;
+    const endHour = 22;
+
+    for (let i = startHour; i < endHour; i++) {
+      // Create slot start time for the selected date
+      let slotStart = setHours(setMinutes(new Date(selectedDate), 0), i);
+      let slotEnd = addHours(slotStart, 2); // 2-hour windows
+
+      // Validation
+      let isValid = true;
+      if (isToday) {
+        // Must be in the future
+        if (isAfter(now, slotStart)) {
+          isValid = false;
+        }
+        // For food, maybe add a buffer, e.g. 1 hour
+        if (type === 'food' && isAfter(addMinutes(now, 60), slotStart)) {
+          isValid = false;
+        }
+      }
+
+      if (isValid) {
+        slots.push({
+          label: `${format(slotStart, "hh:mm a")} to ${format(slotEnd, "hh:mm a")}`,
+          value: `${format(slotStart, "HH:mm")}-${format(slotEnd, "HH:mm")}`
+        });
+      }
+    }
+    setAvailableTimeSlots(slots);
+  }, [selectedDate, type]);
+
+
+  // Notify parent
   useEffect(() => {
     onScheduleChange({
       deliveryType,
@@ -31,176 +66,132 @@ const DeliveryScheduler = ({ type = "food", onScheduleChange }) => {
     });
   }, [deliveryType, selectedDate, selectedTimeSlot, onScheduleChange]);
 
-  // Generate Available Time Slots
-  useEffect(() => {
-    if (!selectedDate || deliveryType !== "scheduled") return;
-
-    const generateSlots = () => {
-      const slots = [];
-      const now = new Date();
-      const isToday = selectedDate === format(now, "yyyy-MM-dd");
-
-      // Start generating slots from 8 AM to 10 PM (example business hours)
-      // or 24 hours if needed. Let's do 8 AM - 10 PM for realism.
-      const startHour = 8;
-      const endHour = 22;
-
-      for (let i = startHour; i < endHour; i++) {
-        const slotStart = setMinutes(setHours(new Date(selectedDate), i), 0);
-        const slotEnd = addHours(slotStart, 1);
-
-        // Validation Logic
-        let isValid = true;
-
-        if (isToday) {
-          // Food: Must be at least 60 mins from now
-          if (type === "food") {
-            if (isAfter(addMinutes(now, 60), slotStart)) {
-              isValid = false;
-            }
-          }
-          // Grocery: Must be in future (simple check)
-          else {
-            if (isAfter(now, slotStart)) {
-              isValid = false;
-            }
-          }
-        }
-
-        if (isValid) {
-          slots.push({
-            label: `${format(slotStart, "h:mm a")} - ${format(slotEnd, "h:mm a")}`,
-            value: `${format(slotStart, "HH:mm")}-${format(slotEnd, "HH:mm")}`,
-          });
-        }
-      }
-      setAvailableTimeSlots(slots);
-    };
-
-    generateSlots();
-  }, [selectedDate, deliveryType, type]);
-
-  // Helper to add minutes
-  const addMinutes = (date, minutes) => {
-    return new Date(date.getTime() + minutes * 60000);
-  };
-
-  // Handle Radio Change
-  const handleTypeChange = (value) => {
-    setDeliveryType(value);
-    // Reset validation/slots if switching back to 'now' is handled by effect
-  };
-
   return (
-    <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 mb-4">
-      <h3 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
-        <Truck className="w-4 h-4 text-[#ff8100]" />
+    <div className="bg-white rounded-xl p-4 shadow-sm border border-orange-50 mb-4">
+      <h3 className="text-base font-bold text-gray-900 mb-4 flex items-center gap-2">
+        <Truck className="w-5 h-5 text-[#ff8100]" />
         Delivery Options
       </h3>
 
-      {/* Radio Options */}
-      <div className="flex gap-4 mb-4">
-        <label
-          className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border cursor-pointer transition-all ${
-            deliveryType === "now"
-              ? "border-[#ff8100] bg-orange-50 text-[#ff8100]"
-              : "border-gray-200 text-gray-600 hover:bg-gray-50"
-          }`}
+      {/* Main Toggles */}
+      <div className="flex gap-4 mb-6">
+        <div
+          onClick={() => setDeliveryType("now")}
+          className={`flex-1 p-4 rounded-xl border relative cursor-pointer transition-all flex items-center justify-between ${deliveryType === "now"
+            ? "border-[#ff8100] bg-white shadow-sm ring-1 ring-[#ff8100]"
+            : "border-gray-200 bg-white text-gray-400 opacity-60 hover:opacity-100"
+            }`}
         >
-          <input
-            type="radio"
-            name="deliveryType"
-            value="now"
-            checked={deliveryType === "now"}
-            onChange={() => handleTypeChange("now")}
-            className="hidden"
-          />
-          <span className="text-sm font-semibold">Deliver Now</span>
-        </label>
+          <div>
+            <span
+              className={`block text-sm font-bold ${deliveryType === "now" ? "text-gray-900" : "text-gray-500"
+                }`}
+            >
+              Deliver Now
+            </span>
+            <span className="text-[10px] text-gray-400 font-medium">
+              8-12 mins
+            </span>
+          </div>
+          <div
+            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${deliveryType === "now" ? "border-[#ff8100]" : "border-gray-300"
+              }`}
+          >
+            {deliveryType === "now" && <div className="w-2.5 h-2.5 bg-[#ff8100] rounded-full" />}
+          </div>
+        </div>
 
-        <label
-          className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border cursor-pointer transition-all ${
-            deliveryType === "scheduled"
-              ? "border-[#ff8100] bg-orange-50 text-[#ff8100]"
-              : "border-gray-200 text-gray-600 hover:bg-gray-50"
-          }`}
+        <div
+          onClick={() => setDeliveryType("scheduled")}
+          className={`flex-1 p-4 rounded-xl border relative cursor-pointer transition-all flex items-center justify-between ${deliveryType === "scheduled"
+            ? "border-[#ff8100] bg-orange-50/10 shadow-sm ring-1 ring-[#ff8100]"
+            : "border-gray-200 bg-white text-gray-400 opacity-60 hover:opacity-100"
+            }`}
         >
-          <input
-            type="radio"
-            name="deliveryType"
-            value="scheduled"
-            checked={deliveryType === "scheduled"}
-            onChange={() => handleTypeChange("scheduled")}
-            className="hidden"
-          />
-          <span className="text-sm font-semibold">Schedule</span>
-        </label>
+          <div>
+            <span
+              className={`block text-sm font-bold ${deliveryType === "scheduled" ? "text-gray-900" : "text-gray-500"
+                }`}
+            >
+              Schedule
+            </span>
+            <span className="text-[10px] text-gray-400 font-medium">
+              Select time
+            </span>
+          </div>
+          <div
+            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${deliveryType === "scheduled" ? "border-[#ff8100]" : "border-gray-300"
+              }`}
+          >
+            {deliveryType === "scheduled" && <div className="w-2.5 h-2.5 bg-[#ff8100] rounded-full" />}
+          </div>
+        </div>
       </div>
 
-      {/* Schedule Selectors */}
+      {/* Schedule Options */}
       {deliveryType === "scheduled" && (
-        <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
-          {/* Date Selector */}
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
-              <Calendar className="w-3 h-3" /> Select Date
-            </label>
-            <div className="flex gap-2 overflow-x-auto pb-1 hide-scrollbar">
-              {/* Generate dates based on type */}
-              {[0, 1, 2].map((offset) => {
-                if (type === "food" && offset > 0) return null; // Food is same day only usually? Prompt says "allow same-day slots". Doesn't strictly forbid next day, but usually food is immediate. Let's assume Food = Today, Grocery = Today + Next Day.
-                if (type === "grocery" && offset > 1) return null; // Grocery: Same day and next day.
-
-                const date = addDays(new Date(), offset);
-                const dateStr = format(date, "yyyy-MM-dd");
-                const isSelected = selectedDate === dateStr;
-                const label =
-                  offset === 0
-                    ? "Today"
-                    : offset === 1
-                      ? "Tomorrow"
-                      : format(date, "EEE, MMM d");
-
-                return (
-                  <button
-                    key={offset}
-                    onClick={() => setSelectedDate(dateStr)}
-                    className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                      isSelected
-                        ? "bg-[#ff8100] text-white border-[#ff8100]"
-                        : "bg-white text-gray-700 border-gray-200 hover:border-[#ff8100]"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
+        <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+          {/* Date */}
+          <div className="mb-4">
+            <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5" /> Select Date
+            </p>
+            <div className="relative">
+              <button
+                className="w-full flex items-center justify-between bg-orange-50/50 border border-orange-200 text-orange-900 rounded-xl px-4 py-3 shadow-sm hover:border-[#ff8100] transition-colors"
+                onClick={() => document.getElementById("scheduler-date-picker").showPicker()}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="bg-[#ff8100] p-2 rounded-lg text-white">
+                    <Calendar size={18} />
+                  </div>
+                  <div className="flex flex-col items-start">
+                    <span className="text-[10px] font-bold text-orange-600 uppercase tracking-wider">Date</span>
+                    <span className="text-sm font-bold text-gray-900">
+                      {format(selectedDate, "EEE, MMM d")}
+                    </span>
+                  </div>
+                </div>
+                <ChevronDown size={16} className="text-orange-400" />
+              </button>
+              <input
+                id="scheduler-date-picker"
+                type="date"
+                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                value={
+                  !isNaN(selectedDate.getTime())
+                    ? format(selectedDate, "yyyy-MM-dd")
+                    : ""
+                }
+                min={format(new Date(), "yyyy-MM-dd")}
+                onChange={(e) => {
+                  const date = new Date(e.target.value);
+                  if (!isNaN(date.getTime())) {
+                    setSelectedDate(date);
+                  }
+                }}
+              />
             </div>
           </div>
 
-          {/* Time Slot Selector */}
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
-              <Clock className="w-3 h-3" /> Select Time Slot
-            </label>
-            <select
-              value={selectedTimeSlot}
-              onChange={(e) => setSelectedTimeSlot(e.target.value)}
-              className="w-full p-2.5 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-[#ff8100] focus:ring-1 focus:ring-[#ff8100]"
-            >
-              <option value="" disabled>
-                Choose a time slot
-              </option>
-              {availableTimeSlots.length > 0 ? (
-                availableTimeSlots.map((slot) => (
-                  <option key={slot.value} value={slot.value}>
-                    {slot.label}
-                  </option>
-                ))
-              ) : (
-                <option disabled>No slots available</option>
-              )}
-            </select>
+          {/* Time Slot */}
+          <div>
+            <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5" /> Select Time Slot
+            </p>
+            <div className="relative">
+              <select
+                value={selectedTimeSlot}
+                onChange={(e) => setSelectedTimeSlot(e.target.value)}
+                className="w-full appearance-none bg-white border border-gray-200 text-gray-900 text-sm rounded-xl p-3 shadow-sm focus:outline-none focus:border-[#ff8100] focus:ring-1 focus:ring-[#ff8100] font-medium cursor-pointer"
+              >
+                <option value="" disabled>Choose a time slot</option>
+                {availableTimeSlots.map((slot) => (
+                  <option key={slot.value} value={slot.value}>{slot.label}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            </div>
           </div>
         </div>
       )}

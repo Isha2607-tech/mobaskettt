@@ -205,11 +205,10 @@ function RestaurantImageCarousel({
                 e.stopPropagation();
                 setCurrentIndex(index);
               }}
-              className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
-                index === currentIndex
-                  ? "w-6 bg-white"
-                  : "w-1.5 bg-white/50 hover:bg-white/75"
-              }`}
+              className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${index === currentIndex
+                ? "w-6 bg-white"
+                : "w-1.5 bg-white/50 hover:bg-white/75"
+                }`}
               aria-label={`Go to image ${index + 1}`}
             />
           ))}
@@ -250,6 +249,28 @@ export default function Home() {
   const [searchParams] = useSearchParams();
   const query = searchParams.get("q") || "";
   const [heroSearch, setHeroSearch] = useState("");
+  const [isListening, setIsListening] = useState(false);
+
+  const startListening = () => {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.lang = 'en-IN';
+
+      recognition.onstart = () => setIsListening(true);
+      recognition.onend = () => setIsListening(false);
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setHeroSearch(transcript);
+      };
+
+      recognition.start();
+    } else {
+      alert("Voice search is not supported in this browser.");
+    }
+  };
   const { openSearch, closeSearch, searchValue, setSearchValue } =
     useSearchOverlay();
   const { openLocationSelector } = useLocationSelector();
@@ -820,9 +841,9 @@ export default function Home() {
             const a =
               Math.sin(dLat / 2) * Math.sin(dLat / 2) +
               Math.cos((lat1 * Math.PI) / 180) *
-                Math.cos((lat2 * Math.PI) / 180) *
-                Math.sin(dLng / 2) *
-                Math.sin(dLng / 2);
+              Math.cos((lat2 * Math.PI) / 180) *
+              Math.sin(dLng / 2) *
+              Math.sin(dLng / 2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
             return R * c; // Distance in kilometers
           };
@@ -846,13 +867,13 @@ export default function Home() {
               const restaurantLat =
                 restaurantLocation?.latitude ||
                 (restaurantLocation?.coordinates &&
-                Array.isArray(restaurantLocation.coordinates)
+                  Array.isArray(restaurantLocation.coordinates)
                   ? restaurantLocation.coordinates[1]
                   : null);
               const restaurantLng =
                 restaurantLocation?.longitude ||
                 (restaurantLocation?.coordinates &&
-                Array.isArray(restaurantLocation.coordinates)
+                  Array.isArray(restaurantLocation.coordinates)
                   ? restaurantLocation.coordinates[0]
                   : null);
 
@@ -910,8 +931,8 @@ export default function Home() {
                     : restaurant.profileImage?.url
                       ? [restaurant.profileImage.url]
                       : [
-                          "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&h=600&fit=crop",
-                        ];
+                        "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&h=600&fit=crop",
+                      ];
 
               // Keep single image for backward compatibility
               const image = allImages[0];
@@ -1011,9 +1032,9 @@ export default function Home() {
       const a =
         Math.sin(dLat / 2) * Math.sin(dLat / 2) +
         Math.cos((lat1 * Math.PI) / 180) *
-          Math.cos((lat2 * Math.PI) / 180) *
-          Math.sin(dLng / 2) *
-          Math.sin(dLng / 2);
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       return R * c; // Distance in kilometers
     };
@@ -1028,13 +1049,13 @@ export default function Home() {
       const restaurantLat =
         restaurant.location?.latitude ||
         (restaurant.location?.coordinates &&
-        Array.isArray(restaurant.location.coordinates)
+          Array.isArray(restaurant.location.coordinates)
           ? restaurant.location.coordinates[1]
           : null);
       const restaurantLng =
         restaurant.location?.longitude ||
         (restaurant.location?.coordinates &&
-        Array.isArray(restaurant.location.coordinates)
+          Array.isArray(restaurant.location.coordinates)
           ? restaurant.location.coordinates[0]
           : null);
 
@@ -1080,6 +1101,16 @@ export default function Home() {
   const filteredRestaurants = useMemo(() => {
     // Use only API data - no mock data fallback
     let filtered = [...restaurantsData];
+
+    // Search Filter
+    if (heroSearch.trim()) {
+      const query = heroSearch.toLowerCase().trim();
+      filtered = filtered.filter(
+        (r) =>
+          r.name.toLowerCase().includes(query) ||
+          r.cuisine?.toLowerCase().includes(query)
+      );
+    }
 
     // Apply filters
     if (activeFilters.has("price-under-200")) {
@@ -1423,7 +1454,7 @@ export default function Home() {
             </motion.div>
           </div>
         ) : (
-          <div className="absolute top-0 left-0 right-0 bottom-0 z-0 bg-gradient-to-br from-rose-400 to-rose-600" />
+          <div className="absolute top-0 left-0 right-0 bottom-0 z-0 bg-gradient-to-br from-[#BE2F2F]/70 to-[#BE2F2F]" />
         )}
 
         {/* Navbar */}
@@ -1435,7 +1466,7 @@ export default function Home() {
         >
           <PageNavbar
             textColor="white"
-            locationIconColor="#f43f5e"
+            locationIconColor="#BE2F2F"
             zIndex={20}
           />
         </motion.div>
@@ -1478,7 +1509,7 @@ export default function Home() {
                               setHeroSearch("");
                             }
                           }}
-                          className="pl-0 pr-2 h-8 sm:h-9 lg:h-11 w-full bg-white dark:bg-[#1a1a1a] border-0 text-sm sm:text-base lg:text-lg font-semibold text-gray-700 dark:text-white focus-visible:ring-0 focus-visible:ring-offset-0 rounded-full placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                          className="pl-0 pr-8 h-8 sm:h-9 lg:h-11 w-full bg-white dark:bg-[#1a1a1a] border-0 text-sm sm:text-base lg:text-lg font-semibold text-gray-700 dark:text-white focus-visible:ring-0 focus-visible:ring-offset-0 rounded-full placeholder:text-gray-400 dark:placeholder:text-gray-500"
                         />
                         {/* Animated placeholder - same animation as RestaurantDetails highlight offer */}
                         {!heroSearch && (
@@ -1497,15 +1528,24 @@ export default function Home() {
                             </AnimatePresence>
                           </div>
                         )}
+                        {/* Clear Button */}
+                        {heroSearch && (
+                          <button
+                            onClick={() => setHeroSearch("")}
+                            className="absolute right-0 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-gray-600 transition-colors z-10"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
                     <button
                       type="button"
-                      onClick={handleSearchFocus}
-                      className="flex-shrink-0 mr-2 sm:mr-3 lg:mr-4 p-1 lg:p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+                      onClick={startListening}
+                      className={`flex-shrink-0 mr-2 sm:mr-3 lg:mr-4 p-1 lg:p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors ${isListening ? "bg-red-50" : ""}`}
                     >
                       <Mic
-                        className="h-4 w-4 sm:h-4 sm:w-4 lg:h-5 lg:w-5 text-rose-500/80"
+                        className={`h-4 w-4 sm:h-4 sm:w-4 lg:h-5 lg:w-5 ${isListening ? "text-red-600 animate-pulse" : "text-[#BE2F2F]"}`}
                         strokeWidth={2.5}
                       />
                     </button>
@@ -1534,7 +1574,7 @@ export default function Home() {
                 <Switch
                   checked={vegMode}
                   onCheckedChange={handleVegModeChange}
-                  className="data-[state=checked]:bg-rose-500/80 data-[state=unchecked]:bg-gray-300 w-9 h-4 sm:w-10 sm:h-5 lg:w-12 lg:h-6 shadow-lg [&_[data-slot=switch-thumb]]:bg-white [&_[data-slot=switch-thumb]]:h-3 [&_[data-slot=switch-thumb]]:w-3 sm:[&_[data-slot=switch-thumb]]:h-4 sm:[&_[data-slot=switch-thumb]]:w-4 lg:[&_[data-slot=switch-thumb]]:h-5 lg:[&_[data-slot=switch-thumb]]:w-5 [&_[data-slot=switch-thumb]]:data-[state=checked]:translate-x-5 sm:[&_[data-slot=switch-thumb]]:data-[state=checked]:translate-x-5 lg:[&_[data-slot=switch-thumb]]:data-[state=checked]:translate-x-6 [&_[data-slot=switch-thumb]]:data-[state=unchecked]:translate-x-0"
+                  className="data-[state=checked]:bg-[#BE2F2F] data-[state=unchecked]:bg-gray-300 w-9 h-4 sm:w-10 sm:h-5 lg:w-12 lg:h-6 shadow-lg [&_[data-slot=switch-thumb]]:bg-white [&_[data-slot=switch-thumb]]:h-3 [&_[data-slot=switch-thumb]]:w-3 sm:[&_[data-slot=switch-thumb]]:h-4 sm:[&_[data-slot=switch-thumb]]:w-4 lg:[&_[data-slot=switch-thumb]]:h-5 lg:[&_[data-slot=switch-thumb]]:w-5 [&_[data-slot=switch-thumb]]:data-[state=checked]:translate-x-5 sm:[&_[data-slot=switch-thumb]]:data-[state=checked]:translate-x-5 lg:[&_[data-slot=switch-thumb]]:data-[state=checked]:translate-x-6 [&_[data-slot=switch-thumb]]:data-[state=unchecked]:translate-x-0"
                 />
               </motion.div>
             </motion.div>
@@ -1595,47 +1635,50 @@ export default function Home() {
               </div>
             ) : realCategories.length > 0 ? (
               <>
-                {/* Show only first 10 categories */}
-                {realCategories.slice(0, 10).map((category, index) => (
-                  <motion.div
-                    key={`real-cat-${category.id || category.slug || index}`}
-                    className="flex-shrink-0"
-                    initial={{ opacity: 0, y: 20, scale: 0.9 }}
-                    whileInView={{ opacity: 1, y: 0, scale: 1 }}
-                    viewport={{ once: true }}
-                    transition={{
-                      duration: 0.4,
-                      delay: index * 0.05,
-                      type: "spring",
-                      stiffness: 100,
-                    }}
-                    whileHover={{ scale: 1.1, y: -5 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    <Link
-                      to={`/user/category/${category.slug || category.name.toLowerCase().replace(/\s+/g, "-")}`}
+                {/* Show only first 10 categories, filtered by search */}
+                {realCategories
+                  .filter(cat => heroSearch ? cat.label?.toLowerCase().includes(heroSearch.toLowerCase()) : true)
+                  .slice(0, 10)
+                  .map((category, index) => (
+                    <motion.div
+                      key={`real-cat-${category.id || category.slug || index}`}
+                      className="flex-shrink-0"
+                      initial={{ opacity: 0, y: 20, scale: 0.9 }}
+                      whileInView={{ opacity: 1, y: 0, scale: 1 }}
+                      viewport={{ once: true }}
+                      transition={{
+                        duration: 0.4,
+                        delay: index * 0.05,
+                        type: "spring",
+                        stiffness: 100,
+                      }}
+                      whileHover={{ scale: 1.1, y: -5 }}
+                      whileTap={{ scale: 0.95 }}
                     >
-                      <div className="flex flex-col items-center gap-2 w-[62px] sm:w-24 md:w-28">
-                        <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all">
-                          <OptimizedImage
-                            src={category.image}
-                            alt={category.name}
-                            className="w-full h-full bg-white rounded-full"
-                            sizes="(max-width: 640px) 56px, (max-width: 768px) 80px, 96px"
-                            objectFit="cover"
-                            placeholder="blur"
-                            onError={() => {}}
-                          />
+                      <Link
+                        to={`/user/category/${category.slug || category.name.toLowerCase().replace(/\s+/g, "-")}`}
+                      >
+                        <div className="flex flex-col items-center gap-2 w-[62px] sm:w-24 md:w-28">
+                          <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all">
+                            <OptimizedImage
+                              src={category.image}
+                              alt={category.name}
+                              className="w-full h-full bg-white rounded-full"
+                              sizes="(max-width: 640px) 56px, (max-width: 768px) 80px, 96px"
+                              objectFit="cover"
+                              placeholder="blur"
+                              onError={() => { }}
+                            />
+                          </div>
+                          <span className="text-xs sm:text-sm md:text-base font-semibold text-gray-800 dark:text-gray-200 text-center">
+                            {category.name.length > 7
+                              ? `${category.name.slice(0, 7)}...`
+                              : category.name}
+                          </span>
                         </div>
-                        <span className="text-xs sm:text-sm md:text-base font-semibold text-gray-800 dark:text-gray-200 text-center">
-                          {category.name.length > 7
-                            ? `${category.name.slice(0, 7)}...`
-                            : category.name}
-                        </span>
-                      </div>
-                    </Link>
-                  </motion.div>
-                ))}
+                      </Link>
+                    </motion.div>
+                  ))}
                 {/* See All button - show if there are more than 10 categories */}
                 {realCategories.length > 10 && (
                   <motion.div
@@ -1649,9 +1692,9 @@ export default function Home() {
                     onClick={() => setShowAllCategoriesModal(true)}
                   >
                     <div className="flex flex-col items-center gap-2 w-[62px] sm:w-24 md:w-28">
-                      <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all bg-gradient-to-br from-pink-100 to-pink-200 dark:from-pink-900 dark:to-pink-800 flex items-center justify-center">
+                      <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all bg-[#BE2F2F]/10 flex items-center justify-center">
                         <div className="flex items-center justify-center w-full h-full">
-                          <UtensilsCrossed className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-pink-600 dark:text-pink-300" />
+                          <UtensilsCrossed className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-[#BE2F2F]" />
                         </div>
                       </div>
                       <span className="text-xs sm:text-sm md:text-base font-semibold text-gray-800 dark:text-gray-200 text-center">
@@ -1692,7 +1735,7 @@ export default function Home() {
                             sizes="(max-width: 640px) 56px, (max-width: 768px) 80px, 96px"
                             objectFit="cover"
                             placeholder="blur"
-                            onError={() => {}}
+                            onError={() => { }}
                           />
                         </div>
                         <span className="text-xs sm:text-sm md:text-base font-semibold text-gray-800 dark:text-gray-200 text-center">
@@ -1717,9 +1760,9 @@ export default function Home() {
                     onClick={() => setShowAllCategoriesModal(true)}
                   >
                     <div className="flex flex-col items-center gap-2 w-[62px] sm:w-24 md:w-28">
-                      <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all bg-gradient-to-br from-pink-100 to-pink-200 dark:from-pink-900 dark:to-pink-800 flex items-center justify-center">
+                      <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all bg-[#BE2F2F]/10 flex items-center justify-center">
                         <div className="flex items-center justify-center w-full h-full">
-                          <UtensilsCrossed className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-pink-600 dark:text-pink-300" />
+                          <UtensilsCrossed className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-[#BE2F2F]" />
                         </div>
                       </div>
                       <span className="text-xs sm:text-sm md:text-base font-semibold text-gray-800 dark:text-gray-200 text-center">
@@ -1791,7 +1834,7 @@ export default function Home() {
                             sizes="(max-width: 640px) 56px, (max-width: 768px) 80px, 96px"
                             objectFit="cover"
                             placeholder="blur"
-                            onError={() => {}}
+                            onError={() => { }}
                           />
                         </div>
                         <span className="text-xs sm:text-sm md:text-base font-semibold text-gray-800 dark:text-gray-200 text-center line-clamp-1 w-full px-1">
@@ -1814,7 +1857,7 @@ export default function Home() {
                   onClick={() => navigate("/user/restaurants")}
                 >
                   <div className="flex flex-col items-center gap-2 w-[62px] sm:w-24 md:w-28">
-                    <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all bg-rose-500/80 flex items-center justify-center">
+                    <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all bg-[#BE2F2F] flex items-center justify-center">
                       <div className="flex items-center justify-center w-full h-full">
                         <Store className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-white" />
                       </div>
@@ -1898,11 +1941,10 @@ export default function Home() {
                         setIsLoadingFilterResults(false);
                       }, 500);
                     }}
-                    className={`h-7 sm:h-8 px-2 sm:px-3 rounded-md flex items-center gap-1.5 whitespace-nowrap flex-shrink-0 transition-all font-medium ${
-                      isActive
-                        ? "bg-rose-500/80 text-white border border-rose-500/80 hover:bg-rose-500/80/90"
-                        : "bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300"
-                    }`}
+                    className={`h-7 sm:h-8 px-2 sm:px-3 rounded-md flex items-center gap-1.5 whitespace-nowrap flex-shrink-0 transition-all font-medium ${isActive
+                      ? "bg-[#BE2F2F] text-white border border-[#BE2F2F] hover:bg-[#BE2F2F]/90"
+                      : "bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300"
+                      }`}
                   >
                     {Icon && (
                       <Icon
@@ -2046,7 +2088,7 @@ export default function Home() {
                             sizes="(max-width: 640px) 80px, (max-width: 768px) 96px, 112px"
                             objectFit="contain"
                             placeholder="blur"
-                            onError={() => {}}
+                            onError={() => { }}
                           />
                         </div>
                         <span className="text-sm sm:text-base font-semibold text-gray-700 dark:text-gray-300 text-center leading-tight">
@@ -2099,7 +2141,7 @@ export default function Home() {
                 >
                   <div className="flex flex-col items-center gap-3">
                     <Loader2
-                      className="h-8 w-8 text-rose-500/80 animate-spin"
+                      className="h-8 w-8 text-[#BE2F2F] animate-spin"
                       strokeWidth={2.5}
                     />
                     <span className="text-sm font-medium text-gray-700 dark:text-white">
@@ -2194,9 +2236,8 @@ export default function Home() {
                         className="h-full flex"
                       >
                         <Card
-                          className={`overflow-hidden gap-0 cursor-pointer border border-gray-100 dark:border-gray-800 group bg-white dark:bg-[#1a1a1a] transition-all duration-300 py-0 rounded-[24px] flex flex-col h-full w-full relative shadow-sm hover:shadow-md ${
-                            isOutOfService ? "grayscale opacity-75" : ""
-                          }`}
+                          className={`overflow-hidden gap-0 cursor-pointer border border-gray-100 dark:border-gray-800 group bg-white dark:bg-[#1a1a1a] transition-all duration-300 py-0 rounded-[24px] flex flex-col h-full w-full relative shadow-sm hover:shadow-md ${isOutOfService ? "grayscale opacity-75" : ""
+                            }`}
                         >
                           {/* Image Section */}
                           <div className="relative aspect-[16/9] overflow-hidden rounded-t-[24px]">
@@ -2234,16 +2275,14 @@ export default function Home() {
                                 variant="ghost"
                                 size="icon"
                                 onClick={handleToggleFavorite}
-                                className={`h-8 w-8 rounded-full border flex items-center justify-center transition-all duration-300 ${
-                                  favorite
-                                    ? "border-rose-500/80 bg-rose-50 text-rose-500/80"
-                                    : "border-white bg-white/90 text-gray-600 hover:bg-white"
-                                }`}
+                                className={`h-8 w-8 rounded-full border flex items-center justify-center transition-all duration-300 ${favorite
+                                  ? "border-[#BE2F2F] bg-[#BE2F2F]/10 text-[#BE2F2F]"
+                                  : "border-white bg-white/90 text-gray-600 hover:bg-white"
+                                  }`}
                               >
                                 <Bookmark
-                                  className={`h-4 w-4 transition-all duration-300 ${
-                                    favorite ? "fill-rose-500/80" : ""
-                                  }`}
+                                  className={`h-4 w-4 transition-all duration-300 ${favorite ? "fill-[#BE2F2F]" : ""
+                                    }`}
                                 />
                               </Button>
                             </motion.div>
@@ -2374,11 +2413,10 @@ export default function Home() {
                             });
                           }
                         }}
-                        className={`flex flex-col items-center gap-1 py-4 px-2 text-center relative transition-colors ${
-                          isActive
-                            ? "bg-white dark:bg-[#1a1a1a] text-rose-500/80"
-                            : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-                        }`}
+                        className={`flex flex-col items-center gap-1 py-4 px-2 text-center relative transition-colors ${isActive
+                          ? "bg-white dark:bg-[#1a1a1a] text-rose-500/80"
+                          : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                          }`}
                       >
                         {isActive && (
                           <div className="absolute left-0 top-0 bottom-0 w-1 bg-rose-500/80 rounded-r" />
@@ -2417,11 +2455,10 @@ export default function Home() {
                         <button
                           key={option.id || "relevance"}
                           onClick={() => setSortBy(option.id)}
-                          className={`px-4 py-3 rounded-xl border text-left transition-colors ${
-                            sortBy === option.id
-                              ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                              : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
-                          }`}
+                          className={`px-4 py-3 rounded-xl border text-left transition-colors ${sortBy === option.id
+                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
+                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                            }`}
                         >
                           <span
                             className={`text-sm font-medium ${sortBy === option.id ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
@@ -2445,11 +2482,10 @@ export default function Home() {
                     <div className="grid grid-cols-2 gap-3">
                       <button
                         onClick={() => toggleFilter("delivery-under-30")}
-                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${
-                          activeFilters.has("delivery-under-30")
-                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
-                        }`}
+                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${activeFilters.has("delivery-under-30")
+                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          }`}
                       >
                         <Timer
                           className={`h-6 w-6 ${activeFilters.has("delivery-under-30") ? "text-rose-500/80" : "text-gray-600 dark:text-gray-400"}`}
@@ -2463,11 +2499,10 @@ export default function Home() {
                       </button>
                       <button
                         onClick={() => toggleFilter("delivery-under-45")}
-                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${
-                          activeFilters.has("delivery-under-45")
-                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
-                        }`}
+                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${activeFilters.has("delivery-under-45")
+                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          }`}
                       >
                         <Timer
                           className={`h-6 w-6 ${activeFilters.has("delivery-under-45") ? "text-rose-500/80" : "text-gray-600 dark:text-gray-400"}`}
@@ -2494,11 +2529,10 @@ export default function Home() {
                     <div className="grid grid-cols-2 gap-3">
                       <button
                         onClick={() => toggleFilter("rating-35-plus")}
-                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${
-                          activeFilters.has("rating-35-plus")
-                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
-                        }`}
+                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${activeFilters.has("rating-35-plus")
+                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          }`}
                       >
                         <Star
                           className={`h-6 w-6 ${activeFilters.has("rating-35-plus") ? "text-yellow-500 fill-yellow-500" : "text-gray-400 dark:text-gray-500"}`}
@@ -2511,11 +2545,10 @@ export default function Home() {
                       </button>
                       <button
                         onClick={() => toggleFilter("rating-4-plus")}
-                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${
-                          activeFilters.has("rating-4-plus")
-                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
-                        }`}
+                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${activeFilters.has("rating-4-plus")
+                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          }`}
                       >
                         <Star
                           className={`h-6 w-6 ${activeFilters.has("rating-4-plus") ? "text-yellow-500 fill-yellow-500" : "text-gray-400 dark:text-gray-500"}`}
@@ -2528,11 +2561,10 @@ export default function Home() {
                       </button>
                       <button
                         onClick={() => toggleFilter("rating-45-plus")}
-                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${
-                          activeFilters.has("rating-45-plus")
-                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
-                        }`}
+                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${activeFilters.has("rating-45-plus")
+                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          }`}
                       >
                         <Star
                           className={`h-6 w-6 ${activeFilters.has("rating-45-plus") ? "text-yellow-500 fill-yellow-500" : "text-gray-400 dark:text-gray-500"}`}
@@ -2558,11 +2590,10 @@ export default function Home() {
                     <div className="grid grid-cols-2 gap-3">
                       <button
                         onClick={() => toggleFilter("distance-under-1km")}
-                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${
-                          activeFilters.has("distance-under-1km")
-                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
-                        }`}
+                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${activeFilters.has("distance-under-1km")
+                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          }`}
                       >
                         <MapPin
                           className={`h-6 w-6 ${activeFilters.has("distance-under-1km") ? "text-rose-500/80" : "text-gray-600 dark:text-gray-400"}`}
@@ -2576,11 +2607,10 @@ export default function Home() {
                       </button>
                       <button
                         onClick={() => toggleFilter("distance-under-2km")}
-                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${
-                          activeFilters.has("distance-under-2km")
-                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
-                        }`}
+                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${activeFilters.has("distance-under-2km")
+                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          }`}
                       >
                         <MapPin
                           className={`h-6 w-6 ${activeFilters.has("distance-under-2km") ? "text-rose-500/80" : "text-gray-600 dark:text-gray-400"}`}
@@ -2607,11 +2637,10 @@ export default function Home() {
                     <div className="flex flex-col gap-3">
                       <button
                         onClick={() => toggleFilter("price-under-200")}
-                        className={`px-4 py-3 rounded-xl border text-left transition-colors ${
-                          activeFilters.has("price-under-200")
-                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
-                        }`}
+                        className={`px-4 py-3 rounded-xl border text-left transition-colors ${activeFilters.has("price-under-200")
+                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          }`}
                       >
                         <span
                           className={`text-sm font-medium ${activeFilters.has("price-under-200") ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
@@ -2621,11 +2650,10 @@ export default function Home() {
                       </button>
                       <button
                         onClick={() => toggleFilter("price-under-500")}
-                        className={`px-4 py-3 rounded-xl border text-left transition-colors ${
-                          activeFilters.has("price-under-500")
-                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
-                        }`}
+                        className={`px-4 py-3 rounded-xl border text-left transition-colors ${activeFilters.has("price-under-500")
+                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          }`}
                       >
                         <span
                           className={`text-sm font-medium ${activeFilters.has("price-under-500") ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
@@ -2666,11 +2694,10 @@ export default function Home() {
                               selectedCuisine === cuisine ? null : cuisine,
                             )
                           }
-                          className={`px-4 py-3 rounded-xl border text-center transition-colors ${
-                            selectedCuisine === cuisine
-                              ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                              : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
-                          }`}
+                          className={`px-4 py-3 rounded-xl border text-center transition-colors ${selectedCuisine === cuisine
+                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
+                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                            }`}
                         >
                           <span
                             className={`text-sm font-medium ${selectedCuisine === cuisine ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
@@ -2695,11 +2722,10 @@ export default function Home() {
                       <div className="flex flex-col gap-3">
                         <button
                           onClick={() => toggleFilter("top-rated")}
-                          className={`px-4 py-3 rounded-xl border text-left transition-colors ${
-                            activeFilters.has("top-rated")
-                              ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                              : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
-                          }`}
+                          className={`px-4 py-3 rounded-xl border text-left transition-colors ${activeFilters.has("top-rated")
+                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
+                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                            }`}
                         >
                           <span
                             className={`text-sm font-medium ${activeFilters.has("top-rated") ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
@@ -2709,11 +2735,10 @@ export default function Home() {
                         </button>
                         <button
                           onClick={() => toggleFilter("trusted")}
-                          className={`px-4 py-3 rounded-xl border text-left transition-colors ${
-                            activeFilters.has("trusted")
-                              ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                              : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
-                          }`}
+                          className={`px-4 py-3 rounded-xl border text-left transition-colors ${activeFilters.has("trusted")
+                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
+                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                            }`}
                         >
                           <span
                             className={`text-sm font-medium ${activeFilters.has("trusted") ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
@@ -2738,11 +2763,10 @@ export default function Home() {
                       <div className="flex flex-col gap-3">
                         <button
                           onClick={() => toggleFilter("has-offers")}
-                          className={`px-4 py-3 rounded-xl border text-left transition-colors ${
-                            activeFilters.has("has-offers")
-                              ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                              : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
-                          }`}
+                          className={`px-4 py-3 rounded-xl border text-left transition-colors ${activeFilters.has("has-offers")
+                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
+                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                            }`}
                         >
                           <span
                             className={`text-sm font-medium ${activeFilters.has("has-offers") ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
@@ -2788,11 +2812,10 @@ export default function Home() {
                       setIsLoadingFilterResults(false);
                     }
                   }}
-                  className={`flex-1 py-3 font-semibold rounded-xl transition-colors ${
-                    activeFilters.size > 0 || sortBy || selectedCuisine
-                      ? "bg-rose-500/80 text-white hover:bg-rose-600"
-                      : "bg-gray-200 text-gray-500"
-                  }`}
+                  className={`flex-1 py-3 font-semibold rounded-xl transition-colors ${activeFilters.size > 0 || sortBy || selectedCuisine
+                    ? "bg-rose-500/80 text-white hover:bg-rose-600"
+                    : "bg-gray-200 text-gray-500"
+                    }`}
                   disabled={isLoadingFilterResults}
                 >
                   {isLoadingFilterResults
@@ -2874,11 +2897,10 @@ export default function Home() {
                       className="sr-only"
                     />
                     <div
-                      className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${
-                        vegModeOption === "all"
-                          ? "border-rose-500/80 dark:border-rose-500/80 bg-rose-500/80 dark:bg-rose-500/80"
-                          : "border-gray-300 dark:border-gray-600 bg-white dark:bg-[#2a2a2a]"
-                      }`}
+                      className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${vegModeOption === "all"
+                        ? "border-rose-500/80 dark:border-rose-500/80 bg-rose-500/80 dark:bg-rose-500/80"
+                        : "border-gray-300 dark:border-gray-600 bg-white dark:bg-[#2a2a2a]"
+                        }`}
                     >
                       {vegModeOption === "all" && (
                         <div className="w-1.5 h-1.5 rounded-full bg-white dark:bg-white" />
@@ -2905,11 +2927,10 @@ export default function Home() {
                       className="sr-only"
                     />
                     <div
-                      className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${
-                        vegModeOption === "pure-veg"
-                          ? "border-green-600 dark:border-green-500 bg-green-600 dark:bg-green-500"
-                          : "border-gray-300 dark:border-gray-600 bg-white dark:bg-[#2a2a2a]"
-                      }`}
+                      className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${vegModeOption === "pure-veg"
+                        ? "border-green-600 dark:border-green-500 bg-green-600 dark:bg-green-500"
+                        : "border-gray-300 dark:border-gray-600 bg-white dark:bg-[#2a2a2a]"
+                        }`}
                     >
                       {vegModeOption === "pure-veg" && (
                         <div className="w-1.5 h-1.5 rounded-full bg-white dark:bg-white" />
@@ -3026,7 +3047,7 @@ export default function Home() {
                         setPrevVegMode(false); // Set to false to match current state (veg mode is OFF)
                       }, 2000);
                     }}
-                    className="w-full bg-transparent text-rose-500/80 font-normal py-1 text-normal rounded-xl hover:bg-rose-50 transition-colors text-base"
+                    className="w-full bg-transparent text-[#BE2F2F] font-normal py-1 text-normal rounded-xl hover:bg-[#BE2F2F]/10 transition-colors text-base"
                   >
                     Switch off
                   </button>
@@ -3100,15 +3121,15 @@ export default function Home() {
                     const categoryData =
                       realCategories.length > 0
                         ? {
-                            name: category.name,
-                            image: category.image,
-                            slug: category.slug,
-                          }
+                          name: category.name,
+                          image: category.image,
+                          slug: category.slug,
+                        }
                         : {
-                            name: category.label,
-                            image: category.imageUrl,
-                            slug: category.slug,
-                          };
+                          name: category.label,
+                          image: category.imageUrl,
+                          slug: category.slug,
+                        };
                     const prefix =
                       realCategories.length > 0
                         ? "modal-real-cat"
@@ -3141,7 +3162,7 @@ export default function Home() {
                                 sizes="(max-width: 640px) 80px, (max-width: 768px) 96px, 112px"
                                 objectFit="cover"
                                 placeholder="blur"
-                                onError={() => {}}
+                                onError={() => { }}
                               />
                             </div>
                             <span className="text-xs sm:text-sm font-medium text-gray-800 dark:text-gray-200 text-center leading-tight px-1 break-words w-full min-w-0">
@@ -3365,7 +3386,7 @@ export default function Home() {
                       ease: "linear",
                     },
                   }}
-                  className="absolute w-16 h-16 border-[4px] border-transparent border-t-pink-500 dark:border-t-pink-400 border-r-pink-500 dark:border-r-pink-400 rounded-full"
+                  className="absolute w-16 h-16 border-[4px] border-transparent border-t-[#BE2F2F] border-r-[#BE2F2F] rounded-full"
                 />
 
                 {/* Inner Circle - Spins Counter-clockwise */}
@@ -3378,7 +3399,7 @@ export default function Home() {
                       ease: "linear",
                     },
                   }}
-                  className="absolute w-12 h-12 border-[4px] border-transparent border-r-pink-500 dark:border-r-pink-400 rounded-full"
+                  className="absolute w-12 h-12 border-[4px] border-transparent border-r-[#BE2F2F] rounded-full"
                 />
               </motion.div>
 
@@ -3482,8 +3503,8 @@ export default function Home() {
                         // Don't close modal on click, let checkbox handle it
                       }}
                     >
-                      <div className="h-12 w-12 rounded-lg bg-pink-100 flex items-center justify-center flex-shrink-0">
-                        <Bookmark className="h-6 w-6 text-rose-500/80 fill-rose-500/80" />
+                      <div className="h-12 w-12 rounded-lg bg-[#BE2F2F]/10 flex items-center justify-center flex-shrink-0">
+                        <Bookmark className="h-6 w-6 text-[#BE2F2F] fill-[#BE2F2F]" />
                       </div>
                       <div className="flex-1 text-left">
                         <div className="flex items-center justify-between">
@@ -3501,12 +3522,12 @@ export default function Home() {
                                     setShowManageCollections(false);
                                   }
                                 }}
-                                className="h-5 w-5 rounded border-2 border-rose-500/80 data-[state=checked]:bg-rose-500/80 data-[state=checked]:border-rose-500/80"
+                                className="h-5 w-5 rounded border-2 border-[#BE2F2F] data-[state=checked]:bg-[#BE2F2F] data-[state=checked]:border-[#BE2F2F]"
                               />
                             </div>
                           )}
                           {!selectedRestaurantSlug && (
-                            <div className="h-5 w-5 rounded border-2 border-rose-500/80 bg-rose-500/80 flex items-center justify-center">
+                            <div className="h-5 w-5 rounded border-2 border-[#BE2F2F] bg-[#BE2F2F] flex items-center justify-center">
                               <Check className="h-3 w-3 text-white" />
                             </div>
                           )}
@@ -3523,8 +3544,8 @@ export default function Home() {
                       className="w-full flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg transition-colors"
                       onClick={() => setShowManageCollections(false)}
                     >
-                      <div className="h-12 w-12 rounded-lg bg-pink-100 flex items-center justify-center flex-shrink-0">
-                        <Plus className="h-6 w-6 text-rose-500/80" />
+                      <div className="h-12 w-12 rounded-lg bg-[#BE2F2F]/10 flex items-center justify-center flex-shrink-0">
+                        <Plus className="h-6 w-6 text-[#BE2F2F]" />
                       </div>
                       <div className="flex-1 text-left">
                         <span className="text-base font-medium text-gray-900">

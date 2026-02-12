@@ -394,8 +394,8 @@ export function CategoryFoodsContent({
     selectedCategory === "all"
       ? products
       : products.filter(
-          (p) => p.category === selectedCategory || selectedCategory === "all",
-        );
+        (p) => p.category === selectedCategory || selectedCategory === "all",
+      );
 
   return (
     <div
@@ -433,49 +433,48 @@ export function CategoryFoodsContent({
           )}
         </div>
 
-        {/* Main Content Area: Sidebar + Grid */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* Left Sidebar */}
-          <div className="w-[23%] bg-white h-full overflow-y-auto pb-20 shadow-[2px_0_5px_rgba(0,0,0,0.02)] no-scrollbar z-10">
+        {/* Main Content Area: Vertical Layout (Horizontal Menu + Grid) */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Horizontal Top Menu */}
+          <div className="w-full bg-white overflow-x-auto no-scrollbar z-10 flex items-center px-2 shadow-sm border-b border-gray-50 flex-shrink-0">
             {sidebarCategories.map((cat) => (
               <div
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`relative flex flex-col items-center gap-1 py-4 px-1 cursor-pointer transition-all ${
-                  selectedCategory === cat.id ? "bg-[#fefce8]" : "bg-white"
-                }`}
+                className={`relative flex flex-col items-center justify-center gap-1.5 py-3 px-1 cursor-pointer transition-all min-w-[76px] flex-shrink-0 ${selectedCategory === cat.id ? "bg-transparent" : "bg-white"
+                  }`}
               >
-                {/* Yellow Indicator Bar */}
-                {selectedCategory === cat.id && (
-                  <div className="absolute right-0 top-0 bottom-0 w-1 bg-[#facd01] rounded-l-lg"></div>
-                )}
-
                 {/* Icon Container */}
                 <div
-                  className={`w-16 h-16 rounded-full flex items-center justify-center ${
-                    selectedCategory === cat.id ? "bg-[#fef3c7]" : "bg-slate-50"
-                  } ${cat.id === "fresh-fruit" ? "p-0.5" : "p-1.5"}`}
+                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 ${selectedCategory === cat.id
+                    ? "bg-[#fef3c7] scale-105 border-2 border-[#facd01]"
+                    : "bg-slate-50 border border-transparent"
+                    } ${cat.id === "fresh-fruit" ? "p-0.5" : "p-1.5"}`}
                 >
                   <img
                     src={cat.icon}
                     alt={cat.name}
-                    className="w-full h-full object-contain drop-shadow-[0_4px_4px_rgba(0,0,0,0.15)]"
+                    className="w-full h-full object-contain drop-shadow-sm"
                     onError={(e) =>
-                      (e.target.src =
-                        "https://cdn-icons-png.flaticon.com/512/2909/2909808.png")
+                    (e.target.src =
+                      "https://cdn-icons-png.flaticon.com/512/2909/2909808.png")
                     }
                   />
                 </div>
 
                 <span
-                  className={`text-[9px] text-center leading-tight px-1 font-bold ${
-                    selectedCategory === cat.id
-                      ? "text-slate-900"
-                      : "text-slate-500"
-                  } md:text-xs`}
+                  className={`text-[10px] text-center leading-tight px-0.5 font-bold line-clamp-2 max-w-[70px] ${selectedCategory === cat.id
+                    ? "text-slate-900"
+                    : "text-slate-500"
+                    }`}
                 >
                   {cat.name}
                 </span>
+
+                {/* Bottom Active Indicator */}
+                {selectedCategory === cat.id && (
+                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-1 bg-[#facd01] rounded-t-full"></div>
+                )}
               </div>
             ))}
           </div>
@@ -568,13 +567,7 @@ export function CategoryFoodsContent({
                   {/* Details Section */}
                   <div className="px-2 pb-2 flex-1 flex flex-col justify-between">
                     <div>
-                      {/* Time Badge */}
-                      <div className="flex items-center gap-1 mb-1">
-                        <Clock size={10} className="text-slate-400" />
-                        <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1 rounded">
-                          {item.time || "8 MINS"}
-                        </span>
-                      </div>
+
 
                       {/* Name */}
                       <h3 className="text-[12px] font-bold text-slate-900 leading-tight line-clamp-2 mb-1 min-h-[2.4em]">
@@ -598,14 +591,7 @@ export function CategoryFoodsContent({
                     </div>
 
                     {/* Recipe Link Footer */}
-                    <div className="mt-3 pt-2 border-t border-dashed border-slate-100">
-                      <div className="flex items-center justify-between text-yellow-700 bg-yellow-50 px-2 py-1 rounded-md">
-                        <span className="text-[9px] font-bold">
-                          See {item.recipeCount || 8} recipes
-                        </span>
-                        <ChevronRight size={10} strokeWidth={3} />
-                      </div>
-                    </div>
+
                   </div>
                 </div>
               ))}

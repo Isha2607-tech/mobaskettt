@@ -143,7 +143,7 @@ const PlansPage = () => {
   return (
     <div className="bg-gray-50 min-h-screen font-sans w-full relative pb-20 overflow-x-hidden">
       {/* Header with extended background for overlapping effect */}
-      <div className="bg-[#ffd600] pb-10 rounded-b-[2.5rem] shadow-sm">
+      <div className="bg-[#FACC15] pb-10 rounded-b-[2.5rem] shadow-sm">
         <div className="p-4 pt-6 flex justify-between items-start md:max-w-7xl md:mx-auto">
           <div>
             <h1 className="text-xl font-black text-slate-900 leading-none tracking-tight">
@@ -252,8 +252,11 @@ const PlansPage = () => {
           <span className="text-[10px] font-medium">Categories</span>
         </div>
 
-        <button className="mb-1" onClick={() => navigate("/")}>
-          <span className="text-red-600 font-black italic text-xl tracking-tighter">
+        <button
+          className="mb-1 bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"
+          onClick={() => navigate("/home")}
+        >
+          <span className="font-black italic text-lg tracking-tighter">
             Mofood
           </span>
         </button>

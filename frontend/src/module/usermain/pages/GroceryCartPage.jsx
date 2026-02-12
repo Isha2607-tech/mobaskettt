@@ -252,7 +252,7 @@ const GroceryCartPage = () => {
             className="flex items-center gap-1 text-gray-900 font-bold text-base"
             onClick={() => navigate("/grocery/checkout")}
           >
-            Buy Now <ChevronRight size={20} />
+            Order Now <ChevronRight size={20} />
           </button>
 
           {/* Subtle shine effect */}

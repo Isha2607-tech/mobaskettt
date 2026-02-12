@@ -45,7 +45,7 @@ export default function SignIn() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const isSignUp = searchParams.get("mode") === "signup"
-  
+
   const [authMethod, setAuthMethod] = useState("phone") // "phone" or "email"
   const [formData, setFormData] = useState({
     phone: "",
@@ -79,11 +79,11 @@ export default function SignIn() {
     redirectHandledRef.current = true
     setIsLoading(true)
     setApiError("")
-    
+
     try {
       const idToken = await user.getIdToken()
       console.log(`✅ Got ID token from ${source}, calling backend...`)
-      
+
       const response = await authAPI.firebaseGoogleLogin(idToken, "user")
       const data = response?.data?.data || {}
 
@@ -99,16 +99,16 @@ export default function SignIn() {
       if (accessToken && appUser) {
         setAuthData("user", accessToken, appUser)
         window.dispatchEvent(new Event("userAuthChanged"))
-        
+
         // Clear any URL hash or params
         const hasHash = window.location.hash.length > 0
         const hasQueryParams = window.location.search.length > 0
         if (hasHash || hasQueryParams) {
           window.history.replaceState({}, document.title, window.location.pathname)
         }
-        
+
         console.log(`✅ Navigating to user dashboard from ${source}...`)
-        navigate("/user", { replace: true })
+        navigate("/welcome", { replace: true })
       } else {
         console.error(`❌ Invalid backend response from ${source}`)
         redirectHandledRef.current = false
@@ -124,7 +124,7 @@ export default function SignIn() {
       })
       redirectHandledRef.current = false
       setIsLoading(false)
-      
+
       let errorMessage = "Failed to complete sign-in. Please try again."
       if (error?.response?.data?.message) {
         errorMessage = error.response.data.message
@@ -141,14 +141,14 @@ export default function SignIn() {
     if (redirectHandledRef.current) {
       return
     }
-    
+
     const handleRedirectResult = async () => {
       try {
         // Check if we're coming back from a redirect (URL might have hash or params)
         const currentUrl = window.location.href
         const hasHash = window.location.hash.length > 0
         const hasQueryParams = window.location.search.length > 0
-        
+
         console.log("🔍 Checking for redirect result...", {
           url: currentUrl,
           hasHash,
@@ -159,41 +159,41 @@ export default function SignIn() {
         })
 
         const { getRedirectResult, onAuthStateChanged } = await import("firebase/auth")
-        
+
         // Ensure Firebase is initialized
         ensureFirebaseInitialized()
-        
+
         // Check current user immediately (before getRedirectResult)
         const immediateUser = firebaseAuth.currentUser
         console.log("🔍 Immediate current user check:", {
           hasUser: !!immediateUser,
           userEmail: immediateUser?.email
         })
-        
+
         console.log("🔍 About to call getRedirectResult...", {
           firebaseAuthExists: !!firebaseAuth,
           firebaseAuthApp: firebaseAuth?.app?.name,
           currentUser: firebaseAuth?.currentUser?.email || "none"
         })
-        
+
         // First, try to get redirect result (non-blocking with timeout)
         // Note: getRedirectResult returns null if there's no redirect result (normal on first load)
         // We use a short timeout to avoid hanging, and rely on auth state listener as primary method
         let result = null
         try {
           console.log("🔍 Calling getRedirectResult now...")
-          
+
           // Use a short timeout (3 seconds) - if it hangs, auth state listener will handle it
           result = await Promise.race([
             getRedirectResult(firebaseAuth),
-            new Promise((resolve) => 
+            new Promise((resolve) =>
               setTimeout(() => {
                 console.log("ℹ️ getRedirectResult timeout (normal - no redirect result), relying on auth state listener")
                 resolve(null)
               }, 3000)
             )
           ])
-          
+
           if (result !== null) {
             console.log("✅ getRedirectResult completed, result found")
           } else {
@@ -201,11 +201,11 @@ export default function SignIn() {
           }
         } catch (redirectError) {
           console.log("ℹ️ getRedirectResult error (will rely on auth state listener):", redirectError?.code || redirectError?.message)
-          
+
           // Don't throw - auth state listener will handle sign-in
           result = null
         }
-        
+
         console.log("🔍 Redirect result details:", {
           hasResult: !!result,
           hasUser: !!result?.user,
@@ -213,7 +213,7 @@ export default function SignIn() {
           providerId: result?.providerId,
           operationType: result?.operationType
         })
-        
+
         if (result && result.user) {
           // Process redirect result
           await processSignedInUser(result.user, "redirect-result")
@@ -225,7 +225,7 @@ export default function SignIn() {
             userEmail: currentUser?.email,
             redirectHandled: redirectHandledRef.current
           })
-          
+
           if (currentUser && !redirectHandledRef.current) {
             // Process current user
             await processSignedInUser(currentUser, "current-user-check")
@@ -242,13 +242,13 @@ export default function SignIn() {
           message: error?.message,
           stack: error?.stack
         })
-        
+
         redirectHandledRef.current = false
-        
+
         // Show error to user
         const errorCode = error?.code || ""
         const errorMessage = error?.message || ""
-        
+
         // Don't show error for "no redirect result" - this is normal when page first loads
         if (errorCode === "auth/no-auth-event" || errorCode === "auth/popup-closed-by-user") {
           // These are expected cases, don't show error
@@ -256,15 +256,15 @@ export default function SignIn() {
           setIsLoading(false)
           return
         }
-        
+
         // Handle backend errors (500, etc.)
         let message = "Google sign-in failed. Please try again."
-        
+
         if (error?.response) {
           // Axios error with response
           const status = error.response.status
           const responseData = error.response.data || {}
-          
+
           if (status === 500) {
             message = responseData.message || responseData.error || "Server error. Please try again later."
           } else if (status === 400 || status === 401) {
@@ -284,7 +284,7 @@ export default function SignIn() {
             message = errorMessage || message
           }
         }
-        
+
         setApiError(message)
         setIsLoading(false)
       }
@@ -306,11 +306,11 @@ export default function SignIn() {
       redirectHandledRef.current = true
       setIsLoading(true)
       setApiError("")
-      
+
       try {
         const idToken = await user.getIdToken()
         console.log(`✅ Got ID token from ${source}, calling backend...`)
-        
+
         const response = await authAPI.firebaseGoogleLogin(idToken, "user")
         const data = response?.data?.data || {}
 
@@ -326,16 +326,16 @@ export default function SignIn() {
         if (accessToken && appUser) {
           setAuthData("user", accessToken, appUser)
           window.dispatchEvent(new Event("userAuthChanged"))
-          
+
           // Clear any URL hash or params
           const hasHash = window.location.hash.length > 0
           const hasQueryParams = window.location.search.length > 0
           if (hasHash || hasQueryParams) {
             window.history.replaceState({}, document.title, window.location.pathname)
           }
-          
+
           console.log(`✅ Navigating to user dashboard from ${source}...`)
-          navigate("/user", { replace: true })
+          navigate("/welcome", { replace: true })
         } else {
           console.error(`❌ Invalid backend response from ${source}`)
           redirectHandledRef.current = false
@@ -351,7 +351,7 @@ export default function SignIn() {
         })
         redirectHandledRef.current = false
         setIsLoading(false)
-        
+
         let errorMessage = "Failed to complete sign-in. Please try again."
         if (error?.response?.data?.message) {
           errorMessage = error.response.data.message
@@ -369,9 +369,9 @@ export default function SignIn() {
       try {
         const { onAuthStateChanged } = await import("firebase/auth")
         ensureFirebaseInitialized()
-        
+
         console.log("🔔 Setting up auth state listener...")
-        
+
         unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
           console.log("🔔 Auth state changed:", {
             hasUser: !!user,
@@ -379,7 +379,7 @@ export default function SignIn() {
             redirectHandled: redirectHandledRef.current,
             currentPath: window.location.pathname
           })
-          
+
           // If user signed in and we haven't handled it yet
           if (user && !redirectHandledRef.current) {
             await processSignedInUser(user, "auth-state-listener")
@@ -391,16 +391,16 @@ export default function SignIn() {
             console.log("ℹ️ User already signed in and handled, skipping...")
           }
         })
-        
+
         console.log("✅ Auth state listener set up successfully")
       } catch (error) {
         console.error("❌ Error setting up auth state listener:", error)
       }
     }
-    
+
     // Set up auth listener first, then check redirect result
     setupAuthListener()
-    
+
     // Also check current user immediately (in case redirect already completed)
     const checkCurrentUser = async () => {
       try {
@@ -414,10 +414,10 @@ export default function SignIn() {
         console.error("❌ Error checking current user:", error)
       }
     }
-    
+
     // Check current user immediately
     checkCurrentUser()
-    
+
     // Small delay to ensure Firebase is ready, then check redirect result
     const timer = setTimeout(() => {
       handleRedirectResult()
@@ -571,14 +571,14 @@ export default function SignIn() {
     try {
       // Ensure Firebase is initialized before use
       ensureFirebaseInitialized()
-      
+
       // Validate Firebase Auth instance
       if (!firebaseAuth) {
         throw new Error("Firebase Auth is not initialized. Please check your Firebase configuration.")
       }
 
       const { signInWithRedirect } = await import("firebase/auth")
-      
+
       // Log current origin for debugging
       console.log("🚀 Starting Google sign-in redirect...", {
         origin: window.location.origin,
@@ -589,7 +589,7 @@ export default function SignIn() {
       // Use redirect directly to avoid COOP issues
       // The redirect result will be handled by the useEffect hook above
       await signInWithRedirect(firebaseAuth, googleProvider)
-      
+
       // Note: signInWithRedirect will cause a full page redirect to Google
       // After user authenticates, they'll be redirected back to this page
       // The useEffect hook will handle the result when the page loads again
@@ -601,12 +601,12 @@ export default function SignIn() {
       console.error("Error message:", error?.message)
       setIsLoading(false)
       redirectHandledRef.current = false
-      
+
       const errorCode = error?.code || ""
       const errorMessage = error?.message || ""
-      
+
       let message = "Google sign-in failed. Please try again."
-      
+
       if (errorCode === "auth/configuration-not-found") {
         message = "Firebase configuration error. Please ensure your domain is authorized in Firebase Console. Current domain: " + window.location.hostname
       } else if (errorCode === "auth/popup-blocked") {
@@ -622,7 +622,7 @@ export default function SignIn() {
       } else if (error?.response?.data?.error) {
         message = error.response.data.error
       }
-      
+
       setApiError(message)
     }
   }
@@ -641,21 +641,21 @@ export default function SignIn() {
 
   return (
     <AnimatedPage className="max-h-screen flex flex-col bg-white dark:bg-[#0a0a0a] overflow-hidden !pb-0 md:flex-row md:overflow-hidden">
-      
+
       {/* Mobile: Top Section - Banner Image */}
       {/* Desktop: Left Section - Banner Image */}
       <div className="relative md:hidden w-full shrink-0" style={{ height: "45vh", minHeight: "300px" }}>
-        <img 
-          src={loginBanner} 
-          alt="Food Banner" 
+        <img
+          src={loginBanner}
+          alt="Food Banner"
           className="w-full h-full object-cover object-center"
         />
       </div>
 
       <div className="relative hidden md:block w-full shrink-0 md:w-1/2 md:h-screen md:sticky md:top-0">
-        <img 
-          src={loginBanner} 
-          alt="Food Banner" 
+        <img
+          src={loginBanner}
+          alt="Food Banner"
           className="w-full h-full object-cover object-center"
         />
         {/* Overlay gradient for better text readability on desktop */}
@@ -795,13 +795,13 @@ export default function SignIn() {
               <Checkbox
                 id="rememberMe"
                 checked={formData.rememberMe}
-                onCheckedChange={(checked) => 
+                onCheckedChange={(checked) =>
                   setFormData({ ...formData, rememberMe: checked })
                 }
                 className="w-4 h-4 border-2 border-gray-300 rounded data-[state=checked]:bg-[#E23744] data-[state=checked]:border-[#E23744] flex items-center justify-center"
               />
-              <label 
-                htmlFor="rememberMe" 
+              <label
+                htmlFor="rememberMe"
                 className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none"
               >
                 Remember my login for faster sign-in

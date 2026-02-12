@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
-
-import { ArrowLeft, Clock, MapPin, Heart, Star } from "lucide-react";
+import { motion } from "framer-motion";
+import { ArrowLeft, Clock, MapPin, Heart, Star, Bookmark } from "lucide-react";
 import AnimatedPage from "../../components/AnimatedPage";
 import Footer from "../../components/Footer";
 import ScrollReveal from "../../components/ScrollReveal";
@@ -165,16 +165,14 @@ export default function Restaurants() {
                           variant="ghost"
                           size="icon"
                           onClick={handleToggleFavorite}
-                          className={`h-8 w-8 rounded-full border flex items-center justify-center transition-all duration-300 ${
-                            favorite
+                          className={`h-8 w-8 rounded-full border flex items-center justify-center transition-all duration-300 ${favorite
                               ? "border-rose-500/80 bg-rose-50 text-rose-500/80"
                               : "border-white bg-white/90 text-gray-600 hover:bg-white"
-                          }`}
+                            }`}
                         >
                           <Bookmark
-                            className={`h-4 w-4 transition-all duration-300 ${
-                              favorite ? "fill-rose-500/80" : ""
-                            }`}
+                            className={`h-4 w-4 transition-all duration-300 ${favorite ? "fill-rose-500/80" : ""
+                              }`}
                           />
                         </Button>
                       </motion.div>

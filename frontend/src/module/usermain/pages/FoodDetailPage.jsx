@@ -9,9 +9,13 @@ import {
   ChevronRight,
   ChevronDown,
   Info,
+  CheckCircle,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { motion } from "framer-motion";
+import { useCart } from "../../user/context/CartContext";
 import WishlistButton from "@/components/WishlistButton";
 
 // Assets
@@ -26,6 +30,7 @@ export default function FoodDetailPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams();
+  const { addToCart } = useCart();
 
   // Use passed state or fallback to mock data
   const initialProduct = location.state?.item || {
@@ -148,9 +153,8 @@ export default function FoodDetailPage() {
       <div className="md:hidden">
         {/* Scroll Sticky Header */}
         <div
-          className={`fixed top-0 left-0 right-0 bg-white shadow-md z-50 px-4 py-3 flex items-center gap-3 transition-transform duration-300 md:max-w-md md:mx-auto ${
-            showStickyHeader ? "translate-y-0" : "-translate-y-full"
-          }`}
+          className={`fixed top-0 left-0 right-0 bg-white shadow-md z-50 px-4 py-3 flex items-center gap-3 transition-transform duration-300 md:max-w-md md:mx-auto ${showStickyHeader ? "translate-y-0" : "-translate-y-full"
+            }`}
         >
           <button
             onClick={() => navigate(-1)}
@@ -210,6 +214,59 @@ export default function FoodDetailPage() {
           {/* White Gradient Shadow Overlays */}
           <div className="absolute top-0 left-0 right-0 h-24 bg-gradient-to-b from-white/70 to-transparent z-10"></div>
           <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-white via-white/80 to-transparent z-10"></div>
+
+          {/* ADD Button */}
+          <button
+            className="absolute bottom-4 right-4 bg-white border border-[#facd01] text-gray-900 text-xs font-black px-6 py-2 rounded shadow-sm hover:bg-[#facd01] transition-colors z-20"
+            onClick={(e) => {
+              e.stopPropagation();
+              addToCart({
+                ...product,
+                restaurantId: "grocery-store",
+                restaurant: "MoGrocery",
+              });
+
+              // Custom React Toastify style toast
+              toast.custom(
+                (t) => (
+                  <div className="bg-white border-l-4 border-yellow-400 shadow-lg rounded-lg p-4 flex flex-col gap-3 min-w-[300px] animate-in slide-in-from-right duration-300 overflow-hidden relative">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-yellow-100 p-1.5 rounded-full">
+                        <CheckCircle className="text-yellow-600 w-5 h-5" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-bold text-gray-900">
+                          Added to Cart!
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {product.name} is now in your basket.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => toast.dismiss(t)}
+                        className="text-gray-400 hover:text-gray-600"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                    {/* Progress bar animation */}
+                    <motion.div
+                      initial={{ width: "100%" }}
+                      animate={{ width: "0%" }}
+                      transition={{ duration: 2, ease: "linear" }}
+                      className="absolute bottom-0 left-0 h-1 bg-yellow-400"
+                    />
+                  </div>
+                ),
+                {
+                  duration: 2000,
+                  position: "bottom-right",
+                },
+              );
+            }}
+          >
+            ADD
+          </button>
         </div>
 
         {/* 2. Floating Product Details Card */}
@@ -339,7 +396,7 @@ export default function FoodDetailPage() {
                     className="w-full h-32 object-contain rounded-lg transform group-hover:scale-110 transition-transform duration-300"
                     alt={item.name}
                   />
-                  <button className="absolute bottom-2 right-2 bg-white border border-[#26a541] text-[#26a541] text-[10px] font-black px-3 py-1 rounded shadow-sm hover:bg-[#26a541] hover:text-white transition-colors">
+                  <button className="absolute bottom-2 right-2 bg-white border border-[#facd01] text-gray-900 text-[10px] font-black px-3 py-1 rounded shadow-sm hover:bg-[#facd01] transition-colors">
                     ADD
                   </button>
                 </div>
@@ -435,7 +492,7 @@ export default function FoodDetailPage() {
                     className="w-full h-32 object-contain rounded-lg transform group-hover:scale-110 transition-transform duration-300"
                     alt={item.name}
                   />
-                  <button className="absolute bottom-2 right-2 bg-white border border-[#26a541] text-[#26a541] text-[10px] font-black px-3 py-1 rounded shadow-sm hover:bg-[#26a541] hover:text-white transition-colors">
+                  <button className="absolute bottom-2 right-2 bg-white border border-[#facd01] text-gray-900 text-[10px] font-black px-3 py-1 rounded shadow-sm hover:bg-[#facd01] transition-colors">
                     ADD
                   </button>
                 </div>

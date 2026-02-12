@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Search,
   Mic,
@@ -99,6 +99,43 @@ const GroceryPage = () => {
   const [showCategorySheet, setShowCategorySheet] = useState(false);
   const [selectedCategoryId, setSelectedCategoryId] = useState("all");
   const [vegMode, setVegMode] = useState(false);
+  const [showSnow, setShowSnow] = useState(false);
+
+  // Snow effect timer
+  useEffect(() => {
+    if (activeTab === "Valentine's" || activeTab === "Beauty" || activeTab === "Pharmacy" || activeTab === "Electronics") {
+      setShowSnow(true);
+      const timer = setTimeout(() => setShowSnow(false), 60000); // 1 minute
+      return () => clearTimeout(timer);
+    } else {
+      setShowSnow(false);
+    }
+  }, [activeTab]);
+
+  // Search & Voice Logic
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isListening, setIsListening] = useState(false);
+
+  const startListening = () => {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.lang = 'en-IN'; // Better for Indian context
+
+      recognition.onstart = () => setIsListening(true);
+      recognition.onend = () => setIsListening(false);
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setSearchQuery(transcript);
+      };
+
+      recognition.start();
+    } else {
+      alert("Voice search is not supported in this browser.");
+    }
+  };
 
   const openCategorySheet = (categoryId = "all") => {
     // If categoryId is an object (event), default to 'all' or ignore
@@ -186,17 +223,70 @@ const GroceryPage = () => {
     },
   ];
 
+  // Memoize flakes to prevent re-render jumps
+  const flakes = useMemo(() => Array.from({ length: 50 }).map((_, i) => ({
+    id: i,
+    left: Math.random() * 100,
+    duration: Math.random() * 3 + 2,
+    delay: Math.random() * 2,
+    startX: Math.random() * 100 - 50,
+    drift: Math.random() * 100 - 50,
+  })), []);
+
   return (
     // Main Container with White Background
     <div className="min-h-screen text-slate-800 pb-24 font-sans w-full shadow-none overflow-x-hidden relative bg-white">
+      {/* Snow Effect Overlay */}
+      <AnimatePresence>
+        {showSnow && (
+          <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden">
+            {flakes.map((flake) => (
+              <motion.div
+                key={flake.id}
+                initial={{ y: -20, opacity: 0, x: flake.startX }}
+                animate={{
+                  y: "100vh",
+                  opacity: [0, 1, 1, 0],
+                  x: flake.drift
+                }}
+                transition={{
+                  duration: flake.duration,
+                  repeat: Infinity,
+                  delay: flake.delay,
+                  ease: "easeInOut"
+                }}
+                className="absolute top-0 w-2 h-2 bg-white rounded-full blur-[1px]"
+                style={{ left: `${flake.left}%` }}
+              />
+            ))}
+          </div>
+        )}
+      </AnimatePresence>
       {/* --- 1. HEADER (Yellow) --- */}
       <div
-        className={`sticky top-0 z-40 transition-all duration-300 bg-[#FACC15] rounded-b-[30px] ${isScrolled ? "shadow-sm" : ""}`}
+        className={`sticky top-0 z-40 transition-all duration-300 bg-white ${isScrolled ? "shadow-sm" : ""}`}
       >
-        <div className="pt-3 pb-0 relative z-20">
-          {/* Top Info Row */}
-          <div className="px-4 pt-3 pb-2 relative z-20">
-            <div className="flex justify-between items-start mb-0">
+        <div className="relative z-20">
+          {/* Top Info Row - YELLOW BACKGROUND ADDED HERE */}
+          <div
+            className={`rounded-b-[2.5rem] pb-10 shadow-sm relative z-20 transition-all duration-500 ${activeTab === "Electronics" ? "" :
+              activeTab === "Beauty" ? "" :
+                activeTab === "Pharmacy" ? "" :
+                  activeTab === "Valentine's" ? "" : "bg-[#FACC15]"
+              }`}
+            style={
+              activeTab === "Valentine's"
+                ? { background: "linear-gradient(0deg, rgba(220, 101, 117, 1) 38%, rgba(235, 138, 150, 1) 63%)" }
+                : activeTab === "Electronics"
+                  ? { background: "linear-gradient(0deg,rgba(160, 213, 222, 1) 38%, rgba(81, 184, 175, 1) 63%)" }
+                  : activeTab === "Beauty"
+                    ? { background: "linear-gradient(0deg,rgba(240, 134, 183, 1) 58%, rgba(235, 124, 176, 1) 63%)" }
+                    : activeTab === "Pharmacy"
+                      ? { background: "linear-gradient(0deg,rgba(222, 128, 118, 1) 22%, rgba(212, 97, 85, 1) 63%)" }
+                      : {}
+            }
+          >
+            <div className="px-4 pt-6 flex justify-between items-start mb-0">
               <div className="flex flex-col">
                 <h1 className="text-[10px] uppercase font-black tracking-[0.15em] text-[#3e3212] leading-none mb-0.5">
                   MoBasket in
@@ -227,6 +317,8 @@ const GroceryPage = () => {
                 <Search className="h-4 w-4 text-slate-500 stroke-[2.5] mr-3" />
                 <input
                   type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder='Search "chocolate"'
                   className="flex-1 bg-transparent outline-none text-slate-800 placeholder:text-slate-400 text-sm font-medium"
                 />
@@ -287,22 +379,28 @@ const GroceryPage = () => {
                 </button>
               </div>
             </div>
-            {/* Search Bar (Mobile) */}
-            <div className="mt-3 mb-2 relative z-30 md:hidden">
-              <div className="bg-white rounded-2xl h-12 flex items-center px-4 shadow-sm border border-transparent focus-within:border-black/5 transition-all w-full">
-                <Search className="text-slate-400 w-5 h-5 stroke-[2.5] mr-3" />
-                <input
-                  type="text"
-                  placeholder='Search "pet food"'
-                  className="flex-1 bg-transparent text-slate-800 text-[15px] font-semibold outline-none placeholder:text-slate-400/90 h-full"
-                />
-                <div className="w-[1px] h-6 bg-slate-200 mx-3"></div>
-                <Mic className="text-slate-400 w-5 h-5 stroke-[2.5]" />
-              </div>
+          </div>
+
+          {/* Search Bar (Mobile) - OUTSIDE YELLOW BOX */}
+          <div className="px-4 mt-3 mb-2 relative z-30 md:hidden">
+            <div className="bg-gray-100 rounded-2xl h-12 flex items-center px-4 border border-transparent focus-within:border-black/5 transition-all w-full">
+              <Search className="text-slate-400 w-5 h-5 stroke-[2.5] mr-3" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder='Search "pet food"'
+                className="flex-1 bg-transparent text-slate-800 text-[15px] font-semibold outline-none placeholder:text-slate-400/90 h-full"
+              />
+              <div className="w-[1px] h-6 bg-slate-200 mx-3"></div>
+              <Mic
+                onClick={startListening}
+                className={`w-5 h-5 stroke-[2.5] transition-colors cursor-pointer ${isListening ? "text-red-500 animate-pulse" : "text-slate-400"}`}
+              />
             </div>
           </div>
 
-          {/* Nav Tabs (Mobile Only) */}
+          {/* Nav Tabs (Mobile Only) - OUTSIDE YELLOW BOX */}
           <div className="px-2 pb-2 mt-2 md:hidden">
             <div className="flex justify-between items-end gap-2 overflow-x-auto scrollbar-hide no-scrollbar px-2 w-full">
               {categories.map((cat) => (
@@ -370,7 +468,7 @@ const GroceryPage = () => {
         <h3 className="text-lg font-[800] text-[#3e2723] mb-4">Bestsellers</h3>
 
         <div className="flex flex-nowrap gap-4 overflow-x-auto scrollbar-hide no-scrollbar pb-4 px-2 snap-x snap-mandatory touch-pan-x">
-          {bestsellers.map((item, idx) => (
+          {bestsellers.filter(item => item.title.toLowerCase().includes(searchQuery.toLowerCase())).map((item, idx) => (
             <div
               key={idx}
               className="min-w-[160px] max-w-[160px] snap-center p-2.5 bg-[#eff3f6] rounded-[24px] flex flex-col relative group cursor-pointer active:scale-95 transition-transform shadow-[0_8px_10px_rgba(0,0,0,0.2)] border border-white/60"
@@ -458,7 +556,7 @@ const GroceryPage = () => {
               categoryId: "cleaning",
               scale: 1.3,
             },
-          ].map((item, idx) => (
+          ].filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase())).map((item, idx) => (
             <div
               key={idx}
               className={`flex flex-col items-center gap-2 cursor-pointer active:scale-95 transition-transform ${item.span || ""}`}
@@ -539,7 +637,7 @@ const GroceryPage = () => {
               scale: 1.1,
             },
             { name: "Biscuits", img: imgBakery, categoryId: "bakery-biscuits" },
-          ].map((item, idx) => (
+          ].filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase())).map((item, idx) => (
             <div
               key={idx}
               className={`flex flex-col items-center gap-2 cursor-pointer active:scale-95 transition-transform ${item.span || ""}`}
@@ -612,7 +710,7 @@ const GroceryPage = () => {
               categoryId: "beauty",
               scale: 1.2,
             },
-          ].map((item, idx) => (
+          ].filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase())).map((item, idx) => (
             <div
               key={idx}
               className={`flex flex-col items-center gap-2 cursor-pointer active:scale-95 transition-transform ${item.span || ""}`}
@@ -670,8 +768,11 @@ const GroceryPage = () => {
           <span className="text-[10px] font-medium">Categories</span>
         </div>
 
-        <button className="mb-1" onClick={() => navigate("/home")}>
-          <span className="text-red-600 font-black italic text-xl tracking-tighter">
+        <button
+          className="mb-1 bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"
+          onClick={() => navigate("/home")}
+        >
+          <span className="font-black italic text-lg tracking-tighter">
             Mofood
           </span>
         </button>
