@@ -1,12 +1,14 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import ProtectedRoute from "./ProtectedRoute";
 import AdminLayout from "./AdminLayout";
+import PlatformAwareRoute from "./PlatformAwareRoute";
 import AdminHome from "../pages/AdminHome";
 import PointOfSale from "../pages/PointOfSale";
 import AdminProfile from "../pages/AdminProfile";
 import AdminSettings from "../pages/AdminSettings";
 import NewRefundRequests from "../pages/refunds/NewRefundRequests";
 import FoodApproval from "../pages/restaurant/FoodApproval";
+import GroceryApproval from "../pages/grocery/GroceryApproval";
 import OrdersPage from "../pages/orders/OrdersPage";
 import OrderDetectDelivery from "../pages/OrderDetectDelivery";
 import Category from "../pages/categories/Category";
@@ -27,6 +29,11 @@ import RestaurantsBulkExport from "../pages/restaurant/RestaurantsBulkExport";
 // Food Management
 import FoodsList from "../pages/foods/FoodsList";
 import AddonsList from "../pages/addons/AddonsList";
+// Grocery Management
+import GroceryProductsList from "../pages/grocery/GroceryProductsList";
+import GroceryAddonsList from "../pages/grocery/GroceryAddonsList";
+import GroceryStoresList from "../pages/grocery/GroceryStoresList";
+import GroceryCategories from "../pages/grocery/GroceryCategories";
 // Promotions Management
 import BasicCampaign from "../pages/campaigns/BasicCampaign";
 import FoodCampaign from "../pages/campaigns/FoodCampaign";
@@ -164,9 +171,11 @@ export default function AdminRouter() {
         <Route path="zone-setup/add" element={<AddZone />} />
         <Route path="zone-setup/edit/:id" element={<AddZone />} />
         <Route path="zone-setup/view/:id" element={<ViewZone />} />
-        <Route path="food-approval" element={<FoodApproval />} />
-        {/* Restaurants */}
-        <Route path="restaurants" element={<RestaurantsList />} />
+        <Route path="food-approval" element={<PlatformAwareRoute mofoodComponent={FoodApproval} mogroceryComponent={GroceryApproval} />} />
+        <Route path="grocery-approval" element={<GroceryApproval />} />
+        {/* Restaurants/Stores */}
+        <Route path="restaurants" element={<PlatformAwareRoute mofoodComponent={RestaurantsList} mogroceryComponent={GroceryStoresList} />} />
+        <Route path="grocery-stores" element={<GroceryStoresList />} />
         <Route path="restaurants/add" element={<AddRestaurant />} />
         <Route path="restaurants/joining-request" element={<JoiningRequest />} />
         <Route path="restaurants/commission" element={<RestaurantCommission />} />
@@ -176,14 +185,19 @@ export default function AdminRouter() {
 
         {/* FOOD MANAGEMENT */}
         {/* Categories */}
-        <Route path="categories" element={<Category />} />
+        <Route path="categories" element={<PlatformAwareRoute mofoodComponent={Category} mogroceryComponent={GroceryCategories} />} />
         {/* Fee Settings */}
         <Route path="fee-settings" element={<FeeSettings />} />
         {/* Foods */}
-        <Route path="foods" element={<FoodsList />} />
-        <Route path="food/list" element={<FoodsList />} />
+        <Route path="foods" element={<PlatformAwareRoute mofoodComponent={FoodsList} mogroceryComponent={GroceryProductsList} />} />
+        <Route path="food/list" element={<PlatformAwareRoute mofoodComponent={FoodsList} mogroceryComponent={GroceryProductsList} />} />
         {/* Addons */}
-        <Route path="addons" element={<AddonsList />} />
+        <Route path="addons" element={<PlatformAwareRoute mofoodComponent={AddonsList} mogroceryComponent={GroceryAddonsList} />} />
+        
+        {/* GROCERY MANAGEMENT - Separate routes */}
+        <Route path="grocery-products" element={<GroceryProductsList />} />
+        <Route path="grocery-addons" element={<GroceryAddonsList />} />
+        <Route path="grocery-categories" element={<GroceryCategories />} />
 
         {/* PROMOTIONS MANAGEMENT */}
         {/* Campaigns */}
@@ -299,7 +313,8 @@ export default function AdminRouter() {
         {/* ENV SETUP */}
         <Route path="system-addons" element={<SystemAddons />} />
         {/* HERO BANNER MANAGEMENT */}
-        <Route path="hero-banner-management" element={<LandingPageManagement />} />
+        <Route path="hero-banner-management" element={<LandingPageManagement forcedPlatform="mofood" />} />
+        <Route path="grocery-hero-banner-management" element={<LandingPageManagement forcedPlatform="mogrocery" />} />
       </Route>
 
       {/* Redirect /admin to /admin/ */}

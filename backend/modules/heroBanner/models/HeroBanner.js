@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
 
 const heroBannerSchema = new mongoose.Schema({
+  platform: {
+    type: String,
+    enum: ['mofood', 'mogrocery'],
+    default: 'mofood',
+    index: true
+  },
   imageUrl: {
     type: String,
     required: true,
@@ -39,7 +45,7 @@ const heroBannerSchema = new mongoose.Schema({
 });
 
 // Index for ordering
-heroBannerSchema.index({ order: 1, isActive: 1 });
+heroBannerSchema.index({ platform: 1, order: 1, isActive: 1 });
 
 export default mongoose.model('HeroBanner', heroBannerSchema);
 

@@ -8,8 +8,16 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
+import { usePlatform } from "@/module/admin/context/PlatformContext"
 
-export default function LandingPageManagement() {
+export default function LandingPageManagement({ forcedPlatform }) {
+  const { platform: contextPlatform } = usePlatform()
+  const platform =
+    forcedPlatform === "mofood" || forcedPlatform === "mogrocery"
+      ? forcedPlatform
+      : contextPlatform === "mogrocery"
+        ? "mogrocery"
+        : "mofood"
   const [activeTab, setActiveTab] = useState('banners')
   const [exploreMoreSubTab, setExploreMoreSubTab] = useState('top-10')
 
@@ -121,10 +129,15 @@ export default function LandingPageManagement() {
       ...additionalConfig.headers,
       Authorization: `Bearer ${adminToken.trim()}`,
     }
+    const mergedParams = {
+      ...additionalConfig.params,
+      platform,
+    }
 
     return {
       ...additionalConfig,
       headers: mergedHeaders,
+      params: mergedParams,
     }
   }
 

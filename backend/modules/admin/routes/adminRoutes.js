@@ -127,6 +127,11 @@ import {
   rejectFoodItem
 } from '../controllers/foodApprovalController.js';
 import {
+  getPendingGroceryApprovals,
+  approveGroceryItem,
+  rejectGroceryItem
+} from '../controllers/groceryApprovalController.js';
+import {
   getAllComplaints,
   getComplaintDetails,
   updateComplaintStatus,
@@ -383,6 +388,11 @@ router.put('/restaurant-complaints/:id/notes', updateInternalNotes);
 router.get('/food-approvals', getPendingFoodApprovals);
 router.post('/food-approvals/:id/approve', approveFoodItem);
 router.post('/food-approvals/:id/reject', rejectFoodItem);
+
+// Grocery Approval Management
+router.get('/grocery-approvals', getPendingGroceryApprovals);
+router.post('/grocery-approvals/:id/approve', approveGroceryItem);
+router.post('/grocery-approvals/:id/reject', rejectGroceryItem);
 
 // Offers Management
 router.get('/offers', getAllOffers);

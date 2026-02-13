@@ -18,6 +18,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCart } from "../../user/context/CartContext";
 import { CategoryFoodsContent } from "./CategoryFoodsPage";
+import api from "@/lib/api";
 
 // Assets Imports
 // Vegetables
@@ -96,6 +97,7 @@ const GroceryPage = () => {
 
   const [isScrolled, setIsScrolled] = useState(false);
   const [currentBanner, setCurrentBanner] = useState(0);
+  const [bannerImages, setBannerImages] = useState([imgBanner1, imgBanner2, imgBanner3]);
   const [showCategorySheet, setShowCategorySheet] = useState(false);
   const [selectedCategoryId, setSelectedCategoryId] = useState("all");
   const [vegMode, setVegMode] = useState(false);
@@ -147,13 +149,43 @@ const GroceryPage = () => {
     setShowCategorySheet(true);
   };
 
+  // Load dynamic grocery banners (falls back to static banners if empty/fails)
+  useEffect(() => {
+    const fetchGroceryBanners = async () => {
+      try {
+        const response = await api.get("/hero-banners/public", {
+          params: { platform: "mogrocery" },
+        });
+
+        const banners = Array.isArray(response?.data?.data?.banners)
+          ? response.data.data.banners
+          : [];
+
+        const dynamicImages = banners
+          .map((item) => item?.imageUrl)
+          .filter((url) => typeof url === "string" && url.trim() !== "");
+
+        if (dynamicImages.length > 0) {
+          setBannerImages(dynamicImages);
+          setCurrentBanner(0);
+        }
+      } catch {
+        // Keep static fallback banners on error
+      }
+    };
+
+    fetchGroceryBanners();
+  }, []);
+
   // Auto-slide carousel
   useEffect(() => {
+    if (bannerImages.length <= 1) return undefined;
+
     const interval = setInterval(() => {
-      setCurrentBanner((prev) => (prev + 1) % 3);
+      setCurrentBanner((prev) => (prev + 1) % bannerImages.length);
     }, 3000);
     return () => clearInterval(interval);
-  }, []);
+  }, [bannerImages.length]);
 
   // Handle scroll for sticky header transparency/background
   useEffect(() => {
@@ -432,18 +464,14 @@ const GroceryPage = () => {
       <div className="relative z-0 -mt-1 animate-fade-in-up px-4 pt-2 pb-1 md:max-w-6xl mx-auto">
         {/* Carousel Container */}
         <div className="relative w-full aspect-[1.8/1] md:aspect-[3/1] bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg border border-white/30 overflow-hidden">
-          {[
-            { id: 1, img: imgBanner1 },
-            { id: 2, img: imgBanner2 },
-            { id: 3, img: imgBanner3 },
-          ].map((banner, index) => (
+          {bannerImages.map((bannerImg, index) => (
             <div
-              key={banner.id}
+              key={`${bannerImg}-${index}`}
               className={`absolute inset-0 transition-opacity duration-1000 ease-in-out flex items-center justify-center ${index === currentBanner ? "opacity-100 z-10" : "opacity-0 z-0"
                 }`}
             >
               <img
-                src={banner.img}
+                src={bannerImg}
                 alt="Banner"
                 className="w-full h-full object-cover"
               />
@@ -452,7 +480,7 @@ const GroceryPage = () => {
 
           {/* Carousel Indicators */}
           <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1.5 z-20">
-            {[0, 1, 2].map((i) => (
+            {bannerImages.map((_, i) => (
               <div
                 key={i}
                 className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === currentBanner ? "bg-white w-4" : "bg-white/50"

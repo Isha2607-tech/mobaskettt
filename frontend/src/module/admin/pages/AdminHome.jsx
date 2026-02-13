@@ -25,8 +25,12 @@ import {
 import { Activity, ArrowUpRight, ShoppingBag, CreditCard, Truck, Receipt, DollarSign, Store, UserCheck, Package, UserCircle, Clock, CheckCircle, Plus } from "lucide-react"
 import appzetoLogo from "@/assets/appzetologo.png"
 import { adminAPI } from "@/lib/api"
+import { usePlatform } from "../context/PlatformContext"
 
 export default function AdminHome() {
+  const { platform } = usePlatform()
+  const isGrocery = platform === "mogrocery"
+
   const [selectedZone, setSelectedZone] = useState("all")
   const [selectedPeriod, setSelectedPeriod] = useState("overall")
   const [isLoading, setIsLoading] = useState(true)
@@ -152,8 +156,12 @@ export default function AdminHome() {
         <div className="flex flex-col gap-4 border-b border-neutral-200 bg-linear-to-br from-white via-neutral-50 to-neutral-100 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-4">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-neutral-500">Admin Overview</p>
-              <h1 className="text-2xl font-semibold text-neutral-900">Operations Command</h1>
+              <p className="text-xs uppercase tracking-[0.2em] text-neutral-500">
+                {isGrocery ? "MoGrocery Overview" : "MoFood Overview"}
+              </p>
+              <h1 className="text-2xl font-semibold text-neutral-900">
+                {isGrocery ? "Grocery Operations" : "Restaurant Operations"}
+              </h1>
             </div>
 
           </div>
@@ -237,14 +245,14 @@ export default function AdminHome() {
               accent="bg-green-200/40"
             />
             <MetricCard
-              title="Total restaurants"
+              title={isGrocery ? "Total stores" : "Total restaurants"}
               value={totalRestaurants.toLocaleString("en-IN")}
-              helper="All registered restaurants"
+              helper={isGrocery ? "All registered stores" : "All registered restaurants"}
               icon={<Store className="h-5 w-5 text-blue-600" />}
               accent="bg-blue-200/40"
             />
             <MetricCard
-              title="Restaurant request pending"
+              title={isGrocery ? "Store requests pending" : "Restaurant request pending"}
               value={pendingRestaurantRequests.toLocaleString("en-IN")}
               helper="Awaiting approval"
               icon={<UserCheck className="h-5 w-5 text-orange-600" />}
@@ -265,16 +273,16 @@ export default function AdminHome() {
               accent="bg-yellow-200/40"
             />
             <MetricCard
-              title="Total foods"
+              title={isGrocery ? "Total products" : "Total foods"}
               value={totalFoods.toLocaleString("en-IN")}
-              helper="Active menu items"
+              helper={isGrocery ? "Active grocery items" : "Active menu items"}
               icon={<Package className="h-5 w-5 text-purple-600" />}
               accent="bg-purple-200/40"
             />
             <MetricCard
-              title="Total addons"
+              title={isGrocery ? "Total product addons" : "Total addons"}
               value={totalAddons.toLocaleString("en-IN")}
-              helper="Active addon items"
+              helper={isGrocery ? "Active grocery addons" : "Active addon items"}
               icon={<Plus className="h-5 w-5 text-pink-600" />}
               accent="bg-pink-200/40"
             />

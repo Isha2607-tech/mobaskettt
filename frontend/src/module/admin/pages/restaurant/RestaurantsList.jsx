@@ -4,6 +4,7 @@ import { Search, Download, ChevronDown, Eye, Settings, ArrowUpDown, Loader2, X, 
 import { adminAPI, restaurantAPI } from "../../../../lib/api"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { exportRestaurantsToPDF } from "../../components/restaurants/restaurantsExportUtils"
+import { usePlatform } from "../../context/PlatformContext"
 
 // Import icons from Dashboard-icons
 import locationIcon from "../../assets/Dashboard-icons/image1.png"
@@ -12,6 +13,10 @@ import inactiveIcon from "../../assets/Dashboard-icons/image3.png"
 
 export default function RestaurantsList() {
   const navigate = useNavigate()
+  const { platform } = usePlatform()
+  const isGrocery = platform === "mogrocery"
+  const entityLabel = isGrocery ? "Store" : "Restaurant"
+  const entityLabelPlural = isGrocery ? "Stores" : "Restaurants"
   const [searchQuery, setSearchQuery] = useState("")
   const [restaurants, setRestaurants] = useState([])
   const [loading, setLoading] = useState(true)
@@ -395,7 +400,9 @@ export default function RestaurantsList() {
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-slate-900">Restaurants List</h1>
+              <h1 className="text-2xl font-bold text-slate-900">
+                {entityLabelPlural} List
+              </h1>
             </div>
 
           </div>
@@ -407,7 +414,9 @@ export default function RestaurantsList() {
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-slate-600 mb-1">Total restaurants</p>
+                <p className="text-sm font-medium text-slate-600 mb-1">
+                  Total {entityLabelPlural.toLowerCase()}
+                </p>
                 <p className="text-2xl font-bold text-slate-900">{totalRestaurants}</p>
               </div>
               <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center">
@@ -420,7 +429,9 @@ export default function RestaurantsList() {
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-slate-600 mb-1">Active restaurants</p>
+                <p className="text-sm font-medium text-slate-600 mb-1">
+                  Active {entityLabelPlural.toLowerCase()}
+                </p>
                 <p className="text-2xl font-bold text-slate-900">{activeRestaurants}</p>
               </div>
               <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center">
@@ -433,7 +444,9 @@ export default function RestaurantsList() {
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-slate-600 mb-1">Inactive restaurants</p>
+                <p className="text-sm font-medium text-slate-600 mb-1">
+                  Inactive {entityLabelPlural.toLowerCase()}
+                </p>
                 <p className="text-2xl font-bold text-slate-900">{inactiveRestaurants}</p>
               </div>
               <div className="w-12 h-12 rounded-lg bg-red-100 flex items-center justify-center">
@@ -446,7 +459,7 @@ export default function RestaurantsList() {
         {/* Restaurants List Section */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-            <h2 className="text-xl font-bold text-slate-900">Restaurants List</h2>
+            <h2 className="text-xl font-bold text-slate-900">{entityLabelPlural} List</h2>
 
             <div className="flex items-center gap-3">
               <button
@@ -454,12 +467,12 @@ export default function RestaurantsList() {
                 className="px-4 py-2.5 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 transition-all"
               >
                 <Plus className="w-4 h-4" />
-                <span>Add Restaurant</span>
+                <span>Add {entityLabel}</span>
               </button>
               <div className="relative flex-1 sm:flex-initial min-w-[250px]">
                 <input
                   type="text"
-                  placeholder="Ex: search by Restaurant n"
+                  placeholder={`Ex: search by ${entityLabel} name`}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10 pr-4 py-2.5 w-full text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
