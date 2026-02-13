@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react"
-import { Link, useLocation } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import {
   Search,
   FileText,
@@ -43,11 +43,14 @@ import {
   Phone,
   IndianRupee,
   PiggyBank,
+  CheckCircle2,
+  AlertTriangle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
-import { sidebarMenuData } from "../data/sidebarMenu"
+import { sidebarMenuData, mogroceryMenuData } from "../data/sidebarMenu"
 import { getCachedSettings, loadBusinessSettings } from "@/lib/utils/businessSettings"
+import { usePlatform } from "../context/PlatformContext"
 import appzetoLogo from "@/assets/appzetologo.png"
 
 // Icon mapping
@@ -89,13 +92,34 @@ const iconMap = {
   Phone,
   IndianRupee,
   PiggyBank,
+  CheckCircle2,
+  AlertTriangle,
 }
 
 export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange }) {
   const location = useLocation()
+  const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState("")
   const [logoUrl, setLogoUrl] = useState(null)
   const [companyName, setCompanyName] = useState(null)
+  const { platform, switchPlatform } = usePlatform()
+
+  const handlePlatformSwitch = (nextPlatform) => {
+    if (nextPlatform === platform) return
+    const pathMapping = {
+      "/admin/hero-banner-management": "/admin/grocery-hero-banner-management",
+      "/admin/grocery-hero-banner-management": "/admin/hero-banner-management",
+    }
+    const nextPath = pathMapping[location.pathname] || location.pathname
+    switchPlatform(nextPlatform)
+    navigate(nextPath, {
+      replace: true,
+      state: { platformSwitchedAt: Date.now(), platform: nextPlatform },
+    })
+  }
+  
+  // Get menu data based on platform - mofood uses original sidebarMenuData (unchanged), mogrocery uses separate menu
+  const menuData = platform === "mogrocery" ? mogroceryMenuData : sidebarMenuData
 
   // Load business settings logo
   useEffect(() => {
@@ -195,8 +219,9 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
 
   // Generate initial expanded state from menu data
   const getInitialExpandedState = () => {
+    const storageKey = `adminSidebarExpanded:${platform}`
     try {
-      const saved = localStorage.getItem('adminSidebarExpanded')
+      const saved = localStorage.getItem(storageKey)
       if (saved) {
         return JSON.parse(saved)
       }
@@ -204,7 +229,7 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
       console.error('Error loading sidebar state:', e)
     }
     const state = {}
-    sidebarMenuData.forEach((item) => {
+    menuData.forEach((item) => {
       if (item.type === "section") {
         item.items.forEach((subItem) => {
           if (subItem.type === "expandable") {
@@ -221,13 +246,13 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
   // Filter menu items based on search query
   const filteredMenuData = useMemo(() => {
     if (!searchQuery.trim()) {
-      return sidebarMenuData
+      return menuData
     }
 
     const query = searchQuery.toLowerCase().trim()
     const filtered = []
 
-    sidebarMenuData.forEach((item) => {
+    menuData.forEach((item) => {
       if (item.type === "link") {
         if (item.label.toLowerCase().includes(query)) {
           filtered.push(item)
@@ -265,7 +290,7 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
     })
 
     return filtered
-  }, [searchQuery])
+  }, [searchQuery, menuData])
 
   // Auto-expand sections with matches when searching
   useEffect(() => {
@@ -275,7 +300,7 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
       setExpandedSections((prev) => {
         const newExpandedState = { ...prev }
         
-        sidebarMenuData.forEach((item) => {
+        menuData.forEach((item) => {
           if (item.type === "section") {
             item.items.forEach((subItem) => {
               if (subItem.type === "expandable") {
@@ -296,7 +321,7 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
         return newExpandedState
       })
     }
-  }, [searchQuery])
+  }, [searchQuery, menuData])
 
   const isActive = (path, allPaths = []) => {
     if (path === "/admin") {
@@ -315,12 +340,13 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
   }
 
   useEffect(() => {
+    const storageKey = `adminSidebarExpanded:${platform}`
     try {
-      localStorage.setItem('adminSidebarExpanded', JSON.stringify(expandedSections))
+      localStorage.setItem(storageKey, JSON.stringify(expandedSections))
     } catch (e) {
       console.error('Error saving sidebar state:', e)
     }
-  }, [expandedSections])
+  }, [expandedSections, platform])
 
   const toggleSection = (sectionKey) => {
     setExpandedSections(prev => ({
@@ -548,28 +574,57 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
             </div>
           )}
           {isCollapsed && (
-            <div className="w-full flex items-center justify-center">
-              <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center shadow-lg shadow-black/20 ring-1 ring-white/10">
-                {logoUrl ? (
-                  <img 
-                    src={logoUrl} 
-                    alt={companyName || "Company"} 
-                    className="w-10 h-10 object-contain" 
-                    loading="lazy"
-                    onError={(e) => {
-                      // Hide image if it fails to load
-                      e.target.style.display = 'none'
-                    }}
-                  />
-                ) : companyName ? (
-                  <span className="text-[10px] font-semibold text-white truncate px-1">
-                    {companyName.charAt(0).toUpperCase()}
-                  </span>
-                ) : (
-                  <img src={appzetoLogo} alt={companyName || "Company"} className="w-10 h-10 object-contain" loading="lazy" />
-                )}
+            <>
+              <div className="w-full flex items-center justify-center mb-2">
+                <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center shadow-lg shadow-black/20 ring-1 ring-white/10">
+                  {logoUrl ? (
+                    <img 
+                      src={logoUrl} 
+                      alt={companyName || "Company"} 
+                      className="w-10 h-10 object-contain" 
+                      loading="lazy"
+                      onError={(e) => {
+                        // Hide image if it fails to load
+                        e.target.style.display = 'none'
+                      }}
+                    />
+                  ) : companyName ? (
+                    <span className="text-[10px] font-semibold text-white truncate px-1">
+                      {companyName.charAt(0).toUpperCase()}
+                    </span>
+                  ) : (
+                    <img src={appzetoLogo} alt={companyName || "Company"} className="w-10 h-10 object-contain" loading="lazy" />
+                  )}
+                </div>
               </div>
-            </div>
+              {/* Platform Toggle for Collapsed State */}
+              <div className="flex flex-col gap-1">
+                <button
+                  onClick={() => handlePlatformSwitch("mofood")}
+                  className={cn(
+                    "w-full px-2 py-1.5 rounded-md text-[10px] font-semibold transition-all duration-200",
+                    platform === "mofood"
+                      ? "bg-white/10 text-white"
+                      : "text-neutral-400 hover:text-neutral-200 hover:bg-white/5"
+                  )}
+                  title="MoFood"
+                >
+                  Food
+                </button>
+                <button
+                  onClick={() => handlePlatformSwitch("mogrocery")}
+                  className={cn(
+                    "w-full px-2 py-1.5 rounded-md text-[10px] font-semibold transition-all duration-200",
+                    platform === "mogrocery"
+                      ? "bg-white/10 text-white"
+                      : "text-neutral-400 hover:text-neutral-200 hover:bg-white/5"
+                  )}
+                  title="MoGrocery"
+                >
+                  Grocery
+                </button>
+              </div>
+            </>
           )}
           <div className="flex items-center gap-2">
             <button
@@ -595,9 +650,34 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
         {/* Admin Panel Label */}
         {!isCollapsed && (
           <div className="mb-3 animate-[slideIn_0.4s_ease-out_0.1s_both]">
-            <h2 className="text-sm font-semibold text-neutral-300 uppercase tracking-wider text-left">
+            <h2 className="text-sm font-semibold text-neutral-300 uppercase tracking-wider text-left mb-2">
               Admin Panel
             </h2>
+            {/* Platform Toggle */}
+            <div className="bg-neutral-800/60 rounded-lg p-1 flex gap-1">
+              <button
+                onClick={() => handlePlatformSwitch("mofood")}
+                className={cn(
+                  "flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-all duration-200",
+                  platform === "mofood"
+                    ? "bg-white/10 text-white shadow-sm"
+                    : "text-neutral-400 hover:text-neutral-200"
+                )}
+              >
+                MoFood
+              </button>
+              <button
+                onClick={() => handlePlatformSwitch("mogrocery")}
+                className={cn(
+                  "flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-all duration-200",
+                  platform === "mogrocery"
+                    ? "bg-white/10 text-white shadow-sm"
+                    : "text-neutral-400 hover:text-neutral-200"
+                )}
+              >
+                MoGrocery
+              </button>
+            </div>
           </div>
         )}
 

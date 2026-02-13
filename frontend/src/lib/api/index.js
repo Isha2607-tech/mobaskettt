@@ -1182,6 +1182,141 @@ export const adminAPI = {
     return apiClient.patch(API_ENDPOINTS.ADMIN.CATEGORY_PRIORITY.replace(':id', id), { priority });
   },
 
+  // Grocery Category Management (separate from mofood categories)
+  getGroceryCategories: (params = {}) => {
+    return apiClient.get('/grocery/categories', {
+      params: {
+        ...params,
+        activeOnly: 'false',
+      },
+    });
+  },
+
+  getGroceryCategoryById: (id) => {
+    return apiClient.get(`/grocery/categories/${id}`);
+  },
+
+  createGroceryCategory: (data) => {
+    if (data instanceof FormData) {
+      const payload = {
+        name: data.get('name') || '',
+        section: data.get('type') || 'Grocery & Kitchen',
+        isActive: String(data.get('status')) === 'true',
+        image: typeof data.get('image') === 'string' ? data.get('image') : '',
+      };
+      return apiClient.post('/grocery/categories', payload);
+    }
+    return apiClient.post('/grocery/categories', data);
+  },
+
+  updateGroceryCategory: (id, data) => {
+    if (data instanceof FormData) {
+      const payload = {
+        name: data.get('name') || '',
+        section: data.get('type') || 'Grocery & Kitchen',
+        isActive: String(data.get('status')) === 'true',
+        image: typeof data.get('image') === 'string' ? data.get('image') : '',
+      };
+      return apiClient.put(`/grocery/categories/${id}`, payload);
+    }
+    return apiClient.put(`/grocery/categories/${id}`, data);
+  },
+
+  deleteGroceryCategory: (id) => {
+    return apiClient.delete(`/grocery/categories/${id}`);
+  },
+
+  toggleGroceryCategoryStatus: (id, isActive) => {
+    return apiClient.put(`/grocery/categories/${id}`, { isActive });
+  },
+
+  getGrocerySubcategories: (params = {}) => {
+    return apiClient.get('/grocery/subcategories', {
+      params: {
+        ...params,
+        activeOnly: 'false',
+      },
+    });
+  },
+
+  getGrocerySubcategoryById: (id) => {
+    return apiClient.get(`/grocery/subcategories/${id}`);
+  },
+
+  createGrocerySubcategory: (payload) => {
+    return apiClient.post('/grocery/subcategories', payload);
+  },
+
+  updateGrocerySubcategory: (id, payload) => {
+    return apiClient.put(`/grocery/subcategories/${id}`, payload);
+  },
+
+  deleteGrocerySubcategory: (id) => {
+    return apiClient.delete(`/grocery/subcategories/${id}`);
+  },
+
+  toggleGrocerySubcategoryStatus: (id, isActive) => {
+    return apiClient.put(`/grocery/subcategories/${id}`, { isActive });
+  },
+
+  getGroceryProducts: (params = {}) => {
+    return apiClient.get('/grocery/products', {
+      params: {
+        ...params,
+        activeOnly: 'false',
+      },
+    });
+  },
+
+  getGroceryProductById: (id) => {
+    return apiClient.get(`/grocery/products/${id}`);
+  },
+
+  createGroceryProduct: (payload) => {
+    return apiClient.post('/grocery/products', payload);
+  },
+
+  updateGroceryProduct: (id, payload) => {
+    return apiClient.put(`/grocery/products/${id}`, payload);
+  },
+
+  deleteGroceryProduct: (id) => {
+    return apiClient.delete(`/grocery/products/${id}`);
+  },
+
+  toggleGroceryProductStatus: (id, isActive) => {
+    return apiClient.put(`/grocery/products/${id}`, { isActive });
+  },
+
+  getGroceryPlans: (params = {}) => {
+    return apiClient.get('/grocery/plans', {
+      params: {
+        ...params,
+        activeOnly: 'false',
+      },
+    });
+  },
+
+  getGroceryPlanById: (id) => {
+    return apiClient.get(`/grocery/plans/${id}`);
+  },
+
+  createGroceryPlan: (payload) => {
+    return apiClient.post('/grocery/plans', payload);
+  },
+
+  updateGroceryPlan: (id, payload) => {
+    return apiClient.put(`/grocery/plans/${id}`, payload);
+  },
+
+  deleteGroceryPlan: (id) => {
+    return apiClient.delete(`/grocery/plans/${id}`);
+  },
+
+  toggleGroceryPlanStatus: (id, isActive) => {
+    return apiClient.put(`/grocery/plans/${id}`, { isActive });
+  },
+
   // Fee Settings Management (Delivery & Platform Fee)
   getFeeSettings: () => {
     return apiClient.get(API_ENDPOINTS.ADMIN.FEE_SETTINGS);
@@ -1399,6 +1534,19 @@ export const adminAPI = {
 
   rejectFoodItem: (id, reason) => {
     return apiClient.post(API_ENDPOINTS.ADMIN.FOOD_APPROVAL_REJECT.replace(':id', id), { reason });
+  },
+
+  // Grocery Approval Management
+  getPendingGroceryApprovals: (params = {}) => {
+    return apiClient.get(API_ENDPOINTS.ADMIN.GROCERY_APPROVALS, { params });
+  },
+
+  approveGroceryItem: (id) => {
+    return apiClient.post(API_ENDPOINTS.ADMIN.GROCERY_APPROVAL_APPROVE.replace(':id', id));
+  },
+
+  rejectGroceryItem: (id, reason) => {
+    return apiClient.post(API_ENDPOINTS.ADMIN.GROCERY_APPROVAL_REJECT.replace(':id', id), { reason });
   },
 
   // Feedback Experience Management

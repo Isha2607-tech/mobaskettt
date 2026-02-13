@@ -1,5 +1,5 @@
 import React from "react";
-import { Routes, Route, useNavigate, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AuthRedirect from "@/components/AuthRedirect";
 import { isModuleAuthenticated } from "@/lib/utils/auth";
@@ -86,6 +86,8 @@ import GroceryPage from "@/module/usermain/pages/GroceryPage";
 import GroceryProfile from "@/module/usermain/pages/GroceryProfile";
 import GroceryCartPage from "@/module/usermain/pages/GroceryCartPage";
 import GroceryCheckoutPage from "@/module/usermain/pages/GroceryCheckoutPage";
+import GrocerySubcategoryProductsPage from "@/module/usermain/pages/GrocerySubcategoryProductsPage";
+import GroceryBestSellerProductsPage from "@/module/usermain/pages/GroceryBestSellerProductsPage";
 import PlansPage from "@/module/usermain/pages/PlansPage";
 import CategoryDirectoryPage from "@/module/usermain/pages/CategoryDirectoryPage";
 import WishlistPage from "@/module/usermain/pages/WishlistPage";
@@ -465,6 +467,8 @@ export default function UserRouter() {
         <Route path="/categories" element={<CategoryDirectoryPage />} />
         <Route path="/wishlist" element={<WishlistPage />} />
         <Route path="/grocery/category/:id" element={<CategoryFoodsPage />} />
+        <Route path="/grocery/subcategory/:subcategoryId" element={<GrocerySubcategoryProductsPage />} />
+        <Route path="/grocery/best-seller/:itemType/:itemId" element={<GroceryBestSellerProductsPage />} />
         <Route path="/food/:id" element={<FoodDetailPage />} />
       </Route>
     </Routes>

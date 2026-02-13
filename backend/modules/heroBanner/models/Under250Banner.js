@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
 
 const under250BannerSchema = new mongoose.Schema({
+  platform: {
+    type: String,
+    enum: ['mofood', 'mogrocery'],
+    default: 'mofood',
+    index: true
+  },
   imageUrl: {
     type: String,
     required: true,
@@ -32,7 +38,7 @@ const under250BannerSchema = new mongoose.Schema({
 });
 
 // Index for ordering
-under250BannerSchema.index({ order: 1, isActive: 1 });
+under250BannerSchema.index({ platform: 1, order: 1, isActive: 1 });
 
 export default mongoose.model('Under250Banner', under250BannerSchema);
 

@@ -1,11 +1,14 @@
 import { useState, useEffect } from "react"
-import { Outlet } from "react-router-dom"
+import { Outlet, useLocation } from "react-router-dom"
 import AdminSidebar from "./AdminSidebar"
 import AdminNavbar from "./AdminNavbar"
+import { PlatformProvider, usePlatform } from "../context/PlatformContext"
 
-export default function AdminLayout() {
+function AdminLayoutContent() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const { platform } = usePlatform();
+  const location = useLocation();
 
   // Get initial collapsed state from localStorage to set initial margin
   useEffect(() => {
@@ -35,6 +38,7 @@ export default function AdminLayout() {
 
       {/* Sidebar */}
       <AdminSidebar
+        key={`sidebar:${platform}`}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onCollapseChange={handleCollapseChange}
@@ -49,10 +53,21 @@ export default function AdminLayout() {
         <AdminNavbar onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
 
         {/* Page Content */}
-        <main className="flex-1  w-full max-w-full overflow-x-hidden bg-neutral-100">
+        <main
+          key={`${platform}:${location.pathname}`}
+          className="flex-1  w-full max-w-full overflow-x-hidden bg-neutral-100"
+        >
           <Outlet />
         </main>
       </div>
     </div>
   );
+}
+
+export default function AdminLayout() {
+  return (
+    <PlatformProvider>
+      <AdminLayoutContent />
+    </PlatformProvider>
+  )
 }

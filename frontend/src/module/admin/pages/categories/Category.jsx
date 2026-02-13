@@ -3,13 +3,38 @@ import { createPortal } from "react-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import { Search, Download, ChevronDown, Plus, Edit, Trash2, Info, MapPin, SlidersHorizontal, ArrowDownUp, Timer, Star, IndianRupee, UtensilsCrossed, BadgePercent, ShieldCheck, X, Loader2, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { adminAPI } from "@/lib/api"
+import { adminAPI, uploadAPI } from "@/lib/api"
 import { API_BASE_URL } from "@/lib/api/config"
 import { toast } from "sonner"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 
-export default function Category() {
+const STATIC_FOOD_CATEGORY_TYPES = ["Starters", "Main course", "Desserts", "Beverages", "Varieties"]
+const DEFAULT_GROCERY_SECTIONS = ["Grocery & Kitchen", "Snacks & Drinks", "Beauty & Personal Care"]
+const GROCERY_ENTITY_OPTIONS = [
+  { value: "categories", label: "Categories" },
+  { value: "subcategories", label: "Subcategories" },
+  { value: "products", label: "Products" },
+]
+const DEFAULT_CATEGORY_IMAGE = "https://via.placeholder.com/40"
+
+const getInitialFormData = () => ({
+  name: "",
+  image: DEFAULT_CATEGORY_IMAGE,
+  status: true,
+  type: "",
+  parentCategory: "",
+  productCategory: "",
+  productSubcategories: [],
+  mrp: "",
+  sellingPrice: "",
+  unit: "",
+  stockQuantity: 0,
+  inStock: true,
+})
+
+export default function Category({ scope = "food", defaultGroceryEntity = "categories" }) {
+  const isGroceryScope = scope === "grocery"
   const [searchQuery, setSearchQuery] = useState("")
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
@@ -20,19 +45,76 @@ export default function Category() {
   const [activeFilterTab, setActiveFilterTab] = useState('sort')
   const [activeScrollSection, setActiveScrollSection] = useState('sort')
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [activeGroceryEntity, setActiveGroceryEntity] = useState(defaultGroceryEntity)
   const [editingCategory, setEditingCategory] = useState(null)
-  const [formData, setFormData] = useState({
-    name: "",
-    image: "https://via.placeholder.com/40",
-    status: true,
-    type: ""
-  })
+  const [formData, setFormData] = useState(getInitialFormData)
   const [selectedImageFile, setSelectedImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
   const [uploadingImage, setUploadingImage] = useState(false)
+  const [groceryTypeOptions, setGroceryTypeOptions] = useState(DEFAULT_GROCERY_SECTIONS)
+  const [groceryCategoryOptions, setGroceryCategoryOptions] = useState([])
+  const [grocerySubcategoryOptions, setGrocerySubcategoryOptions] = useState([])
+
+  useEffect(() => {
+    if (isGroceryScope) {
+      setActiveGroceryEntity(defaultGroceryEntity)
+    }
+  }, [defaultGroceryEntity, isGroceryScope])
   const fileInputRef = useRef(null)
   const filterSectionRefs = useRef({})
   const rightContentRef = useRef(null)
+
+  const categoryTypeOptions = useMemo(() => {
+    if (!isGroceryScope) {
+      return STATIC_FOOD_CATEGORY_TYPES
+    }
+
+    const merged = new Set(DEFAULT_GROCERY_SECTIONS)
+    groceryTypeOptions.forEach((value) => {
+      const normalized = typeof value === "string" ? value.trim() : ""
+      if (normalized) merged.add(normalized)
+    })
+
+    const formType = typeof formData.type === "string" ? formData.type.trim() : ""
+    if (formType) merged.add(formType)
+
+    return Array.from(merged)
+  }, [formData.type, groceryTypeOptions, isGroceryScope])
+
+  const activeEntityLabel = useMemo(() => {
+    if (!isGroceryScope) return "Category"
+    return GROCERY_ENTITY_OPTIONS.find((item) => item.value === activeGroceryEntity)?.label || "Categories"
+  }, [activeGroceryEntity, isGroceryScope])
+
+  const activeEntitySingularLabel = useMemo(() => {
+    if (!isGroceryScope) return "Category"
+    if (activeGroceryEntity === "subcategories") return "Subcategory"
+    if (activeGroceryEntity === "products") return "Product"
+    return "Category"
+  }, [activeGroceryEntity, isGroceryScope])
+
+  const filteredSubcategoryOptions = useMemo(() => {
+    if (!isGroceryScope || activeGroceryEntity !== "products") {
+      return grocerySubcategoryOptions
+    }
+    if (!formData.productCategory) {
+      return grocerySubcategoryOptions
+    }
+    return grocerySubcategoryOptions.filter((item) => item.categoryId === formData.productCategory)
+  }, [activeGroceryEntity, formData.productCategory, grocerySubcategoryOptions, isGroceryScope])
+
+  const handleToggleProductSubcategory = (subcategoryId) => {
+    setFormData((prev) => {
+      const current = Array.isArray(prev.productSubcategories) ? prev.productSubcategories : []
+      const exists = current.includes(subcategoryId)
+      return {
+        ...prev,
+        productSubcategories: exists
+          ? current.filter((id) => id !== subcategoryId)
+          : [...current, subcategoryId],
+      }
+    })
+  }
 
   // Simple filter toggle function
   const toggleFilter = (filterId) => {
@@ -63,7 +145,11 @@ export default function Category() {
     console.log('Admin Token:', adminToken ? 'Present' : 'Missing')
     
     fetchCategories()
-  }, [])
+    if (isGroceryScope) {
+      fetchGroceryTypeOptions()
+      fetchGrocerySubcategoryOptions()
+    }
+  }, [isGroceryScope, activeGroceryEntity])
 
   // Debounced search
   useEffect(() => {
@@ -71,7 +157,7 @@ export default function Category() {
       fetchCategories()
     }, 500)
     return () => clearTimeout(timeoutId)
-  }, [searchQuery])
+  }, [searchQuery, activeGroceryEntity, isGroceryScope])
 
   // Scroll tracking effect for filter modal
   useEffect(() => {
@@ -108,12 +194,69 @@ export default function Category() {
       setLoading(true)
       const params = {}
       if (searchQuery) params.search = searchQuery
-      
-      const response = await adminAPI.getCategories(params)
+
+      const response = isGroceryScope
+        ? activeGroceryEntity === "subcategories"
+          ? await adminAPI.getGrocerySubcategories(params)
+          : activeGroceryEntity === "products"
+            ? await adminAPI.getGroceryProducts(params)
+            : await adminAPI.getGroceryCategories(params)
+        : await adminAPI.getCategories(params)
+
       if (response.data.success) {
-        setCategories(response.data.data.categories || [])
+        if (isGroceryScope) {
+          const list = Array.isArray(response.data.data) ? response.data.data : []
+          const normalized = list.map((item, index) => {
+            if (activeGroceryEntity === "subcategories") {
+              const categoryName = item?.category?.name || "Unassigned"
+              return {
+                id: item._id,
+                sl: index + 1,
+                name: item.name || "",
+                image: item.image || DEFAULT_CATEGORY_IMAGE,
+                status: item.isActive !== false,
+                type: categoryName,
+                parentCategoryId: item?.category?._id || "",
+              }
+            }
+
+            if (activeGroceryEntity === "products") {
+              const categoryName = item?.category?.name || "Unassigned"
+              const firstImage = Array.isArray(item?.images) && item.images.length > 0 ? item.images[0] : ""
+              return {
+                id: item._id,
+                sl: index + 1,
+                name: item.name || "",
+                image: firstImage || DEFAULT_CATEGORY_IMAGE,
+                status: item.isActive !== false,
+                type: `${categoryName}${item?.unit ? ` (${item.unit})` : ""}`,
+                productCategoryId: item?.category?._id || "",
+                productSubcategoryIds: Array.isArray(item?.subcategories)
+                  ? item.subcategories.map((sub) => sub?._id || sub).filter(Boolean)
+                  : [],
+                mrp: item?.mrp ?? "",
+                sellingPrice: item?.sellingPrice ?? "",
+                unit: item?.unit || "",
+                stockQuantity: item?.stockQuantity ?? 0,
+                inStock: item?.inStock !== false,
+              }
+            }
+
+            return {
+              id: item._id,
+              sl: index + 1,
+              name: item.name || "",
+              image: item.image || DEFAULT_CATEGORY_IMAGE,
+              status: item.isActive !== false,
+              type: item.section || "",
+            }
+          })
+          setCategories(normalized)
+        } else {
+          setCategories(response.data.data.categories || [])
+        }
       } else {
-        toast.error(response.data.message || 'Failed to load categories')
+        toast.error(response.data.message || `Failed to load ${activeEntityLabel.toLowerCase()}`)
         setCategories([])
       }
     } catch (error) {
@@ -144,7 +287,7 @@ export default function Category() {
         } else if (status === 403) {
           toast.error('Access denied. You do not have permission.')
         } else if (status === 404) {
-          toast.error('Categories endpoint not found. Please check backend server.')
+          toast.error(`${activeEntityLabel} endpoint not found. Please check backend server.`)
         } else if (status >= 500) {
           toast.error('Server error. Please try again later.')
         } else {
@@ -167,6 +310,63 @@ export default function Category() {
     }
   }
 
+  const fetchGroceryTypeOptions = async () => {
+    if (!isGroceryScope) {
+      return
+    }
+
+    try {
+      const response = await adminAPI.getGroceryCategories()
+      if (!response?.data?.success) {
+        return
+      }
+
+      const allCategories = Array.isArray(response.data.data) ? response.data.data : []
+      const sectionSet = new Set(DEFAULT_GROCERY_SECTIONS)
+      const normalizedCategoryOptions = []
+      allCategories.forEach((item) => {
+        const section = typeof item?.section === "string" ? item.section.trim() : ""
+        if (section) {
+          sectionSet.add(section)
+        }
+        if (item?._id && item?.name) {
+          normalizedCategoryOptions.push({
+            id: item._id,
+            name: item.name,
+            section: item.section || "",
+          })
+        }
+      })
+      setGroceryTypeOptions(Array.from(sectionSet))
+      setGroceryCategoryOptions(normalizedCategoryOptions)
+    } catch (error) {
+      console.error('Error fetching grocery category types:', error)
+      setGroceryTypeOptions(DEFAULT_GROCERY_SECTIONS)
+      setGroceryCategoryOptions([])
+    }
+  }
+
+  const fetchGrocerySubcategoryOptions = async () => {
+    if (!isGroceryScope) return
+    try {
+      const response = await adminAPI.getGrocerySubcategories()
+      if (!response?.data?.success) return
+      const allSubcategories = Array.isArray(response.data.data) ? response.data.data : []
+      const normalized = allSubcategories
+        .filter((item) => item?._id && item?.name)
+        .map((item) => ({
+          id: item._id,
+          name: item.name,
+          categoryId: item?.category?._id || item?.category || "",
+          categoryName: item?.category?.name || "",
+        }))
+      setGrocerySubcategoryOptions(normalized)
+    } catch (error) {
+      console.error('Error fetching grocery subcategory options:', error)
+      setGrocerySubcategoryOptions([])
+    }
+  }
+
   const filteredCategories = useMemo(() => {
     let result = [...categories]
     
@@ -183,9 +383,17 @@ export default function Category() {
 
   const handleToggleStatus = async (id) => {
     try {
-      const response = await adminAPI.toggleCategoryStatus(id)
+      const currentCategory = categories.find(cat => cat.id === id)
+      const nextStatus = !(currentCategory?.status)
+      const response = isGroceryScope
+        ? activeGroceryEntity === "subcategories"
+          ? await adminAPI.toggleGrocerySubcategoryStatus(id, nextStatus)
+          : activeGroceryEntity === "products"
+            ? await adminAPI.toggleGroceryProductStatus(id, nextStatus)
+            : await adminAPI.toggleGroceryCategoryStatus(id, nextStatus)
+        : await adminAPI.toggleCategoryStatus(id)
       if (response.data.success) {
-        toast.success('Category status updated successfully')
+        toast.success('Status updated successfully')
         // Update local state immediately for better UX
         setCategories(prevCategories =>
           prevCategories.map(cat =>
@@ -204,20 +412,32 @@ export default function Category() {
 
 
   const handleDelete = async (id) => {
-    const categoryName = categories.find(cat => cat.id === id)?.name || 'this category'
-    if (window.confirm(`Are you sure you want to delete "${categoryName}"? This action cannot be undone.`)) {
+    const itemName = categories.find(cat => cat.id === id)?.name || 'this item'
+    if (window.confirm(`Are you sure you want to delete "${itemName}"? This action cannot be undone.`)) {
       try {
-        const response = await adminAPI.deleteCategory(id)
+        const response = isGroceryScope
+          ? activeGroceryEntity === "subcategories"
+            ? await adminAPI.deleteGrocerySubcategory(id)
+            : activeGroceryEntity === "products"
+              ? await adminAPI.deleteGroceryProduct(id)
+              : await adminAPI.deleteGroceryCategory(id)
+          : await adminAPI.deleteCategory(id)
         if (response.data.success) {
-          toast.success('Category deleted successfully')
+          toast.success('Deleted successfully')
           // Remove from local state immediately for better UX
           setCategories(prevCategories => prevCategories.filter(cat => cat.id !== id))
           // Refresh from server to ensure consistency
           setTimeout(() => fetchCategories(), 500)
+          if (isGroceryScope && activeGroceryEntity === "categories") {
+            setTimeout(() => fetchGroceryTypeOptions(), 500)
+          }
+          if (isGroceryScope) {
+            setTimeout(() => fetchGrocerySubcategoryOptions(), 500)
+          }
         }
       } catch (error) {
         console.error('Error deleting category:', error)
-        const errorMessage = error.response?.data?.message || 'Failed to delete category'
+        const errorMessage = error.response?.data?.message || 'Failed to delete'
         toast.error(errorMessage)
       }
     }
@@ -225,12 +445,37 @@ export default function Category() {
 
   const handleEdit = (category) => {
     setEditingCategory(category)
-    setFormData({
-      name: category.name || "",
-      image: category.image || "https://via.placeholder.com/40",
-      status: category.status !== undefined ? category.status : true,
-      type: category.type || ""
-    })
+    if (isGroceryScope && activeGroceryEntity === "subcategories") {
+      setFormData({
+        ...getInitialFormData(),
+        name: category.name || "",
+        image: category.image || DEFAULT_CATEGORY_IMAGE,
+        status: category.status !== undefined ? category.status : true,
+        parentCategory: category.parentCategoryId || "",
+      })
+    } else if (isGroceryScope && activeGroceryEntity === "products") {
+      setFormData({
+        ...getInitialFormData(),
+        name: category.name || "",
+        image: category.image || DEFAULT_CATEGORY_IMAGE,
+        status: category.status !== undefined ? category.status : true,
+        productCategory: category.productCategoryId || "",
+        productSubcategories: Array.isArray(category.productSubcategoryIds) ? category.productSubcategoryIds : [],
+        mrp: category.mrp ?? "",
+        sellingPrice: category.sellingPrice ?? "",
+        unit: category.unit || "",
+        stockQuantity: category.stockQuantity ?? 0,
+        inStock: category.inStock !== false,
+      })
+    } else {
+      setFormData({
+        ...getInitialFormData(),
+        name: category.name || "",
+        image: category.image || DEFAULT_CATEGORY_IMAGE,
+        status: category.status !== undefined ? category.status : true,
+        type: category.type || ""
+      })
+    }
     setSelectedImageFile(null)
     setImagePreview(category.image || null)
     setIsModalOpen(true)
@@ -238,12 +483,7 @@ export default function Category() {
 
   const handleAddNew = () => {
     setEditingCategory(null)
-    setFormData({
-      name: "",
-      image: "https://via.placeholder.com/40",
-      status: true,
-      type: ""
-    })
+    setFormData(getInitialFormData())
     setSelectedImageFile(null)
     setImagePreview(null)
     if (fileInputRef.current) {
@@ -378,12 +618,7 @@ export default function Category() {
     setEditingCategory(null)
     setSelectedImageFile(null)
     setImagePreview(null)
-    setFormData({
-      name: "",
-      image: "https://via.placeholder.com/40",
-      status: true,
-      type: ""
-    })
+    setFormData(getInitialFormData())
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
     }
@@ -394,48 +629,84 @@ export default function Category() {
     try {
       setUploadingImage(true)
 
-      // Prepare FormData for file upload
-      const formDataToSend = new FormData()
-      formDataToSend.append('name', formData.name)
-      formDataToSend.append('type', formData.type)
-      formDataToSend.append('status', formData.status.toString())
-
-      // Add image file if selected, otherwise use existing image URL
-      if (selectedImageFile) {
-        formDataToSend.append('image', selectedImageFile)
-      } else if (formData.image && formData.image !== 'https://via.placeholder.com/40') {
-        // If no new file but existing image URL, send it as string
-        formDataToSend.append('image', formData.image)
+      let resolvedImageValue = formData.image
+      if (isGroceryScope && selectedImageFile) {
+        const uploadResponse = await uploadAPI.uploadMedia(selectedImageFile, {
+          folder: "appzeto/grocery/categories",
+        })
+        resolvedImageValue = uploadResponse?.data?.data?.url || ""
       }
 
-      console.log('Sending category data:', {
-        name: formData.name,
-        type: formData.type,
-        status: formData.status,
-        hasImageFile: !!selectedImageFile,
-        imageUrl: formData.image
-      })
+      if (!isGroceryScope) {
+        const formDataToSend = new FormData()
+        formDataToSend.append('name', formData.name)
+        formDataToSend.append('type', formData.type)
+        formDataToSend.append('status', formData.status.toString())
+        if (selectedImageFile) {
+          formDataToSend.append('image', selectedImageFile)
+        } else if (resolvedImageValue && resolvedImageValue !== DEFAULT_CATEGORY_IMAGE) {
+          formDataToSend.append('image', resolvedImageValue)
+        }
 
-      if (editingCategory) {
-        const response = await adminAPI.updateCategory(editingCategory.id, formDataToSend)
-        console.log('Category update response:', response.data)
-        if (response.data.success) {
-          toast.success('Category updated successfully')
-          // Update local state immediately for better UX
-          const updatedCategory = response.data.data.category
-          setCategories(prevCategories =>
-            prevCategories.map(cat =>
-              cat.id === editingCategory.id
-                ? { ...cat, ...updatedCategory, id: updatedCategory.id || cat.id }
-                : cat
-            )
-          )
+        if (editingCategory) {
+          const response = await adminAPI.updateCategory(editingCategory.id, formDataToSend)
+          if (response.data.success) {
+            toast.success('Category updated successfully')
+          }
+        } else {
+          const response = await adminAPI.createCategory(formDataToSend)
+          if (response.data.success) {
+            toast.success('Category created successfully')
+          }
+        }
+      } else if (activeGroceryEntity === "subcategories") {
+        const payload = {
+          category: formData.parentCategory,
+          name: formData.name,
+          isActive: formData.status,
+          image: resolvedImageValue && resolvedImageValue !== DEFAULT_CATEGORY_IMAGE ? resolvedImageValue : "",
+        }
+        if (editingCategory) {
+          const response = await adminAPI.updateGrocerySubcategory(editingCategory.id, payload)
+          if (response.data.success) toast.success('Subcategory updated successfully')
+        } else {
+          const response = await adminAPI.createGrocerySubcategory(payload)
+          if (response.data.success) toast.success('Subcategory created successfully')
+        }
+      } else if (activeGroceryEntity === "products") {
+        const payload = {
+          category: formData.productCategory,
+          subcategories: formData.productSubcategories,
+          name: formData.name,
+          mrp: Number(formData.mrp || 0),
+          sellingPrice: Number(formData.sellingPrice || 0),
+          unit: formData.unit || "",
+          stockQuantity: Number(formData.stockQuantity || 0),
+          inStock: Boolean(formData.inStock),
+          isActive: Boolean(formData.status),
+          images: resolvedImageValue && resolvedImageValue !== DEFAULT_CATEGORY_IMAGE ? [resolvedImageValue] : [],
+        }
+        if (editingCategory) {
+          const response = await adminAPI.updateGroceryProduct(editingCategory.id, payload)
+          if (response.data.success) toast.success('Product updated successfully')
+        } else {
+          const response = await adminAPI.createGroceryProduct(payload)
+          if (response.data.success) toast.success('Product created successfully')
         }
       } else {
-        const response = await adminAPI.createCategory(formDataToSend)
-        console.log('Category create response:', response.data)
-        if (response.data.success) {
-          toast.success('Category created successfully')
+        const normalizedCategoryName = (formData.name || "").trim()
+        const payload = {
+          name: normalizedCategoryName,
+          section: normalizedCategoryName,
+          isActive: Boolean(formData.status),
+          image: resolvedImageValue && resolvedImageValue !== DEFAULT_CATEGORY_IMAGE ? resolvedImageValue : "",
+        }
+        if (editingCategory) {
+          const response = await adminAPI.updateGroceryCategory(editingCategory.id, payload)
+          if (response.data.success) toast.success('Category updated successfully')
+        } else {
+          const response = await adminAPI.createGroceryCategory(payload)
+          if (response.data.success) toast.success('Category created successfully')
         }
       }
       
@@ -444,6 +715,10 @@ export default function Category() {
       
       // Refresh from server to ensure consistency
       setTimeout(() => fetchCategories(), 500)
+      if (isGroceryScope) {
+        setTimeout(() => fetchGroceryTypeOptions(), 500)
+        setTimeout(() => fetchGrocerySubcategoryOptions(), 500)
+      }
     } catch (error) {
       console.error('Error saving category:', error)
       console.error('Error details:', {
@@ -486,12 +761,31 @@ export default function Category() {
               <div className="w-2 h-2 bg-white rounded-sm"></div>
             </div>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">Category</h1>
+          <h1 className="text-2xl font-bold text-slate-900">{isGroceryScope ? "Grocery Catalog" : "Category"}</h1>
         </div>
+
+        {isGroceryScope && (
+          <div className="mb-4 flex flex-wrap gap-2">
+            {GROCERY_ENTITY_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setActiveGroceryEntity(option.value)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                  activeGroceryEntity === option.value
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-slate-900">Category List</h2>
+            <h2 className="text-lg font-semibold text-slate-900">{activeEntityLabel} List</h2>
             <span className="px-3 py-1 rounded-full text-sm font-semibold bg-slate-100 text-slate-700">
               {filteredCategories.length}
             </span>
@@ -524,7 +818,7 @@ export default function Category() {
               className="px-4 py-2.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2 transition-all shadow-sm"
             >
               <Plus className="w-4 h-4" />
-              <span>Add New Category</span>
+              <span>Add New {activeEntitySingularLabel}</span>
             </button>
           </div>
         </div>
@@ -1046,7 +1340,7 @@ export default function Category() {
                   {/* Header */}
                   <div className="flex items-center justify-between px-6 py-4 border-b">
                     <h2 className="text-xl font-bold text-slate-900">
-                      {editingCategory ? 'Edit Category' : 'Add New Category'}
+                      {editingCategory ? `Edit ${activeEntitySingularLabel}` : `Add New ${activeEntitySingularLabel}`}
                     </h2>
                     <button 
                       onClick={handleCloseModal}
@@ -1058,28 +1352,112 @@ export default function Category() {
                   
                   {/* Form */}
                   <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Category Type *
-                      </label>
-                      <select
-                        required
-                        value={formData.type}
-                        onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                        className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                      >
-                        <option value="">Select category type</option>
-                        <option value="Starters">Starters</option>
-                        <option value="Main course">Main course</option>
-                        <option value="Desserts">Desserts</option>
-                        <option value="Beverages">Beverages</option>
-                        <option value="Varieties">Varieties</option>
-                      </select>
-                    </div>
+                    {!isGroceryScope && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                          Category Type *
+                        </label>
+                        <select
+                          required
+                          value={formData.type}
+                          onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                          className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        >
+                          <option value="">Select category type</option>
+                          {categoryTypeOptions.map((typeOption) => (
+                            <option key={typeOption} value={typeOption}>
+                              {typeOption}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {isGroceryScope && activeGroceryEntity === "subcategories" && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                          Parent Category *
+                        </label>
+                        <select
+                          required
+                          value={formData.parentCategory}
+                          onChange={(e) => setFormData({ ...formData, parentCategory: e.target.value })}
+                          className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        >
+                          <option value="">Select parent category</option>
+                          {groceryCategoryOptions.map((categoryOption) => (
+                            <option key={categoryOption.id} value={categoryOption.id}>
+                              {categoryOption.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {isGroceryScope && activeGroceryEntity === "products" && (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-2">
+                            Category *
+                          </label>
+                          <select
+                            required
+                            value={formData.productCategory}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                productCategory: e.target.value,
+                                productSubcategories: [],
+                              })
+                            }
+                            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                          >
+                            <option value="">Select category</option>
+                            {groceryCategoryOptions.map((categoryOption) => (
+                              <option key={categoryOption.id} value={categoryOption.id}>
+                                {categoryOption.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-2">
+                            Subcategories
+                          </label>
+                          <div className="border border-slate-300 rounded-lg p-2 max-h-48 overflow-y-auto bg-white">
+                            {filteredSubcategoryOptions.length === 0 && (
+                              <p className="text-xs text-slate-500 px-1 py-1">
+                                No subcategories available for selected category.
+                              </p>
+                            )}
+                            <div className="flex flex-wrap gap-2">
+                              {filteredSubcategoryOptions.map((subcategoryOption) => {
+                                const isSelected = formData.productSubcategories.includes(subcategoryOption.id)
+                                return (
+                                  <button
+                                    key={subcategoryOption.id}
+                                    type="button"
+                                    onClick={() => handleToggleProductSubcategory(subcategoryOption.id)}
+                                    className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${
+                                      isSelected
+                                        ? "bg-blue-600 text-white border-blue-600"
+                                        : "bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100"
+                                    }`}
+                                  >
+                                    {subcategoryOption.name}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-1">Tap/click to select one or multiple subcategories</p>
+                        </div>
+                      </>
+                    )}
 
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Category Name *
+                        {activeEntitySingularLabel} Name *
                       </label>
                       <input
                         type="text"
@@ -1091,9 +1469,80 @@ export default function Category() {
                       />
                     </div>
 
+                    {isGroceryScope && activeGroceryEntity === "products" && (
+                      <>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-2">
+                              MRP *
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              required
+                              value={formData.mrp}
+                              onChange={(e) => setFormData({ ...formData, mrp: e.target.value })}
+                              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-2">
+                              Selling Price *
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              required
+                              value={formData.sellingPrice}
+                              onChange={(e) => setFormData({ ...formData, sellingPrice: e.target.value })}
+                              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-2">
+                              Unit
+                            </label>
+                            <input
+                              type="text"
+                              value={formData.unit}
+                              onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                              placeholder="eg. 1kg"
+                              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-2">
+                              Stock Qty
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={formData.stockQuantity}
+                              onChange={(e) => setFormData({ ...formData, stockQuantity: e.target.value })}
+                              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            id="inStock"
+                            checked={formData.inStock}
+                            onChange={(e) => setFormData({ ...formData, inStock: e.target.checked })}
+                            className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+                          />
+                          <label htmlFor="inStock" className="text-sm font-medium text-slate-700">
+                            In Stock
+                          </label>
+                        </div>
+                      </>
+                    )}
+
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Category Image
+                        {activeEntitySingularLabel} Image
                       </label>
                       <div className="space-y-3">
                         {/* Image Preview */}

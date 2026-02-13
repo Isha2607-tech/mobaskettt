@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
 
 const landingPageCategorySchema = new mongoose.Schema({
+  platform: {
+    type: String,
+    enum: ['mofood', 'mogrocery'],
+    default: 'mofood',
+    index: true
+  },
   label: {
     type: String,
     required: true,
@@ -42,7 +48,7 @@ const landingPageCategorySchema = new mongoose.Schema({
 });
 
 // Index for ordering
-landingPageCategorySchema.index({ order: 1, isActive: 1 });
+landingPageCategorySchema.index({ platform: 1, order: 1, isActive: 1 });
 
 export default mongoose.model('LandingPageCategory', landingPageCategorySchema);
 

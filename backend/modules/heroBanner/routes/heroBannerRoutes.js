@@ -49,7 +49,13 @@ import {
   createGourmetRestaurant,
   deleteGourmetRestaurant,
   updateGourmetRestaurantOrder,
-  toggleGourmetRestaurantStatus
+  toggleGourmetRestaurantStatus,
+  getGroceryBestSellers,
+  getAllGroceryBestSellers,
+  createGroceryBestSeller,
+  deleteGroceryBestSeller,
+  updateGroceryBestSellerOrder,
+  toggleGroceryBestSellerStatus
 } from '../controllers/heroBannerController.js';
 
 const router = express.Router();
@@ -62,6 +68,7 @@ router.get('/under-250/public', getUnder250Banners);
 router.get('/dining/public', getDiningBanners);
 router.get('/top-10/public', getTop10Restaurants);
 router.get('/gourmet/public', getGourmetRestaurants);
+router.get('/grocery-best-sellers/public', getGroceryBestSellers);
 
 // Admin routes - Hero Banners
 router.get('/', authenticateAdmin, getAllHeroBanners);
@@ -162,6 +169,13 @@ router.post('/gourmet', authenticateAdmin, createGourmetRestaurant);
 router.delete('/gourmet/:id', authenticateAdmin, deleteGourmetRestaurant);
 router.patch('/gourmet/:id/order', authenticateAdmin, updateGourmetRestaurantOrder);
 router.patch('/gourmet/:id/status', authenticateAdmin, toggleGourmetRestaurantStatus);
+
+// Admin routes - Grocery Best Sellers
+router.get('/grocery-best-sellers', authenticateAdmin, getAllGroceryBestSellers);
+router.post('/grocery-best-sellers', authenticateAdmin, createGroceryBestSeller);
+router.delete('/grocery-best-sellers/:id', authenticateAdmin, deleteGroceryBestSeller);
+router.patch('/grocery-best-sellers/:id/order', authenticateAdmin, updateGroceryBestSellerOrder);
+router.patch('/grocery-best-sellers/:id/status', authenticateAdmin, toggleGroceryBestSellerStatus);
 
 export default router;
 

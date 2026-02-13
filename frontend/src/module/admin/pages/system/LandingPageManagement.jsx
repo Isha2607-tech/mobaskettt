@@ -8,8 +8,16 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
+import { usePlatform } from "@/module/admin/context/PlatformContext"
 
-export default function LandingPageManagement() {
+export default function LandingPageManagement({ forcedPlatform }) {
+  const { platform: contextPlatform } = usePlatform()
+  const platform =
+    forcedPlatform === "mofood" || forcedPlatform === "mogrocery"
+      ? forcedPlatform
+      : contextPlatform === "mogrocery"
+        ? "mogrocery"
+        : "mofood"
   const [activeTab, setActiveTab] = useState('banners')
   const [exploreMoreSubTab, setExploreMoreSubTab] = useState('top-10')
 
@@ -67,6 +75,17 @@ export default function LandingPageManagement() {
   const [gourmetDeleting, setGourmetDeleting] = useState(null)
   const [selectedRestaurantGourmet, setSelectedRestaurantGourmet] = useState("")
 
+  // Grocery Best Sellers
+  const [bestSellers, setBestSellers] = useState([])
+  const [bestSellersLoading, setBestSellersLoading] = useState(true)
+  const [bestSellersDeleting, setBestSellersDeleting] = useState(null)
+  const [selectedBestSellerType, setSelectedBestSellerType] = useState("subcategory")
+  const [selectedBestSellerItemId, setSelectedBestSellerItemId] = useState("")
+  const [groceryCategories, setGroceryCategories] = useState([])
+  const [grocerySubcategories, setGrocerySubcategories] = useState([])
+  const [groceryProducts, setGroceryProducts] = useState([])
+  const [groceryCatalogLoading, setGroceryCatalogLoading] = useState(false)
+
   // Common
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
@@ -121,10 +140,15 @@ export default function LandingPageManagement() {
       ...additionalConfig.headers,
       Authorization: `Bearer ${adminToken.trim()}`,
     }
+    const mergedParams = {
+      ...additionalConfig.params,
+      platform,
+    }
 
     return {
       ...additionalConfig,
       headers: mergedHeaders,
+      params: mergedParams,
     }
   }
 
@@ -142,9 +166,15 @@ export default function LandingPageManagement() {
         fetchTop10Restaurants()
       } else if (exploreMoreSubTab === 'gourmet') {
         fetchGourmetRestaurants()
+      } else if (exploreMoreSubTab === 'best-sellers' && platform === 'mogrocery') {
+        fetchGroceryCatalogData()
+        fetchBestSellers()
       }
+    } else if (activeTab === 'best-sellers' && platform === 'mogrocery') {
+      fetchGroceryCatalogData()
+      fetchBestSellers()
     }
-  }, [activeTab, exploreMoreSubTab])
+  }, [activeTab, exploreMoreSubTab, platform])
 
   // ==================== HERO BANNERS ====================
   const fetchBanners = async () => {
@@ -1087,16 +1117,158 @@ export default function LandingPageManagement() {
     }
   }
 
+  // ==================== GROCERY BEST SELLERS ====================
+  const fetchGroceryCatalogData = async () => {
+    if (platform !== 'mogrocery') return
+    try {
+      setGroceryCatalogLoading(true)
+      setError(null)
+      const [categoriesRes, subcategoriesRes, productsRes] = await Promise.all([
+        adminAPI.getGroceryCategories(),
+        adminAPI.getGrocerySubcategories(),
+        adminAPI.getGroceryProducts(),
+      ])
+
+      setGroceryCategories(Array.isArray(categoriesRes?.data?.data) ? categoriesRes.data.data : [])
+      setGrocerySubcategories(Array.isArray(subcategoriesRes?.data?.data) ? subcategoriesRes.data.data : [])
+      setGroceryProducts(Array.isArray(productsRes?.data?.data) ? productsRes.data.data : [])
+    } catch (err) {
+      setErrorSafely(err.response?.data?.message || 'Failed to load grocery catalog data.')
+      setGroceryCategories([])
+      setGrocerySubcategories([])
+      setGroceryProducts([])
+    } finally {
+      setGroceryCatalogLoading(false)
+    }
+  }
+
+  const fetchBestSellers = async () => {
+    if (platform !== 'mogrocery') return
+    try {
+      setBestSellersLoading(true)
+      setError(null)
+      const response = await api.get('/hero-banners/grocery-best-sellers', getAuthConfig())
+      if (response.data.success) {
+        setBestSellers(response.data.data.items || [])
+      }
+    } catch (err) {
+      if (err.response?.status === 401 || err.response?.status === 404) {
+        setBestSellers([])
+        setError(null)
+      } else {
+        setErrorSafely(err.response?.data?.message || 'Failed to load best sellers.')
+      }
+    } finally {
+      setBestSellersLoading(false)
+    }
+  }
+
+  const availableBestSellerItems =
+    selectedBestSellerType === 'category'
+      ? groceryCategories
+      : selectedBestSellerType === 'subcategory'
+        ? grocerySubcategories
+        : groceryProducts
+
+  const selectedBestSellerTypeIds = new Set(
+    bestSellers
+      .filter((item) => item.itemType === selectedBestSellerType)
+      .map((item) => String(item.itemId?._id || item.itemId || ""))
+  )
+
+  const selectableBestSellerItems = availableBestSellerItems.filter(
+    (item) => !selectedBestSellerTypeIds.has(String(item?._id || ""))
+  )
+
+  const handleAddBestSeller = async () => {
+    if (!selectedBestSellerType || !selectedBestSellerItemId) {
+      setError('Please select type and item')
+      return
+    }
+    try {
+      setError(null)
+      setSuccess(null)
+      const response = await api.post('/hero-banners/grocery-best-sellers', {
+        itemType: selectedBestSellerType,
+        itemId: selectedBestSellerItemId,
+      }, getAuthConfig())
+      if (response.data.success) {
+        setSuccess('Best seller item added successfully!')
+        setSelectedBestSellerItemId("")
+        await fetchBestSellers()
+        setTimeout(() => setSuccess(null), 3000)
+      }
+    } catch (err) {
+      setErrorSafely(err.response?.data?.message || 'Failed to add best seller item.')
+    }
+  }
+
+  const handleDeleteBestSeller = async (id) => {
+    if (!window.confirm('Are you sure you want to remove this item from Best Sellers?')) return
+    try {
+      setBestSellersDeleting(id)
+      setError(null)
+      setSuccess(null)
+      const response = await api.delete(`/hero-banners/grocery-best-sellers/${id}`, getAuthConfig())
+      if (response.data.success) {
+        setSuccess('Best seller item removed successfully!')
+        await fetchBestSellers()
+        setTimeout(() => setSuccess(null), 3000)
+      }
+    } catch (err) {
+      setErrorSafely(err.response?.data?.message || 'Failed to remove best seller item.')
+    } finally {
+      setBestSellersDeleting(null)
+    }
+  }
+
+  const handleBestSellerOrderChange = async (id, direction) => {
+    const ordered = [...bestSellers].sort((a, b) => a.order - b.order)
+    const currentItem = ordered.find((item) => item._id === id)
+    if (!currentItem) return
+    const newOrder = direction === 'up' ? currentItem.order - 1 : currentItem.order + 1
+    const swapItem = ordered.find((item) => item.order === newOrder && item._id !== id)
+    if (!swapItem && newOrder < 0) return
+
+    try {
+      setError(null)
+      await api.patch(`/hero-banners/grocery-best-sellers/${id}/order`, { order: newOrder }, getAuthConfig())
+      if (swapItem) {
+        await api.patch(`/hero-banners/grocery-best-sellers/${swapItem._id}/order`, { order: currentItem.order }, getAuthConfig())
+      }
+      await fetchBestSellers()
+    } catch (err) {
+      setErrorSafely('Failed to update best seller order.')
+    }
+  }
+
+  const handleToggleBestSellerStatus = async (id, currentStatus) => {
+    try {
+      setError(null)
+      setSuccess(null)
+      const response = await api.patch(`/hero-banners/grocery-best-sellers/${id}/status`, {}, getAuthConfig())
+      if (response.data.success) {
+        setSuccess(`Item ${currentStatus ? 'deactivated' : 'activated'} successfully!`)
+        await fetchBestSellers()
+        setTimeout(() => setSuccess(null), 3000)
+      }
+    } catch (err) {
+      setErrorSafely(err.response?.data?.message || 'Failed to update item status.')
+    }
+  }
+
   // ==================== RENDER ====================
   const tabs = [
     { id: 'banners', label: 'Hero Banners', icon: ImageIcon },
     { id: 'under-250', label: '250 Banner', icon: Tag },
     { id: 'explore-more', label: 'Explore More', icon: Layout },
+    ...(platform === 'mogrocery' ? [{ id: 'best-sellers', label: 'Best Sellers', icon: Megaphone }] : []),
   ]
 
   const exploreMoreTabs = [
     { id: 'top-10', label: 'Top 10', icon: Trophy },
     { id: 'gourmet', label: 'Gourmet', icon: ChefHat },
+    ...(platform === 'mogrocery' ? [{ id: 'best-sellers', label: 'Best Sellers', icon: Megaphone }] : []),
   ]
 
   return (
@@ -1415,32 +1587,34 @@ export default function LandingPageManagement() {
         )}
 
 
-        {/* Explore More Tab */}
-        {activeTab === 'explore-more' && (
+        {/* Explore More / Best Sellers Tab */}
+        {(activeTab === 'explore-more' || (activeTab === 'best-sellers' && platform === 'mogrocery')) && (
           <>
             {/* Sub-tabs for Explore More */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-2 mb-6">
-              <div className="flex gap-2 overflow-x-auto">
-                {exploreMoreTabs.map((tab) => {
-                  const Icon = tab.icon
-                  const isActive = activeTab === 'explore-more' && (tab.id === 'top-10' ? top10Restaurants.length > 0 : tab.id === 'gourmet' ? gourmetRestaurants.length > 0 : false)
-                  return (
-                    <button
-                      key={tab.id}
-                      onClick={() => setExploreMoreSubTab(tab.id)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
-                        exploreMoreSubTab === tab.id
-                          ? 'bg-blue-500 text-white'
-                          : 'text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      <Icon className="w-4 h-4" />
-                      {tab.label}
-                    </button>
-                  )
-                })}
+            {activeTab === 'explore-more' && (
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-2 mb-6">
+                <div className="flex gap-2 overflow-x-auto">
+                  {exploreMoreTabs.map((tab) => {
+                    const Icon = tab.icon
+                    const isActive = activeTab === 'explore-more' && (tab.id === 'top-10' ? top10Restaurants.length > 0 : tab.id === 'gourmet' ? gourmetRestaurants.length > 0 : false)
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setExploreMoreSubTab(tab.id)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
+                          exploreMoreSubTab === tab.id
+                            ? 'bg-blue-500 text-white'
+                            : 'text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" />
+                        {tab.label}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Top 10 Tab Content */}
             {exploreMoreSubTab === 'top-10' && (
@@ -1646,6 +1820,110 @@ export default function LandingPageManagement() {
                                     {gourmetDeleting === item._id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
                                   </button>
                                 </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* Best Sellers Tab Content (Grocery) */}
+            {platform === 'mogrocery' && (activeTab === 'best-sellers' || (activeTab === 'explore-more' && exploreMoreSubTab === 'best-sellers')) && (
+              <>
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
+                  <h2 className="text-lg font-bold text-slate-900 mb-4">Add Item to Best Sellers</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <Label htmlFor="best-seller-type">Item Type</Label>
+                      <select
+                        id="best-seller-type"
+                        value={selectedBestSellerType}
+                        onChange={(e) => {
+                          setSelectedBestSellerType(e.target.value)
+                          setSelectedBestSellerItemId("")
+                        }}
+                        className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="category">Category</option>
+                        <option value="subcategory">Subcategory</option>
+                        <option value="product">Product</option>
+                      </select>
+                    </div>
+                    <div className="md:col-span-2">
+                      <Label htmlFor="best-seller-item">Select Item</Label>
+                      <select
+                        id="best-seller-item"
+                        value={selectedBestSellerItemId}
+                        onChange={(e) => setSelectedBestSellerItemId(e.target.value)}
+                        className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        disabled={groceryCatalogLoading}
+                      >
+                        <option value="">Select an item...</option>
+                        {selectableBestSellerItems.map((item) => (
+                          <option key={item._id} value={item._id}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <Button
+                      onClick={handleAddBestSeller}
+                      disabled={!selectedBestSellerType || !selectedBestSellerItemId}
+                      className="bg-blue-500 hover:bg-blue-600 text-white"
+                    >
+                      Add to Best Sellers
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                  <h2 className="text-lg font-bold text-slate-900 mb-4">Best Sellers ({bestSellers.length})</h2>
+                  {bestSellersLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                    </div>
+                  ) : bestSellers.length === 0 ? (
+                    <div className="text-center py-12 text-slate-500">
+                      <Megaphone className="w-12 h-12 mx-auto mb-3 text-slate-400" />
+                      <p>No items added to Best Sellers yet.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {[...bestSellers]
+                        .sort((a, b) => a.order - b.order)
+                        .map((item, index) => {
+                          const displayName = item.itemId?.name || 'N/A'
+                          const displayImage =
+                            item.itemType === 'product'
+                              ? (Array.isArray(item.itemId?.images) ? item.itemId.images[0] : '') || "https://via.placeholder.com/120"
+                              : item.itemId?.image || "https://via.placeholder.com/120"
+                          return (
+                            <div key={item._id} className="border border-slate-200 rounded-lg p-3 flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <img src={displayImage} alt={displayName} className="w-14 h-14 rounded-lg object-cover border border-slate-200" />
+                                <div className="min-w-0">
+                                  <h3 className="font-semibold text-slate-900 line-clamp-1">{displayName}</h3>
+                                  <p className="text-xs text-slate-500 capitalize">{item.itemType}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button onClick={() => handleBestSellerOrderChange(item._id, 'up')} disabled={index === 0} className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-50">
+                                  <ArrowUp className="w-4 h-4 text-slate-600" />
+                                </button>
+                                <button onClick={() => handleBestSellerOrderChange(item._id, 'down')} disabled={index === bestSellers.length - 1} className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-50">
+                                  <ArrowDown className="w-4 h-4 text-slate-600" />
+                                </button>
+                                <button onClick={() => handleToggleBestSellerStatus(item._id, item.isActive)} className={`px-3 py-1.5 rounded text-sm font-medium ${item.isActive ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
+                                  {item.isActive ? 'Deactivate' : 'Activate'}
+                                </button>
+                                <button onClick={() => handleDeleteBestSeller(item._id)} disabled={bestSellersDeleting === item._id} className="p-1.5 rounded hover:bg-red-100 text-red-600 disabled:opacity-50">
+                                  {bestSellersDeleting === item._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                </button>
                               </div>
                             </div>
                           )

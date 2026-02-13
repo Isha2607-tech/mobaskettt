@@ -6,18 +6,42 @@ import Under250Banner from '../models/Under250Banner.js';
 import DiningBanner from '../models/DiningBanner.js';
 import Top10Restaurant from '../models/Top10Restaurant.js';
 import GourmetRestaurant from '../models/GourmetRestaurant.js';
+import GroceryBestSeller from '../models/GroceryBestSeller.js';
 import Restaurant from '../../restaurant/models/Restaurant.js';
+import GroceryCategory from '../../grocery/models/GroceryCategory.js';
+import GrocerySubcategory from '../../grocery/models/GrocerySubcategory.js';
+import GroceryProduct from '../../grocery/models/GroceryProduct.js';
 import { successResponse, errorResponse } from '../../../shared/utils/response.js';
 import { uploadToCloudinary } from '../../../shared/utils/cloudinaryService.js';
 import { cloudinary } from '../../../config/cloudinary.js';
 import mongoose from 'mongoose';
+
+const normalizePlatform = (value) => (value === 'mogrocery' ? 'mogrocery' : 'mofood');
+const getPlatformFromRequest = (req) => normalizePlatform(req.query?.platform || req.body?.platform);
+const buildPlatformFilter = (platform) =>
+  platform === 'mofood'
+    ? { $or: [{ platform: 'mofood' }, { platform: { $exists: false } }] }
+    : { platform: 'mogrocery' };
+
+const GROCERY_BEST_SELLER_MODEL_BY_TYPE = {
+  category: 'GroceryCategory',
+  subcategory: 'GrocerySubcategory',
+  product: 'GroceryProduct',
+};
+
+const GROCERY_BEST_SELLER_DB_MODEL_BY_TYPE = {
+  category: GroceryCategory,
+  subcategory: GrocerySubcategory,
+  product: GroceryProduct,
+};
 
 /**
  * Get all active hero banners (public endpoint)
  */
 export const getHeroBanners = async (req, res) => {
   try {
-    const banners = await HeroBanner.find({ isActive: true })
+    const platform = getPlatformFromRequest(req);
+    const banners = await HeroBanner.find({ ...buildPlatformFilter(platform), isActive: true })
       .populate('linkedRestaurants', 'name slug restaurantId profileImage')
       .sort({ order: 1, createdAt: -1 })
       .select('imageUrl order linkedRestaurants')
@@ -40,7 +64,8 @@ export const getHeroBanners = async (req, res) => {
  */
 export const getAllHeroBanners = async (req, res) => {
   try {
-    const banners = await HeroBanner.find()
+    const platform = getPlatformFromRequest(req);
+    const banners = await HeroBanner.find(buildPlatformFilter(platform))
       .populate('linkedRestaurants', 'name slug restaurantId profileImage')
       .sort({ order: 1, createdAt: -1 })
       .lean();
@@ -59,19 +84,20 @@ export const getAllHeroBanners = async (req, res) => {
  */
 export const createHeroBanner = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     if (!req.file) {
       return errorResponse(res, 400, 'No image file provided');
     }
 
     // Upload to Cloudinary
-    const folder = 'appzeto/hero-banners';
+    const folder = `appzeto/${platform}/hero-banners`;
     const result = await uploadToCloudinary(req.file.buffer, {
       folder,
       resource_type: 'image'
     });
 
     // Get the highest order number
-    const lastBanner = await HeroBanner.findOne()
+    const lastBanner = await HeroBanner.findOne(buildPlatformFilter(platform))
       .sort({ order: -1 })
       .select('order')
       .lean();
@@ -80,6 +106,7 @@ export const createHeroBanner = async (req, res) => {
 
     // Create banner record
     const banner = new HeroBanner({
+      platform,
       imageUrl: result.secure_url,
       cloudinaryPublicId: result.public_id,
       order: newOrder,
@@ -108,6 +135,7 @@ export const createHeroBanner = async (req, res) => {
  */
 export const createMultipleHeroBanners = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     if (!req.files || req.files.length === 0) {
       return errorResponse(res, 400, 'No image files provided');
     }
@@ -118,14 +146,14 @@ export const createMultipleHeroBanners = async (req, res) => {
     }
 
     // Get the highest order number
-    const lastBanner = await HeroBanner.findOne()
+    const lastBanner = await HeroBanner.findOne(buildPlatformFilter(platform))
       .sort({ order: -1 })
       .select('order')
       .lean();
 
     let currentOrder = lastBanner ? lastBanner.order + 1 : 0;
 
-    const folder = 'appzeto/hero-banners';
+    const folder = `appzeto/${platform}/hero-banners`;
     const uploadedBanners = [];
     const errors = [];
 
@@ -141,6 +169,7 @@ export const createMultipleHeroBanners = async (req, res) => {
 
         // Create banner record
         const banner = new HeroBanner({
+          platform,
           imageUrl: result.secure_url,
           cloudinaryPublicId: result.public_id,
           order: currentOrder++,
@@ -189,9 +218,10 @@ export const createMultipleHeroBanners = async (req, res) => {
  */
 export const deleteHeroBanner = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
 
-    const banner = await HeroBanner.findById(id);
+    const banner = await HeroBanner.findOne({ _id: id, ...buildPlatformFilter(platform) });
     if (!banner) {
       return errorResponse(res, 404, 'Hero banner not found');
     }
@@ -219,6 +249,7 @@ export const deleteHeroBanner = async (req, res) => {
  */
 export const updateBannerOrder = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
     const { order } = req.body;
 
@@ -226,8 +257,8 @@ export const updateBannerOrder = async (req, res) => {
       return errorResponse(res, 400, 'Order must be a number');
     }
 
-    const banner = await HeroBanner.findByIdAndUpdate(
-      id,
+    const banner = await HeroBanner.findOneAndUpdate(
+      { _id: id, ...buildPlatformFilter(platform) },
       { order, updatedAt: new Date() },
       { new: true }
     );
@@ -250,9 +281,10 @@ export const updateBannerOrder = async (req, res) => {
  */
 export const toggleBannerStatus = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
 
-    const banner = await HeroBanner.findById(id);
+    const banner = await HeroBanner.findOne({ _id: id, ...buildPlatformFilter(platform) });
     if (!banner) {
       return errorResponse(res, 404, 'Hero banner not found');
     }
@@ -275,6 +307,7 @@ export const toggleBannerStatus = async (req, res) => {
  */
 export const linkRestaurantsToBanner = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
     const { restaurantIds } = req.body;
 
@@ -282,7 +315,7 @@ export const linkRestaurantsToBanner = async (req, res) => {
       return errorResponse(res, 400, 'restaurantIds must be an array');
     }
 
-    const banner = await HeroBanner.findById(id);
+    const banner = await HeroBanner.findOne({ _id: id, ...buildPlatformFilter(platform) });
     if (!banner) {
       return errorResponse(res, 404, 'Hero banner not found');
     }
@@ -321,16 +354,17 @@ export const linkRestaurantsToBanner = async (req, res) => {
  */
 export const getLandingConfig = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const [categories, exploreMore, settings] = await Promise.all([
-      LandingPageCategory.find({ isActive: true })
+      LandingPageCategory.find({ ...buildPlatformFilter(platform), isActive: true })
         .sort({ order: 1, createdAt: -1 })
         .select('label slug imageUrl order isActive')
         .lean(),
-      LandingPageExploreMore.find({ isActive: true })
+      LandingPageExploreMore.find({ ...buildPlatformFilter(platform), isActive: true })
         .sort({ order: 1, createdAt: -1 })
         .select('label link imageUrl order isActive')
         .lean(),
-      LandingPageSettings.getSettings(),
+      LandingPageSettings.getSettings(platform),
     ]);
 
     return successResponse(res, 200, 'Landing config retrieved successfully', {
@@ -353,7 +387,8 @@ export const getLandingConfig = async (req, res) => {
  */
 export const getLandingCategories = async (req, res) => {
   try {
-    const categories = await LandingPageCategory.find()
+    const platform = getPlatformFromRequest(req);
+    const categories = await LandingPageCategory.find(buildPlatformFilter(platform))
       .sort({ order: 1, createdAt: -1 })
       .lean();
 
@@ -371,6 +406,7 @@ export const getLandingCategories = async (req, res) => {
  */
 export const createLandingCategory = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { label } = req.body;
     if (!label) {
       return errorResponse(res, 400, 'Label is required');
@@ -383,14 +419,14 @@ export const createLandingCategory = async (req, res) => {
     const slug = label.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
     // Upload to Cloudinary
-    const folder = 'appzeto/landing/categories';
+    const folder = `appzeto/${platform}/landing/categories`;
     const result = await uploadToCloudinary(req.file.buffer, {
       folder,
       resource_type: 'image'
     });
 
     // Get the highest order number
-    const lastCategory = await LandingPageCategory.findOne()
+    const lastCategory = await LandingPageCategory.findOne(buildPlatformFilter(platform))
       .sort({ order: -1 })
       .select('order')
       .lean();
@@ -399,6 +435,7 @@ export const createLandingCategory = async (req, res) => {
 
     // Create category record
     const category = new LandingPageCategory({
+      platform,
       label,
       slug,
       imageUrl: result.secure_url,
@@ -430,9 +467,10 @@ export const createLandingCategory = async (req, res) => {
  */
 export const deleteLandingCategory = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
 
-    const category = await LandingPageCategory.findById(id);
+    const category = await LandingPageCategory.findOne({ _id: id, ...buildPlatformFilter(platform) });
     if (!category) {
       return errorResponse(res, 404, 'Category not found');
     }
@@ -459,6 +497,7 @@ export const deleteLandingCategory = async (req, res) => {
  */
 export const updateLandingCategoryOrder = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
     const { order } = req.body;
 
@@ -466,8 +505,8 @@ export const updateLandingCategoryOrder = async (req, res) => {
       return errorResponse(res, 400, 'Order must be a number');
     }
 
-    const category = await LandingPageCategory.findByIdAndUpdate(
-      id,
+    const category = await LandingPageCategory.findOneAndUpdate(
+      { _id: id, ...buildPlatformFilter(platform) },
       { order, updatedAt: new Date() },
       { new: true }
     );
@@ -490,9 +529,10 @@ export const updateLandingCategoryOrder = async (req, res) => {
  */
 export const toggleLandingCategoryStatus = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
 
-    const category = await LandingPageCategory.findById(id);
+    const category = await LandingPageCategory.findOne({ _id: id, ...buildPlatformFilter(platform) });
     if (!category) {
       return errorResponse(res, 404, 'Category not found');
     }
@@ -517,7 +557,8 @@ export const toggleLandingCategoryStatus = async (req, res) => {
  */
 export const getLandingExploreMore = async (req, res) => {
   try {
-    const items = await LandingPageExploreMore.find()
+    const platform = getPlatformFromRequest(req);
+    const items = await LandingPageExploreMore.find(buildPlatformFilter(platform))
       .sort({ order: 1, createdAt: -1 })
       .lean();
 
@@ -535,6 +576,7 @@ export const getLandingExploreMore = async (req, res) => {
  */
 export const createLandingExploreMore = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { label, link } = req.body;
     if (!label || !link) {
       return errorResponse(res, 400, 'Label and link are required');
@@ -544,14 +586,14 @@ export const createLandingExploreMore = async (req, res) => {
     }
 
     // Upload to Cloudinary
-    const folder = 'appzeto/landing/explore-more';
+    const folder = `appzeto/${platform}/landing/explore-more`;
     const result = await uploadToCloudinary(req.file.buffer, {
       folder,
       resource_type: 'image'
     });
 
     // Get the highest order number
-    const lastItem = await LandingPageExploreMore.findOne()
+    const lastItem = await LandingPageExploreMore.findOne(buildPlatformFilter(platform))
       .sort({ order: -1 })
       .select('order')
       .lean();
@@ -560,6 +602,7 @@ export const createLandingExploreMore = async (req, res) => {
 
     // Create item record
     const item = new LandingPageExploreMore({
+      platform,
       label,
       link,
       imageUrl: result.secure_url,
@@ -592,9 +635,10 @@ export const createLandingExploreMore = async (req, res) => {
  */
 export const deleteLandingExploreMore = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
 
-    const item = await LandingPageExploreMore.findById(id);
+    const item = await LandingPageExploreMore.findOne({ _id: id, ...buildPlatformFilter(platform) });
     if (!item) {
       return errorResponse(res, 404, 'Explore more item not found');
     }
@@ -621,6 +665,7 @@ export const deleteLandingExploreMore = async (req, res) => {
  */
 export const updateLandingExploreMoreOrder = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
     const { order } = req.body;
 
@@ -628,8 +673,8 @@ export const updateLandingExploreMoreOrder = async (req, res) => {
       return errorResponse(res, 400, 'Order must be a number');
     }
 
-    const item = await LandingPageExploreMore.findByIdAndUpdate(
-      id,
+    const item = await LandingPageExploreMore.findOneAndUpdate(
+      { _id: id, ...buildPlatformFilter(platform) },
       { order, updatedAt: new Date() },
       { new: true }
     );
@@ -652,9 +697,10 @@ export const updateLandingExploreMoreOrder = async (req, res) => {
  */
 export const toggleLandingExploreMoreStatus = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
 
-    const item = await LandingPageExploreMore.findById(id);
+    const item = await LandingPageExploreMore.findOne({ _id: id, ...buildPlatformFilter(platform) });
     if (!item) {
       return errorResponse(res, 404, 'Explore more item not found');
     }
@@ -679,7 +725,8 @@ export const toggleLandingExploreMoreStatus = async (req, res) => {
  */
 export const getLandingSettings = async (req, res) => {
   try {
-    const settings = await LandingPageSettings.getSettings();
+    const platform = getPlatformFromRequest(req);
+    const settings = await LandingPageSettings.getSettings(platform);
 
     return successResponse(res, 200, 'Landing settings retrieved successfully', {
       settings: {
@@ -697,9 +744,10 @@ export const getLandingSettings = async (req, res) => {
  */
 export const updateLandingSettings = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { exploreMoreHeading } = req.body;
 
-    const settings = await LandingPageSettings.getSettings();
+    const settings = await LandingPageSettings.getSettings(platform);
 
     if (typeof exploreMoreHeading === 'string') {
       settings.exploreMoreHeading = exploreMoreHeading;
@@ -725,7 +773,8 @@ export const updateLandingSettings = async (req, res) => {
  */
 export const getUnder250Banners = async (req, res) => {
   try {
-    const banners = await Under250Banner.find({ isActive: true })
+    const platform = getPlatformFromRequest(req);
+    const banners = await Under250Banner.find({ ...buildPlatformFilter(platform), isActive: true })
       .sort({ order: 1, createdAt: -1 })
       .select('imageUrl order')
       .lean();
@@ -744,7 +793,8 @@ export const getUnder250Banners = async (req, res) => {
  */
 export const getAllUnder250Banners = async (req, res) => {
   try {
-    const banners = await Under250Banner.find()
+    const platform = getPlatformFromRequest(req);
+    const banners = await Under250Banner.find(buildPlatformFilter(platform))
       .sort({ order: 1, createdAt: -1 })
       .lean();
 
@@ -762,19 +812,20 @@ export const getAllUnder250Banners = async (req, res) => {
  */
 export const createUnder250Banner = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     if (!req.file) {
       return errorResponse(res, 400, 'No image file provided');
     }
 
     // Upload to Cloudinary
-    const folder = 'appzeto/under-250-banners';
+    const folder = `appzeto/${platform}/under-250-banners`;
     const result = await uploadToCloudinary(req.file.buffer, {
       folder,
       resource_type: 'image'
     });
 
     // Get the highest order number
-    const lastBanner = await Under250Banner.findOne()
+    const lastBanner = await Under250Banner.findOne(buildPlatformFilter(platform))
       .sort({ order: -1 })
       .select('order')
       .lean();
@@ -783,6 +834,7 @@ export const createUnder250Banner = async (req, res) => {
 
     // Create banner record
     const banner = new Under250Banner({
+      platform,
       imageUrl: result.secure_url,
       cloudinaryPublicId: result.public_id,
       order: newOrder,
@@ -811,6 +863,7 @@ export const createUnder250Banner = async (req, res) => {
  */
 export const createMultipleUnder250Banners = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     if (!req.files || req.files.length === 0) {
       return errorResponse(res, 400, 'No image files provided');
     }
@@ -821,14 +874,14 @@ export const createMultipleUnder250Banners = async (req, res) => {
     }
 
     // Get the highest order number
-    const lastBanner = await Under250Banner.findOne()
+    const lastBanner = await Under250Banner.findOne(buildPlatformFilter(platform))
       .sort({ order: -1 })
       .select('order')
       .lean();
 
     let currentOrder = lastBanner ? lastBanner.order + 1 : 0;
 
-    const folder = 'appzeto/under-250-banners';
+    const folder = `appzeto/${platform}/under-250-banners`;
     const uploadedBanners = [];
     const errors = [];
 
@@ -844,6 +897,7 @@ export const createMultipleUnder250Banners = async (req, res) => {
 
         // Create banner record
         const banner = new Under250Banner({
+          platform,
           imageUrl: result.secure_url,
           cloudinaryPublicId: result.public_id,
           order: currentOrder++,
@@ -892,9 +946,10 @@ export const createMultipleUnder250Banners = async (req, res) => {
  */
 export const deleteUnder250Banner = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
 
-    const banner = await Under250Banner.findById(id);
+    const banner = await Under250Banner.findOne({ _id: id, ...buildPlatformFilter(platform) });
     if (!banner) {
       return errorResponse(res, 404, 'Under 250 banner not found');
     }
@@ -922,6 +977,7 @@ export const deleteUnder250Banner = async (req, res) => {
  */
 export const updateUnder250BannerOrder = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
     const { order } = req.body;
 
@@ -929,8 +985,8 @@ export const updateUnder250BannerOrder = async (req, res) => {
       return errorResponse(res, 400, 'Order must be a number');
     }
 
-    const banner = await Under250Banner.findByIdAndUpdate(
-      id,
+    const banner = await Under250Banner.findOneAndUpdate(
+      { _id: id, ...buildPlatformFilter(platform) },
       { order, updatedAt: new Date() },
       { new: true }
     );
@@ -953,9 +1009,10 @@ export const updateUnder250BannerOrder = async (req, res) => {
  */
 export const toggleUnder250BannerStatus = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
 
-    const banner = await Under250Banner.findById(id);
+    const banner = await Under250Banner.findOne({ _id: id, ...buildPlatformFilter(platform) });
     if (!banner) {
       return errorResponse(res, 404, 'Under 250 banner not found');
     }
@@ -1236,7 +1293,8 @@ export const toggleDiningBannerStatus = async (req, res) => {
  */
 export const getAllTop10Restaurants = async (req, res) => {
   try {
-    const restaurants = await Top10Restaurant.find()
+    const platform = getPlatformFromRequest(req);
+    const restaurants = await Top10Restaurant.find(buildPlatformFilter(platform))
       .populate('restaurant', 'name restaurantId slug profileImage coverImages menuImages rating estimatedDeliveryTime distance offer featuredDish featuredPrice')
       .sort({ rank: 1, order: 1 })
       .lean();
@@ -1255,7 +1313,8 @@ export const getAllTop10Restaurants = async (req, res) => {
  */
 export const getTop10Restaurants = async (req, res) => {
   try {
-    const restaurants = await Top10Restaurant.find({ isActive: true })
+    const platform = getPlatformFromRequest(req);
+    const restaurants = await Top10Restaurant.find({ ...buildPlatformFilter(platform), isActive: true })
       .populate('restaurant', 'name restaurantId slug profileImage coverImages menuImages rating estimatedDeliveryTime distance offer featuredDish featuredPrice')
       .sort({ rank: 1, order: 1 })
       .lean();
@@ -1278,6 +1337,7 @@ export const getTop10Restaurants = async (req, res) => {
  */
 export const createTop10Restaurant = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { restaurantId, rank } = req.body;
 
     if (!restaurantId) {
@@ -1295,19 +1355,19 @@ export const createTop10Restaurant = async (req, res) => {
     }
 
     // Check if rank is already taken
-    const existingRank = await Top10Restaurant.findOne({ rank, isActive: true });
+    const existingRank = await Top10Restaurant.findOne({ ...buildPlatformFilter(platform), rank, isActive: true });
     if (existingRank) {
       return errorResponse(res, 400, `Rank ${rank} is already taken`);
     }
 
     // Check if restaurant is already in Top 10
-    const existingRestaurant = await Top10Restaurant.findOne({ restaurant: restaurantId });
+    const existingRestaurant = await Top10Restaurant.findOne({ ...buildPlatformFilter(platform), restaurant: restaurantId });
     if (existingRestaurant) {
       return errorResponse(res, 400, 'Restaurant is already in Top 10');
     }
 
     // Get the highest order number
-    const lastRestaurant = await Top10Restaurant.findOne()
+    const lastRestaurant = await Top10Restaurant.findOne(buildPlatformFilter(platform))
       .sort({ order: -1 })
       .select('order')
       .lean();
@@ -1316,6 +1376,7 @@ export const createTop10Restaurant = async (req, res) => {
 
     // Create Top 10 restaurant record
     const top10Restaurant = new Top10Restaurant({
+      platform,
       restaurant: restaurantId,
       rank,
       order: newOrder,
@@ -1344,9 +1405,10 @@ export const createTop10Restaurant = async (req, res) => {
  */
 export const deleteTop10Restaurant = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
 
-    const top10Restaurant = await Top10Restaurant.findById(id);
+    const top10Restaurant = await Top10Restaurant.findOne({ _id: id, ...buildPlatformFilter(platform) });
     if (!top10Restaurant) {
       return errorResponse(res, 404, 'Top 10 restaurant not found');
     }
@@ -1365,6 +1427,7 @@ export const deleteTop10Restaurant = async (req, res) => {
  */
 export const updateTop10RestaurantRank = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
     const { rank } = req.body;
 
@@ -1372,13 +1435,13 @@ export const updateTop10RestaurantRank = async (req, res) => {
       return errorResponse(res, 400, 'Rank must be between 1 and 10');
     }
 
-    const top10Restaurant = await Top10Restaurant.findById(id);
+    const top10Restaurant = await Top10Restaurant.findOne({ _id: id, ...buildPlatformFilter(platform) });
     if (!top10Restaurant) {
       return errorResponse(res, 404, 'Top 10 restaurant not found');
     }
 
     // Check if rank is already taken by another restaurant
-    const existingRank = await Top10Restaurant.findOne({ rank, isActive: true, _id: { $ne: id } });
+    const existingRank = await Top10Restaurant.findOne({ ...buildPlatformFilter(platform), rank, isActive: true, _id: { $ne: id } });
     if (existingRank) {
       return errorResponse(res, 400, `Rank ${rank} is already taken`);
     }
@@ -1403,6 +1466,7 @@ export const updateTop10RestaurantRank = async (req, res) => {
  */
 export const updateTop10RestaurantOrder = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
     const { order } = req.body;
 
@@ -1410,8 +1474,8 @@ export const updateTop10RestaurantOrder = async (req, res) => {
       return errorResponse(res, 400, 'Order must be a number');
     }
 
-    const top10Restaurant = await Top10Restaurant.findByIdAndUpdate(
-      id,
+    const top10Restaurant = await Top10Restaurant.findOneAndUpdate(
+      { _id: id, ...buildPlatformFilter(platform) },
       { order, updatedAt: new Date() },
       { new: true }
     );
@@ -1434,16 +1498,17 @@ export const updateTop10RestaurantOrder = async (req, res) => {
  */
 export const toggleTop10RestaurantStatus = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
 
-    const top10Restaurant = await Top10Restaurant.findById(id);
+    const top10Restaurant = await Top10Restaurant.findOne({ _id: id, ...buildPlatformFilter(platform) });
     if (!top10Restaurant) {
       return errorResponse(res, 404, 'Top 10 restaurant not found');
     }
 
     // Check if activating would exceed 10 active restaurants
     if (!top10Restaurant.isActive) {
-      const activeCount = await Top10Restaurant.countDocuments({ isActive: true });
+      const activeCount = await Top10Restaurant.countDocuments({ ...buildPlatformFilter(platform), isActive: true });
       if (activeCount >= 10) {
         return errorResponse(res, 400, 'Maximum 10 restaurants can be active in Top 10');
       }
@@ -1471,7 +1536,8 @@ export const toggleTop10RestaurantStatus = async (req, res) => {
  */
 export const getAllGourmetRestaurants = async (req, res) => {
   try {
-    const restaurants = await GourmetRestaurant.find()
+    const platform = getPlatformFromRequest(req);
+    const restaurants = await GourmetRestaurant.find(buildPlatformFilter(platform))
       .populate('restaurant', 'name restaurantId slug profileImage coverImages menuImages rating estimatedDeliveryTime distance offer featuredDish featuredPrice')
       .sort({ order: 1, createdAt: -1 })
       .lean();
@@ -1490,7 +1556,8 @@ export const getAllGourmetRestaurants = async (req, res) => {
  */
 export const getGourmetRestaurants = async (req, res) => {
   try {
-    const restaurants = await GourmetRestaurant.find({ isActive: true })
+    const platform = getPlatformFromRequest(req);
+    const restaurants = await GourmetRestaurant.find({ ...buildPlatformFilter(platform), isActive: true })
       .populate('restaurant', 'name restaurantId slug profileImage coverImages menuImages rating estimatedDeliveryTime distance offer featuredDish featuredPrice')
       .sort({ order: 1, createdAt: -1 })
       .lean();
@@ -1512,6 +1579,7 @@ export const getGourmetRestaurants = async (req, res) => {
  */
 export const createGourmetRestaurant = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { restaurantId } = req.body;
 
     if (!restaurantId) {
@@ -1525,13 +1593,13 @@ export const createGourmetRestaurant = async (req, res) => {
     }
 
     // Check if restaurant is already in Gourmet
-    const existingRestaurant = await GourmetRestaurant.findOne({ restaurant: restaurantId });
+    const existingRestaurant = await GourmetRestaurant.findOne({ ...buildPlatformFilter(platform), restaurant: restaurantId });
     if (existingRestaurant) {
       return errorResponse(res, 400, 'Restaurant is already in Gourmet');
     }
 
     // Get the highest order number
-    const lastRestaurant = await GourmetRestaurant.findOne()
+    const lastRestaurant = await GourmetRestaurant.findOne(buildPlatformFilter(platform))
       .sort({ order: -1 })
       .select('order')
       .lean();
@@ -1540,6 +1608,7 @@ export const createGourmetRestaurant = async (req, res) => {
 
     // Create Gourmet restaurant record
     const gourmetRestaurant = new GourmetRestaurant({
+      platform,
       restaurant: restaurantId,
       order: newOrder,
       isActive: true
@@ -1564,9 +1633,10 @@ export const createGourmetRestaurant = async (req, res) => {
  */
 export const deleteGourmetRestaurant = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
 
-    const gourmetRestaurant = await GourmetRestaurant.findById(id);
+    const gourmetRestaurant = await GourmetRestaurant.findOne({ _id: id, ...buildPlatformFilter(platform) });
     if (!gourmetRestaurant) {
       return errorResponse(res, 404, 'Gourmet restaurant not found');
     }
@@ -1585,6 +1655,7 @@ export const deleteGourmetRestaurant = async (req, res) => {
  */
 export const updateGourmetRestaurantOrder = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
     const { order } = req.body;
 
@@ -1592,8 +1663,8 @@ export const updateGourmetRestaurantOrder = async (req, res) => {
       return errorResponse(res, 400, 'Order must be a number');
     }
 
-    const gourmetRestaurant = await GourmetRestaurant.findByIdAndUpdate(
-      id,
+    const gourmetRestaurant = await GourmetRestaurant.findOneAndUpdate(
+      { _id: id, ...buildPlatformFilter(platform) },
       { order, updatedAt: new Date() },
       { new: true }
     );
@@ -1616,9 +1687,10 @@ export const updateGourmetRestaurantOrder = async (req, res) => {
  */
 export const toggleGourmetRestaurantStatus = async (req, res) => {
   try {
+    const platform = getPlatformFromRequest(req);
     const { id } = req.params;
 
-    const gourmetRestaurant = await GourmetRestaurant.findById(id);
+    const gourmetRestaurant = await GourmetRestaurant.findOne({ _id: id, ...buildPlatformFilter(platform) });
     if (!gourmetRestaurant) {
       return errorResponse(res, 404, 'Gourmet restaurant not found');
     }
@@ -1635,5 +1707,211 @@ export const toggleGourmetRestaurantStatus = async (req, res) => {
   } catch (error) {
     console.error('Error toggling Gourmet restaurant status:', error);
     return errorResponse(res, 500, 'Failed to update Gourmet restaurant status');
+  }
+};
+
+// ==================== GROCERY BEST SELLERS ====================
+
+/**
+ * Get all active grocery best sellers (public endpoint)
+ */
+export const getGroceryBestSellers = async (req, res) => {
+  try {
+    const platform = getPlatformFromRequest(req);
+    const items = await GroceryBestSeller.find({
+      ...buildPlatformFilter(platform),
+      isActive: true,
+    })
+      .populate('itemId')
+      .sort({ order: 1, createdAt: -1 })
+      .lean();
+
+    const bestSellers = items
+      .filter((item) => item.itemId)
+      .map((item) => ({
+        _id: item._id,
+        itemType: item.itemType,
+        itemId: item.itemId?._id || item.itemId,
+        name: item.itemId?.name || '',
+        image:
+          item.itemType === 'product'
+            ? (Array.isArray(item.itemId?.images) ? item.itemId.images[0] : '') || ''
+            : item.itemId?.image || '',
+        order: item.order,
+        isActive: item.isActive,
+        subcategories:
+          item.itemType === 'product' && Array.isArray(item.itemId?.subcategories)
+            ? item.itemId.subcategories
+            : [],
+      }));
+
+    return successResponse(res, 200, 'Grocery best sellers retrieved successfully', {
+      items: bestSellers,
+    });
+  } catch (error) {
+    console.error('Error fetching grocery best sellers:', error);
+    return errorResponse(res, 500, 'Failed to fetch grocery best sellers');
+  }
+};
+
+/**
+ * Get all grocery best sellers (admin endpoint)
+ */
+export const getAllGroceryBestSellers = async (req, res) => {
+  try {
+    const platform = getPlatformFromRequest(req);
+    const items = await GroceryBestSeller.find(buildPlatformFilter(platform))
+      .populate('itemId')
+      .sort({ order: 1, createdAt: -1 })
+      .lean();
+
+    return successResponse(res, 200, 'Grocery best sellers retrieved successfully', {
+      items: items.filter((item) => item.itemId),
+    });
+  } catch (error) {
+    console.error('Error fetching all grocery best sellers:', error);
+    return errorResponse(res, 500, 'Failed to fetch grocery best sellers');
+  }
+};
+
+/**
+ * Create grocery best seller item
+ */
+export const createGroceryBestSeller = async (req, res) => {
+  try {
+    const platform = getPlatformFromRequest(req);
+    const { itemType, itemId } = req.body;
+
+    if (!itemType || !itemId) {
+      return errorResponse(res, 400, 'itemType and itemId are required');
+    }
+
+    const itemModel = GROCERY_BEST_SELLER_MODEL_BY_TYPE[itemType];
+    const dbModel = GROCERY_BEST_SELLER_DB_MODEL_BY_TYPE[itemType];
+    if (!itemModel || !dbModel) {
+      return errorResponse(res, 400, 'Invalid itemType. Use category, subcategory or product');
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(itemId)) {
+      return errorResponse(res, 400, 'Invalid itemId');
+    }
+
+    const exists = await dbModel.findById(itemId).select('_id').lean();
+    if (!exists) {
+      return errorResponse(res, 404, 'Selected item not found');
+    }
+
+    const duplicate = await GroceryBestSeller.findOne({
+      ...buildPlatformFilter(platform),
+      itemType,
+      itemId,
+    }).lean();
+    if (duplicate) {
+      return errorResponse(res, 400, 'Item is already added in Best Sellers');
+    }
+
+    const last = await GroceryBestSeller.findOne(buildPlatformFilter(platform))
+      .sort({ order: -1 })
+      .select('order')
+      .lean();
+
+    const order = last ? Number(last.order || 0) + 1 : 0;
+
+    const created = await GroceryBestSeller.create({
+      platform,
+      itemType,
+      itemModel,
+      itemId,
+      order,
+      isActive: true,
+    });
+
+    const populated = await GroceryBestSeller.findById(created._id).populate('itemId').lean();
+    return successResponse(res, 201, 'Best seller item added successfully', {
+      item: populated,
+    });
+  } catch (error) {
+    console.error('Error creating grocery best seller:', error);
+    return errorResponse(res, 500, 'Failed to add best seller item');
+  }
+};
+
+/**
+ * Delete grocery best seller item
+ */
+export const deleteGroceryBestSeller = async (req, res) => {
+  try {
+    const platform = getPlatformFromRequest(req);
+    const { id } = req.params;
+
+    const existing = await GroceryBestSeller.findOne({ _id: id, ...buildPlatformFilter(platform) });
+    if (!existing) {
+      return errorResponse(res, 404, 'Best seller item not found');
+    }
+
+    await GroceryBestSeller.findByIdAndDelete(id);
+    return successResponse(res, 200, 'Best seller item deleted successfully');
+  } catch (error) {
+    console.error('Error deleting grocery best seller:', error);
+    return errorResponse(res, 500, 'Failed to delete best seller item');
+  }
+};
+
+/**
+ * Update grocery best seller order
+ */
+export const updateGroceryBestSellerOrder = async (req, res) => {
+  try {
+    const platform = getPlatformFromRequest(req);
+    const { id } = req.params;
+    const { order } = req.body;
+
+    if (typeof order !== 'number') {
+      return errorResponse(res, 400, 'Order must be a number');
+    }
+
+    const updated = await GroceryBestSeller.findOneAndUpdate(
+      { _id: id, ...buildPlatformFilter(platform) },
+      { order, updatedAt: new Date() },
+      { new: true }
+    ).populate('itemId');
+
+    if (!updated) {
+      return errorResponse(res, 404, 'Best seller item not found');
+    }
+
+    return successResponse(res, 200, 'Best seller order updated successfully', {
+      item: updated,
+    });
+  } catch (error) {
+    console.error('Error updating grocery best seller order:', error);
+    return errorResponse(res, 500, 'Failed to update best seller order');
+  }
+};
+
+/**
+ * Toggle grocery best seller status
+ */
+export const toggleGroceryBestSellerStatus = async (req, res) => {
+  try {
+    const platform = getPlatformFromRequest(req);
+    const { id } = req.params;
+
+    const item = await GroceryBestSeller.findOne({ _id: id, ...buildPlatformFilter(platform) });
+    if (!item) {
+      return errorResponse(res, 404, 'Best seller item not found');
+    }
+
+    item.isActive = !item.isActive;
+    item.updatedAt = new Date();
+    await item.save();
+
+    await item.populate('itemId');
+    return successResponse(res, 200, 'Best seller status updated successfully', {
+      item,
+    });
+  } catch (error) {
+    console.error('Error toggling grocery best seller status:', error);
+    return errorResponse(res, 500, 'Failed to update best seller status');
   }
 };
