@@ -3,6 +3,14 @@ import { successResponse, errorResponse } from '../../../shared/utils/response.j
 import asyncHandler from '../../../shared/middleware/asyncHandler.js';
 import mongoose from 'mongoose';
 
+const normalizePlatform = (value) => (value === 'mogrocery' ? 'mogrocery' : 'mofood');
+const buildPlatformQuery = (platform) => {
+  const normalizedPlatform = normalizePlatform(platform);
+  return normalizedPlatform === 'mofood'
+    ? { $or: [{ platform: 'mofood' }, { platform: { $exists: false } }] }
+    : { platform: 'mogrocery' };
+};
+
 /**
  * Get all zones
  * GET /api/admin/zones
@@ -14,11 +22,12 @@ export const getZones = asyncHandler(async (req, res) => {
       limit = 50,
       search,
       restaurantId,
-      isActive
+      isActive,
+      platform
     } = req.query;
 
     // Build query
-    const query = {};
+    const query = buildPlatformQuery(platform);
 
     if (search) {
       query.$or = [
@@ -78,8 +87,12 @@ export const getZones = asyncHandler(async (req, res) => {
 export const getZoneById = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
+    const { platform } = req.query;
 
-    const zone = await Zone.findById(id)
+    const zone = await Zone.findOne({
+      _id: id,
+      ...buildPlatformQuery(platform)
+    })
       .populate({
         path: 'restaurantId',
         select: 'name email phone',
@@ -120,7 +133,8 @@ export const createZone = asyncHandler(async (req, res) => {
       peakZoneSelectionDuration,
       peakZoneDuration,
       peakZoneSurgePercentage,
-      isActive
+      isActive,
+      platform
     } = req.body;
 
     // Validation - For customer zones, country and zoneName are required instead of restaurantId
@@ -175,6 +189,7 @@ export const createZone = asyncHandler(async (req, res) => {
       peakZoneDuration: peakZoneDuration || 0,
       peakZoneSurgePercentage: peakZoneSurgePercentage || 0,
       isActive: isActive !== undefined ? isActive : true,
+      platform: normalizePlatform(platform),
       createdBy: req.admin?._id || null
     };
 
@@ -209,8 +224,12 @@ export const updateZone = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
+    const queryPlatform = req.query.platform || updateData.platform;
 
-    const zone = await Zone.findById(id);
+    const zone = await Zone.findOne({
+      _id: id,
+      ...buildPlatformQuery(queryPlatform)
+    });
     if (!zone) {
       return errorResponse(res, 404, 'Zone not found');
     }
@@ -227,6 +246,10 @@ export const updateZone = asyncHandler(async (req, res) => {
           return errorResponse(res, 400, 'Each coordinate must have latitude and longitude');
         }
       }
+    }
+
+    if (updateData.platform !== undefined) {
+      updateData.platform = normalizePlatform(updateData.platform);
     }
 
     // Update zone
@@ -260,8 +283,12 @@ export const updateZone = asyncHandler(async (req, res) => {
 export const deleteZone = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
+    const { platform } = req.query;
 
-    const zone = await Zone.findByIdAndDelete(id);
+    const zone = await Zone.findOneAndDelete({
+      _id: id,
+      ...buildPlatformQuery(platform)
+    });
     if (!zone) {
       return errorResponse(res, 404, 'Zone not found');
     }
@@ -280,8 +307,12 @@ export const deleteZone = asyncHandler(async (req, res) => {
 export const toggleZoneStatus = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
+    const { platform } = req.query;
 
-    const zone = await Zone.findById(id);
+    const zone = await Zone.findOne({
+      _id: id,
+      ...buildPlatformQuery(platform)
+    });
     if (!zone) {
       return errorResponse(res, 404, 'Zone not found');
     }
@@ -305,10 +336,12 @@ export const toggleZoneStatus = asyncHandler(async (req, res) => {
 export const getZonesByRestaurant = asyncHandler(async (req, res) => {
   try {
     const { restaurantId } = req.params;
+    const { platform } = req.query;
 
-    const zones = await Zone.find({ 
+    const zones = await Zone.find({
       restaurantId: new mongoose.Types.ObjectId(restaurantId),
-      isActive: true 
+      isActive: true,
+      ...buildPlatformQuery(platform)
     })
       .populate({
         path: 'restaurantId',
@@ -333,7 +366,7 @@ export const getZonesByRestaurant = asyncHandler(async (req, res) => {
  */
 export const detectUserZone = asyncHandler(async (req, res) => {
   try {
-    const { lat, lng, latitude, longitude } = req.query;
+    const { lat, lng, latitude, longitude, platform } = req.query;
     
     // Support both lat/lng and latitude/longitude
     const userLat = parseFloat(lat || latitude);
@@ -348,7 +381,10 @@ export const detectUserZone = asyncHandler(async (req, res) => {
     }
 
     // Get all active zones
-    const activeZones = await Zone.find({ isActive: true }).lean();
+    const activeZones = await Zone.find({
+      isActive: true,
+      ...buildPlatformQuery(platform)
+    }).lean();
 
     if (activeZones.length === 0) {
       return successResponse(res, 200, 'No active zones found', {
@@ -491,7 +527,7 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
  */
 export const checkLocationInZone = asyncHandler(async (req, res) => {
   try {
-    const { latitude, longitude, restaurantId } = req.body;
+    const { latitude, longitude, restaurantId, platform } = req.body;
 
     if (!latitude || !longitude || !restaurantId) {
       return errorResponse(res, 400, 'Latitude, longitude, and restaurant ID are required');
@@ -500,7 +536,8 @@ export const checkLocationInZone = asyncHandler(async (req, res) => {
     // Find zones for the restaurant
     const zones = await Zone.find({
       restaurantId: new mongoose.Types.ObjectId(restaurantId),
-      isActive: true
+      isActive: true,
+      ...buildPlatformQuery(platform)
     });
 
     // Check if point is within any zone using GeoJSON

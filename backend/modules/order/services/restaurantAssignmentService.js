@@ -71,7 +71,10 @@ function isPointInZone(lat, lng, zoneCoordinates) {
 async function isRestaurantInAnyZone(restaurantLat, restaurantLng) {
   if (!restaurantLat || !restaurantLng) return null;
   
-  const activeZones = await Zone.find({ isActive: true }).lean();
+  const activeZones = await Zone.find({
+    isActive: true,
+    $or: [{ platform: 'mofood' }, { platform: { $exists: false } }]
+  }).lean();
   
   for (const zone of activeZones) {
     if (!zone.coordinates || zone.coordinates.length < 3) continue;

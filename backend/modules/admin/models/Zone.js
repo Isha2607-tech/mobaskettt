@@ -18,6 +18,12 @@ const zoneSchema = new mongoose.Schema(
       required: true,
       trim: true
     },
+    platform: {
+      type: String,
+      enum: ['mofood', 'mogrocery'],
+      default: 'mofood',
+      index: true
+    },
     serviceLocation: {
       type: String,
       required: false,
@@ -114,6 +120,7 @@ const zoneSchema = new mongoose.Schema(
 // Indexes
 zoneSchema.index({ restaurantId: 1 });
 zoneSchema.index({ isActive: 1 });
+zoneSchema.index({ platform: 1, isActive: 1 });
 zoneSchema.index({ boundary: '2dsphere' }); // For spatial queries
 zoneSchema.index({ serviceLocation: 'text', name: 'text' }); // For text search
 

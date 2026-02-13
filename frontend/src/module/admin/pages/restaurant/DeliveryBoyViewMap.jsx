@@ -5,9 +5,11 @@ import { adminAPI } from "@/lib/api"
 import { getGoogleMapsApiKey } from "@/lib/utils/googleMapsApiKey"
 import { Loader } from "@googlemaps/js-api-loader"
 import bikeLogo from "../../../../assets/bikelogo.png"
+import { usePlatform } from "../../context/PlatformContext"
 
 export default function DeliveryBoyViewMap() {
   const navigate = useNavigate()
+  const { platform } = usePlatform()
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const zonesPolygonsRef = useRef([])
@@ -35,7 +37,7 @@ export default function DeliveryBoyViewMap() {
     }, 10000)
     
     return () => clearInterval(interval)
-  }, [])
+  }, [platform])
 
   // Initialize Places Autocomplete when map is loaded
   useEffect(() => {
@@ -77,7 +79,7 @@ export default function DeliveryBoyViewMap() {
   const fetchZones = async () => {
     try {
       setLoading(true)
-      const response = await adminAPI.getZones({ limit: 1000 })
+      const response = await adminAPI.getZones({ limit: 1000, platform })
       if (response.data?.success && response.data.data?.zones) {
         setZones(response.data.data.zones)
       }

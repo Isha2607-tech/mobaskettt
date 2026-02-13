@@ -53,7 +53,8 @@ export async function findNearestDeliveryBoys(restaurantLat, restaurantLng, rest
         const restaurantIdObj = restaurantId.toString ? restaurantId.toString() : restaurantId;
         zone = await Zone.findOne({
           restaurantId: restaurantIdObj,
-          isActive: true
+          isActive: true,
+          $or: [{ platform: 'mofood' }, { platform: { $exists: false } }]
         }).lean();
 
         if (zone) {
@@ -168,7 +169,8 @@ export async function findNearestDeliveryBoy(restaurantLat, restaurantLng, resta
         const restaurantIdObj = restaurantId.toString ? restaurantId.toString() : restaurantId;
         zone = await Zone.findOne({
           restaurantId: restaurantIdObj,
-          isActive: true
+          isActive: true,
+          $or: [{ platform: 'mofood' }, { platform: { $exists: false } }]
         }).lean();
 
         if (zone) {

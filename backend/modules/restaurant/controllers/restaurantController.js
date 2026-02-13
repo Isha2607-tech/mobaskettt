@@ -113,7 +113,7 @@ export const getRestaurants = async (req, res) => {
     if (zoneId) {
       // Validate zone exists and is active
       userZone = await Zone.findById(zoneId).lean();
-      if (!userZone || !userZone.isActive) {
+      if (!userZone || !userZone.isActive || (userZone.platform && userZone.platform !== 'mofood')) {
         return errorResponse(res, 400, 'Invalid or inactive zone. Please detect your zone again.');
       }
     }
@@ -817,7 +817,7 @@ export const getRestaurantsWithDishesUnder250 = async (req, res) => {
     if (zoneId) {
       // Validate zone exists and is active
       userZone = await Zone.findById(zoneId).lean();
-      if (!userZone || !userZone.isActive) {
+      if (!userZone || !userZone.isActive || (userZone.platform && userZone.platform !== 'mofood')) {
         return errorResponse(res, 400, 'Invalid or inactive zone. Please detect your zone again.');
       }
     }

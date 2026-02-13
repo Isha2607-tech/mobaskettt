@@ -54,3 +54,4 @@ router.put('/plans/:id', authenticateAdmin, updatePlan);
 router.delete('/plans/:id', authenticateAdmin, deletePlan);
 
 export default router;
+

@@ -4,9 +4,11 @@ import { MapPin, ArrowLeft } from "lucide-react"
 import { adminAPI } from "@/lib/api"
 import { getGoogleMapsApiKey } from "@/lib/utils/googleMapsApiKey"
 import { Loader } from "@googlemaps/js-api-loader"
+import { usePlatform } from "../../context/PlatformContext"
 
 export default function ViewZone() {
   const navigate = useNavigate()
+  const { platform } = usePlatform()
   const { id } = useParams()
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
@@ -25,7 +27,7 @@ export default function ViewZone() {
     fetchZone()
     // Load Google Maps immediately
     loadGoogleMaps()
-  }, [id])
+  }, [id, platform])
 
   // Trigger map resize when component is fully mounted
   useEffect(() => {
@@ -42,7 +44,7 @@ export default function ViewZone() {
   const fetchZone = async () => {
     try {
       setLoading(true)
-      const response = await adminAPI.getZoneById(id)
+      const response = await adminAPI.getZoneById(id, { platform })
       if (response.data?.success && response.data.data?.zone) {
         setZone(response.data.data.zone)
       }

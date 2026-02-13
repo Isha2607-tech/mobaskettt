@@ -4,9 +4,11 @@ import { MapPin, ArrowLeft, Save, X, Hand, Shapes, Search } from "lucide-react"
 import { adminAPI } from "@/lib/api"
 import { getGoogleMapsApiKey } from "@/lib/utils/googleMapsApiKey"
 import { Loader } from "@googlemaps/js-api-loader"
+import { usePlatform } from "../../context/PlatformContext"
 
 export default function AddZone() {
   const navigate = useNavigate()
+  const { platform } = usePlatform()
   const { id } = useParams()
   const isEditMode = !!id && !window.location.pathname.includes('/view/')
   const mapRef = useRef(null)
@@ -41,7 +43,7 @@ export default function AddZone() {
     if (isEditMode && id) {
       fetchZone()
     }
-  }, [id, isEditMode])
+  }, [id, isEditMode, platform])
 
   // Center map on India when country is selected
   useEffect(() => {
@@ -97,7 +99,7 @@ export default function AddZone() {
 
   const fetchExistingZones = async () => {
     try {
-      const response = await adminAPI.getZones({ limit: 1000 })
+      const response = await adminAPI.getZones({ limit: 1000, platform })
       if (response.data?.success && response.data.data?.zones) {
         // Filter out the current zone if in edit mode
         const zones = isEditMode && id 
@@ -114,7 +116,7 @@ export default function AddZone() {
   const fetchZone = async () => {
     try {
       setLoading(true)
-      const response = await adminAPI.getZoneById(id)
+      const response = await adminAPI.getZoneById(id, { platform })
       if (response.data?.success && response.data.data?.zone) {
         const zoneData = response.data.data.zone
         setFormData({
@@ -650,14 +652,15 @@ export default function AddZone() {
         country: formData.country,
         unit: formData.unit || "kilometer",
         coordinates: validCoordinates,
-        isActive: true
+        isActive: true,
+        platform
       }
 
       console.log("Sending zone data:", zoneData)
 
       if (isEditMode && id) {
         // Update existing zone
-        const response = await adminAPI.updateZone(id, zoneData)
+        const response = await adminAPI.updateZone(id, zoneData, { platform })
         console.log("Zone updated successfully:", response)
         alert("Zone updated successfully!")
       } else {

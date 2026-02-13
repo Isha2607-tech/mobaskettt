@@ -171,7 +171,10 @@ export const getZonesInRadius = asyncHandler(async (req, res) => {
     }
 
     // Fetch all active zones
-    const zones = await Zone.find({ isActive: true })
+    const zones = await Zone.find({
+      isActive: true,
+      $or: [{ platform: 'mofood' }, { platform: { $exists: false } }]
+    })
       .populate('restaurantId', 'name email phone')
       .lean();
 

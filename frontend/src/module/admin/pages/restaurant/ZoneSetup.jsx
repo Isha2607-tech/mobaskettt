@@ -2,21 +2,23 @@ import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { MapPin, Plus, Search, Edit, Trash2, Eye, Map, Bike } from "lucide-react"
 import { adminAPI } from "@/lib/api"
+import { usePlatform } from "../../context/PlatformContext"
 
 export default function ZoneSetup() {
   const navigate = useNavigate()
+  const { platform } = usePlatform()
   const [zones, setZones] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
 
   useEffect(() => {
     fetchZones()
-  }, [])
+  }, [platform])
 
   const fetchZones = async () => {
     try {
       setLoading(true)
-      const response = await adminAPI.getZones()
+      const response = await adminAPI.getZones({ platform })
       if (response.data?.success && response.data.data?.zones) {
         setZones(response.data.data.zones)
       }
@@ -34,7 +36,7 @@ export default function ZoneSetup() {
       return
     }
     try {
-      await adminAPI.deleteZone(zoneId)
+      await adminAPI.deleteZone(zoneId, { platform })
       alert("Zone deleted successfully!")
       fetchZones()
     } catch (error) {

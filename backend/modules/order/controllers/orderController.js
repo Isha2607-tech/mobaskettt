@@ -185,7 +185,10 @@ export const createOrder = async (req, res) => {
     }
 
     // Check if restaurant is within any active zone
-    const activeZones = await Zone.find({ isActive: true }).lean();
+    const activeZones = await Zone.find({
+      isActive: true,
+      $or: [{ platform: 'mofood' }, { platform: { $exists: false } }]
+    }).lean();
     let restaurantInZone = false;
     let restaurantZone = null;
 

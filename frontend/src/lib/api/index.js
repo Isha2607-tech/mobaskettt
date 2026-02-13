@@ -27,6 +27,15 @@ export default apiClient;
 // Export API endpoints for convenience
 export { API_ENDPOINTS };
 
+const getAdminPlatform = () => {
+  if (typeof window === "undefined") return "mofood";
+  try {
+    return localStorage.getItem("adminPlatform") === "mogrocery" ? "mogrocery" : "mofood";
+  } catch {
+    return "mofood";
+  }
+};
+
 // Export helper functions for common operations
 export const api = {
   // GET request
@@ -232,9 +241,9 @@ export const locationAPI = {
 // Export zone API helper functions
 export const zoneAPI = {
   // Detect user's zone based on location
-  detectZone: (lat, lng) => {
+  detectZone: (lat, lng, platform = "mofood") => {
     return apiClient.get(API_ENDPOINTS.ZONE.DETECT, {
-      params: { lat, lng }
+      params: { lat, lng, platform }
     });
   },
 };
@@ -1340,27 +1349,45 @@ export const adminAPI = {
 
   // Zone Management
   getZones: (params = {}) => {
-    return apiClient.get(API_ENDPOINTS.ADMIN.ZONES, { params });
+    return apiClient.get(API_ENDPOINTS.ADMIN.ZONES, {
+      params: { ...params, platform: params.platform || getAdminPlatform() }
+    });
   },
 
-  getZoneById: (id) => {
-    return apiClient.get(API_ENDPOINTS.ADMIN.ZONE_BY_ID.replace(':id', id));
+  getZoneById: (id, params = {}) => {
+    return apiClient.get(API_ENDPOINTS.ADMIN.ZONE_BY_ID.replace(':id', id), {
+      params: { ...params, platform: params.platform || getAdminPlatform() }
+    });
   },
 
   createZone: (data) => {
-    return apiClient.post(API_ENDPOINTS.ADMIN.ZONES, data);
+    return apiClient.post(API_ENDPOINTS.ADMIN.ZONES, {
+      ...data,
+      platform: data?.platform || getAdminPlatform()
+    });
   },
 
-  updateZone: (id, data) => {
-    return apiClient.put(API_ENDPOINTS.ADMIN.ZONE_BY_ID.replace(':id', id), data);
+  updateZone: (id, data, params = {}) => {
+    return apiClient.put(
+      API_ENDPOINTS.ADMIN.ZONE_BY_ID.replace(':id', id),
+      {
+        ...data,
+        platform: data?.platform || params.platform || getAdminPlatform()
+      },
+      { params: { ...params, platform: params.platform || getAdminPlatform() } }
+    );
   },
 
-  deleteZone: (id) => {
-    return apiClient.delete(API_ENDPOINTS.ADMIN.ZONE_BY_ID.replace(':id', id));
+  deleteZone: (id, params = {}) => {
+    return apiClient.delete(API_ENDPOINTS.ADMIN.ZONE_BY_ID.replace(':id', id), {
+      params: { ...params, platform: params.platform || getAdminPlatform() }
+    });
   },
 
-  toggleZoneStatus: (id) => {
-    return apiClient.patch(API_ENDPOINTS.ADMIN.ZONE_STATUS.replace(':id', id));
+  toggleZoneStatus: (id, params = {}) => {
+    return apiClient.patch(API_ENDPOINTS.ADMIN.ZONE_STATUS.replace(':id', id), null, {
+      params: { ...params, platform: params.platform || getAdminPlatform() }
+    });
   },
 
   // Earning Addon Management
