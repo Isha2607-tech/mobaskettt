@@ -12,7 +12,8 @@
     "fix:hero-banner-swap": "node scripts/swap-hero-banner-platform-data.js",
     "fix:move-mogrocery-banners-to-mofood": "node scripts/move-mogrocery-banners-to-mofood.js",
     "fix:restore-mofood-banners": "node scripts/restore-mofood-banners-from-cloudinary.js",
-    "seed:grocery-plans": "node scripts/seed-grocery-plans.js"
+    "seed:grocery-plans": "node scripts/seed-grocery-plans.js",
+    "migrate:grocery-categories-static": "node scripts/migrate-static-grocery-categories.js"
   },
   "keywords": [
     "food-delivery",

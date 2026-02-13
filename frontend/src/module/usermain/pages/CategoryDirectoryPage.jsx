@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   Search,
@@ -7,105 +8,36 @@ import {
   LayoutGrid,
   ChevronDown,
 } from "lucide-react";
-
-// Assets
-import imgCoriander from "@/assets/bestseller/coriandar-removebg-preview.png";
-import imgFreshFruits from "@/assets/grocery&kitchen/Fruits-removebg-preview.png";
-import imgAtta from "@/assets/bestseller/aata-removebg-preview.png";
-import imgOil from "@/assets/grocery&kitchen/fortuneoil.jpeg";
-import imgMilk from "@/assets/grocery&kitchen/amulmilk.jpeg";
-import imgChips from "@/assets/bestseller/BlueLays-removebg-preview.png";
-import imgChocolate from "@/assets/bestseller/choclate-removebg-preview.png";
-import imgCoke from "@/assets/ColdDrinks/cocacola-removebg-preview.png";
-import imgIceCream from "@/assets/Beauty&PersonalCare/icecream-removebg-preview.png";
-import imgBeauty from "@/assets/Beauty&PersonalCare/Beauty_Cosmetics-removebg-preview.png";
-import imgOilMasala from "@/assets/grocery&kitchen/oilMasala-removebg-preview.png";
-import imgBakery from "@/assets/grocery&kitchen/cookies.png";
-import imgDryFruits from "@/assets/grocery&kitchen/dryFruits-removebg-preview.png";
-import imgFishMeat from "@/assets/grocery&kitchen/fishMeat-removebg-preview.png";
-import imgKitchenWare from "@/assets/grocery&kitchen/kitchenWare1-removebg-preview.png";
-import imgTea from "@/assets/grocery&kitchen/teaCoffee-removebg-preview.png";
-import imgInstantFood from "@/assets/grocery&kitchen/noodles-removebg-preview.png";
-import imgSauces from "@/assets/grocery&kitchen/sauce.png";
-import imgPaan from "@/assets/grocery&kitchen/paan.png";
-import imgHousehold from "@/assets/grocery&kitchen/household.png";
+import api from "@/lib/api";
 
 export default function CategoryDirectoryPage() {
   const navigate = useNavigate();
+  const [categories, setCategories] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  // handleCategoryClick removed in favor of Link component logic
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        setIsLoading(true);
+        setError("");
+        const response = await api.get("/grocery/categories", {
+          params: {
+            includeSubcategories: true,
+          },
+        });
+        const payload = Array.isArray(response?.data?.data) ? response.data.data : [];
+        setCategories(payload);
+      } catch (err) {
+        setCategories([]);
+        setError(err?.response?.data?.message || "Failed to load categories.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  const categories = [
-    {
-      title: "Grocery & Kitchen",
-      items: [
-        { id: "fresh-veg", name: "Vegetables & Fruits", image: imgCoriander },
-        { id: "atta-rice-dal", name: "Atta, Rice & Dal", image: imgAtta },
-        { id: "oil-masala", name: "Oil, Ghee & Masala", image: imgOilMasala },
-        { id: "dairy-bread", name: "Dairy, Bread & Eggs", image: imgMilk },
-      ],
-    },
-    {
-      title: "Snacks & Drinks",
-      items: [
-        {
-          id: "bakery-biscuits",
-          name: "Bakery & Biscuits",
-          image: imgBakery,
-        },
-        {
-          id: "dry-fruits",
-          name: "Dry Fruits & Cereals",
-          image: imgDryFruits,
-        },
-        {
-          id: "chicken-meat",
-          name: "Chicken, Meat & Fish",
-          image: imgFishMeat,
-        },
-        {
-          id: "kitchenware",
-          name: "Kitchenware & Appliances",
-          image: imgKitchenWare,
-        },
-        { id: "chips-namkeen", name: "Chips & Namkeen", image: imgChips },
-        { id: "sweets-choc", name: "Sweets & Chocolates", image: imgChocolate },
-        { id: "drinks-juices", name: "Drinks & Juices", image: imgCoke },
-        {
-          id: "tea-coffee",
-          name: "Tea, Coffee & Milk Drinks",
-          image: imgTea,
-        },
-        {
-          id: "instant-food",
-          name: "Instant Food",
-          image: imgInstantFood,
-        },
-        {
-          id: "sauces",
-          name: "Sauces & Spreads",
-          image: imgSauces,
-        },
-        {
-          id: "paan",
-          name: "Paan Corner",
-          image: imgPaan,
-        },
-        { id: "ice-creams", name: "Ice Creams & More", image: imgIceCream },
-      ],
-    },
-    {
-      title: "Beauty & Personal Care",
-      items: [
-        { id: "beauty", name: "Beauty & Cosmetics", image: imgBeauty },
-        {
-          id: "cleaning",
-          name: "Cleaning & Household",
-          image: imgHousehold,
-        },
-      ],
-    },
-  ];
+    loadCategories();
+  }, []);
 
   return (
     <div className="min-h-screen bg-white pb-24 font-sans w-full">
@@ -151,24 +83,40 @@ export default function CategoryDirectoryPage() {
 
       {/* Categories Grid */}
       <div className="px-4 py-2 md:max-w-7xl md:mx-auto">
-        {categories.map((section, idx) => (
-          <div key={idx} className="mb-6">
+        {isLoading && (
+          <p className="text-sm text-slate-500 px-1 py-3">Loading categories...</p>
+        )}
+        {!isLoading && error && (
+          <p className="text-sm text-red-500 px-1 py-3">{error}</p>
+        )}
+        {!isLoading && !error && categories.length === 0 && (
+          <p className="text-sm text-slate-500 px-1 py-3">No categories available.</p>
+        )}
+
+        {categories.map((section) => (
+          <div key={section._id} className="mb-6">
             <h2 className="text-[15px] font-[800] text-slate-800 mb-3 ml-1">
-              {section.title}
+              {section.name}
             </h2>
             <div className="grid grid-cols-4 gap-x-2 gap-y-6 md:grid-cols-6 lg:grid-cols-8 md:gap-6">
-              {section.items.map((item) => (
+              {(section.subcategories || []).map((item) => (
                 <Link
-                  key={item.id}
-                  to={`/grocery/category/${item.id}`}
+                  key={item._id}
+                  to={`/grocery/subcategory/${item._id}`}
                   className="flex flex-col items-center gap-2 cursor-pointer group"
                 >
                   <div className="w-full aspect-square bg-[#e6f7f5] rounded-2xl p-2.5 flex items-center justify-center relative overflow-hidden group-hover:bg-[#d8edd6] transition-colors">
-                    <img
-                      src={item.image}
-                      alt={item.name}
-                      className="w-full h-full object-contain drop-shadow-[0_10px_8px_rgba(0,0,0,0.2)]"
-                    />
+                    {item.image ? (
+                      <img
+                        src={item.image}
+                        alt={item.name}
+                        className="w-full h-full object-contain drop-shadow-[0_10px_8px_rgba(0,0,0,0.2)]"
+                      />
+                    ) : (
+                      <div className="w-full h-full rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-2xl font-black">
+                        {(item.name || "?").slice(0, 1).toUpperCase()}
+                      </div>
+                    )}
                   </div>
                   <span className="text-[10px] font-bold text-center text-slate-800 leading-tight px-1 break-words w-full">
                     {item.name}
@@ -176,6 +124,9 @@ export default function CategoryDirectoryPage() {
                 </Link>
               ))}
             </div>
+            {(!section.subcategories || section.subcategories.length === 0) && (
+              <p className="text-xs text-slate-500 ml-1">No subcategories available.</p>
+            )}
           </div>
         ))}
       </div>

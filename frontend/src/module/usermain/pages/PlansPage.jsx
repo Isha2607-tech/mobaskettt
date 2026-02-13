@@ -79,15 +79,20 @@ const PlansPage = () => {
     setSelectedMealType("veg");
   };
 
-  const selectedPlanProducts =
-    selectedPlan &&
-    (selectedMealType === "nonVeg"
-      ? selectedPlan.nonVegProducts
-      : selectedPlan.vegProducts).length > 0
-      ? selectedMealType === "nonVeg"
-        ? selectedPlan.nonVegProducts
-        : selectedPlan.vegProducts
-      : selectedPlan?.products || [];
+  const selectedPlanProducts = (() => {
+    if (!selectedPlan) return [];
+
+    const vegProducts = Array.isArray(selectedPlan.vegProducts) ? selectedPlan.vegProducts : [];
+    const nonVegProducts = Array.isArray(selectedPlan.nonVegProducts) ? selectedPlan.nonVegProducts : [];
+    const legacyProducts = Array.isArray(selectedPlan.products) ? selectedPlan.products : [];
+
+    const hasTypedProducts = vegProducts.length > 0 || nonVegProducts.length > 0;
+    if (!hasTypedProducts) {
+      return legacyProducts;
+    }
+
+    return selectedMealType === "nonVeg" ? nonVegProducts : vegProducts;
+  })();
 
   return (
     <div className="bg-gray-50 min-h-screen font-sans w-full relative pb-20 overflow-x-hidden">
