@@ -16,6 +16,11 @@ import {
   createProduct,
   updateProduct,
   deleteProduct,
+  getPlans,
+  getPlanById,
+  createPlan,
+  updatePlan,
+  deletePlan,
 } from '../controllers/groceryController.js';
 
 const router = express.Router();
@@ -40,5 +45,12 @@ router.get('/products/:id', getProductById);
 router.post('/products', authenticateAdmin, createProduct);
 router.put('/products/:id', authenticateAdmin, updateProduct);
 router.delete('/products/:id', authenticateAdmin, deleteProduct);
+
+// Plans
+router.get('/plans', getPlans);
+router.get('/plans/:id', getPlanById);
+router.post('/plans', authenticateAdmin, createPlan);
+router.put('/plans/:id', authenticateAdmin, updatePlan);
+router.delete('/plans/:id', authenticateAdmin, deletePlan);
 
 export default router;

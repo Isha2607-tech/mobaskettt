@@ -8,7 +8,7 @@ import { useCart } from "../../user/context/CartContext";
 export default function GroceryBestSellerProductsPage() {
   const navigate = useNavigate();
   const { itemType, itemId } = useParams();
-  const { addToCart } = useCart();
+  const { addToCart, isInCart } = useCart();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [title, setTitle] = useState("Products");
@@ -120,13 +120,20 @@ export default function GroceryBestSellerProductsPage() {
                     <p className="text-xs text-slate-400 line-through">Rs {product.mrp}</p>
                   )}
                 </div>
+                {isInCart(product?._id || product?.id) && (
+                  <p className="text-[11px] font-semibold text-emerald-700">Already added to cart</p>
+                )}
                 <button
                   type="button"
                   onClick={() => handleAddToCart(product)}
-                  className="h-8 px-3 rounded-lg bg-emerald-600 text-white text-xs font-semibold flex items-center gap-1"
+                  className={`h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1 ${
+                    isInCart(product?._id || product?.id)
+                      ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                      : "bg-emerald-600 text-white"
+                  }`}
                 >
                   <ShoppingCart size={14} />
-                  Add
+                  {isInCart(product?._id || product?.id) ? "Added" : "Add"}
                 </button>
               </div>
             </div>

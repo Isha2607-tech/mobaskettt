@@ -8,7 +8,8 @@ import { useCart } from "../../user/context/CartContext";
 export default function GrocerySubcategoryProductsPage() {
   const navigate = useNavigate();
   const { subcategoryId } = useParams();
-  const { addToCart } = useCart();
+  const { addToCart, getGroceryCartCount, isInCart } = useCart();
+  const cartCount = getGroceryCartCount();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [subcategory, setSubcategory] = useState(null);
@@ -64,7 +65,8 @@ export default function GrocerySubcategoryProductsPage() {
 
   return (
     <div className="min-h-screen bg-white pb-24">
-      <div className="sticky top-0 z-20 bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-3">
+      <div className="sticky top-0 z-20 bg-white border-b border-slate-100 px-4 py-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
         <button
           type="button"
           onClick={() => navigate("/grocery")}
@@ -72,7 +74,21 @@ export default function GrocerySubcategoryProductsPage() {
         >
           <ArrowLeft size={18} />
         </button>
-        <h1 className="text-base font-bold text-slate-900 line-clamp-1">{title}</h1>
+          <h1 className="text-base font-bold text-slate-900 line-clamp-1">{title}</h1>
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate("/grocery/cart")}
+          className="relative w-10 h-10 rounded-full bg-[#1a1a1a] text-white flex items-center justify-center shadow-sm"
+          aria-label="Open cart"
+        >
+          <ShoppingCart size={18} />
+          {cartCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center border border-white">
+              {cartCount}
+            </span>
+          )}
+        </button>
       </div>
 
       {loading && <p className="px-4 py-6 text-sm text-slate-500">Loading products...</p>}
@@ -104,13 +120,20 @@ export default function GrocerySubcategoryProductsPage() {
                     <p className="text-xs text-slate-400 line-through">Rs {product.mrp}</p>
                   )}
                 </div>
+                {isInCart(product?._id || product?.id) && (
+                  <p className="text-[11px] font-semibold text-emerald-700">Already added to cart</p>
+                )}
                 <button
                   type="button"
                   onClick={() => handleAddToCart(product)}
-                  className="h-8 px-3 rounded-lg bg-emerald-600 text-white text-xs font-semibold flex items-center gap-1"
+                  className={`h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1 ${
+                    isInCart(product?._id || product?.id)
+                      ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                      : "bg-emerald-600 text-white"
+                  }`}
                 >
                   <ShoppingCart size={14} />
-                  Add
+                  {isInCart(product?._id || product?.id) ? "Added" : "Add"}
                 </button>
               </div>
             </div>

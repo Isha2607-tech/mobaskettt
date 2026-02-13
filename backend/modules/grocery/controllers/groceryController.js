@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import GroceryCategory from '../models/GroceryCategory.js';
 import GrocerySubcategory from '../models/GrocerySubcategory.js';
 import GroceryProduct from '../models/GroceryProduct.js';
+import GroceryPlan from '../models/GroceryPlan.js';
 
 const slugify = (value = '') =>
   value
@@ -26,6 +27,19 @@ const normalizeSubcategoryIds = (subcategoryIds) => {
   });
 
   return Array.from(unique);
+};
+
+const normalizePlanProducts = (products) => {
+  if (!Array.isArray(products)) {
+    return [];
+  }
+
+  return products
+    .map((item) => ({
+      name: (item?.name || '').toString().trim(),
+      qty: (item?.qty || '').toString().trim(),
+    }))
+    .filter((item) => item.name && item.qty);
 };
 
 export const getCategories = async (req, res) => {
@@ -573,5 +587,181 @@ export const deleteProduct = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Product deleted successfully' });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Failed to delete product', error: error.message });
+  }
+};
+
+export const getPlans = async (req, res) => {
+  try {
+    const { activeOnly = 'true' } = req.query;
+    const filter = {};
+    if (activeOnly !== 'false') {
+      filter.isActive = true;
+    }
+
+    const plans = await GroceryPlan.find(filter).sort({ order: 1, createdAt: -1 }).lean();
+    return res.status(200).json({
+      success: true,
+      count: plans.length,
+      data: plans,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch grocery plans',
+      error: error.message,
+    });
+  }
+};
+
+export const getPlanById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid plan id' });
+    }
+
+    const plan = await GroceryPlan.findById(id).lean();
+    if (!plan) {
+      return res.status(404).json({ success: false, message: 'Plan not found' });
+    }
+
+    return res.status(200).json({ success: true, data: plan });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch plan', error: error.message });
+  }
+};
+
+export const createPlan = async (req, res) => {
+  try {
+    const {
+      key,
+      name,
+      description = '',
+      itemsLabel = '',
+      productCount = 0,
+      deliveries = 0,
+      frequency = '',
+      price,
+      durationDays,
+      iconKey = 'zap',
+      color = 'bg-emerald-500',
+      headerColor = 'bg-emerald-500',
+      popular = false,
+      benefits = [],
+      products = [],
+      vegProducts = [],
+      nonVegProducts = [],
+      order = 0,
+      isActive = true,
+    } = req.body;
+
+    if (!name || price === undefined || durationDays === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'name, price and durationDays are required',
+      });
+    }
+
+    const normalizedKey = slugify(key || name);
+    const exists = await GroceryPlan.findOne({ key: normalizedKey }).lean();
+    if (exists) {
+      return res.status(409).json({ success: false, message: 'Plan key already exists' });
+    }
+
+    const normalizedProducts = normalizePlanProducts(products);
+    const normalizedVegProducts = normalizePlanProducts(vegProducts);
+    const normalizedNonVegProducts = normalizePlanProducts(nonVegProducts);
+    const mergedProducts =
+      normalizedProducts.length > 0 ? normalizedProducts : [...normalizedVegProducts, ...normalizedNonVegProducts];
+
+    const plan = await GroceryPlan.create({
+      key: normalizedKey,
+      name: name.trim(),
+      description,
+      itemsLabel,
+      productCount: Number(productCount) || 0,
+      deliveries: Number(deliveries) || 0,
+      frequency,
+      price: Number(price),
+      durationDays: Number(durationDays),
+      iconKey,
+      color,
+      headerColor,
+      popular: Boolean(popular),
+      benefits: Array.isArray(benefits) ? benefits.filter(Boolean) : [],
+      products: mergedProducts,
+      vegProducts: normalizedVegProducts,
+      nonVegProducts: normalizedNonVegProducts,
+      order: Number(order) || 0,
+      isActive: Boolean(isActive),
+    });
+
+    return res.status(201).json({ success: true, data: plan });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to create plan', error: error.message });
+  }
+};
+
+export const updatePlan = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid plan id' });
+    }
+
+    const existing = await GroceryPlan.findById(id).lean();
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Plan not found' });
+    }
+
+    const update = { ...req.body };
+    if (update.key || update.name) {
+      update.key = slugify(update.key || update.name || existing.name);
+      const duplicate = await GroceryPlan.findOne({ key: update.key, _id: { $ne: id } }).lean();
+      if (duplicate) {
+        return res.status(409).json({ success: false, message: 'Plan key already exists' });
+      }
+    }
+
+    if (update.price !== undefined) update.price = Number(update.price);
+    if (update.durationDays !== undefined) update.durationDays = Number(update.durationDays);
+    if (update.productCount !== undefined) update.productCount = Number(update.productCount) || 0;
+    if (update.deliveries !== undefined) update.deliveries = Number(update.deliveries) || 0;
+    if (update.order !== undefined) update.order = Number(update.order) || 0;
+    if (update.products !== undefined) update.products = normalizePlanProducts(update.products);
+    if (update.vegProducts !== undefined) update.vegProducts = normalizePlanProducts(update.vegProducts);
+    if (update.nonVegProducts !== undefined) update.nonVegProducts = normalizePlanProducts(update.nonVegProducts);
+
+    if (update.vegProducts !== undefined || update.nonVegProducts !== undefined) {
+      const nextVegProducts = update.vegProducts ?? normalizePlanProducts(existing.vegProducts);
+      const nextNonVegProducts = update.nonVegProducts ?? normalizePlanProducts(existing.nonVegProducts);
+
+      if (update.products === undefined || update.products.length === 0) {
+        update.products = [...nextVegProducts, ...nextNonVegProducts];
+      }
+    }
+
+    const plan = await GroceryPlan.findByIdAndUpdate(id, update, { new: true, runValidators: true });
+    return res.status(200).json({ success: true, data: plan });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to update plan', error: error.message });
+  }
+};
+
+export const deletePlan = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid plan id' });
+    }
+
+    const plan = await GroceryPlan.findByIdAndDelete(id);
+    if (!plan) {
+      return res.status(404).json({ success: false, message: 'Plan not found' });
+    }
+
+    return res.status(200).json({ success: true, message: 'Plan deleted successfully' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to delete plan', error: error.message });
   }
 };

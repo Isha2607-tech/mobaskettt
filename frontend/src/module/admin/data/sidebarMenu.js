@@ -367,6 +367,12 @@ export const mogroceryMenuData = [
         path: "/admin/grocery-products-catalog",
         icon: "Package",
       },
+      {
+        type: "link",
+        label: "Plans",
+        path: "/admin/grocery-plans",
+        icon: "Calendar",
+      },
     ],
   },
   {
