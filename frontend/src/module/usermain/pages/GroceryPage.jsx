@@ -13,6 +13,7 @@ import {
   Printer,
   Monitor,
   X,
+  Snowflake,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -109,7 +110,7 @@ const GroceryPage = () => {
   useEffect(() => {
     if (activeTab === "Valentine's" || activeTab === "Beauty" || activeTab === "Pharmacy" || activeTab === "Electronics") {
       setShowSnow(true);
-      const timer = setTimeout(() => setShowSnow(false), 60000); // 1 minute
+      const timer = setTimeout(() => setShowSnow(false), 10000); // 20 seconds
       return () => clearTimeout(timer);
     } else {
       setShowSnow(false);
@@ -401,9 +402,13 @@ const GroceryPage = () => {
                   delay: flake.delay,
                   ease: "easeInOut"
                 }}
-                className="absolute top-0 w-2 h-2 bg-white rounded-full blur-[1px]"
+                className={`absolute top-0 ${activeTab === "Electronics" ? "" : "w-2 h-2 bg-white rounded-full blur-[1px]"}`}
                 style={{ left: `${flake.left}%` }}
-              />
+              >
+                {activeTab === "Electronics" && (
+                  <Snowflake className="w-4 h-4 text-white opacity-80" />
+                )}
+              </motion.div>
             ))}
           </div>
         )}
@@ -414,7 +419,24 @@ const GroceryPage = () => {
       >
         <div className="relative z-20">
           {/* Top Info Row - YELLOW BACKGROUND ADDED HERE */}
-          <div className="rounded-b-[2.5rem] pb-10 shadow-sm relative z-20 transition-all duration-500 bg-[#FACC15]">
+          <div
+            className={`rounded-b-[2.5rem] pb-10 shadow-sm relative z-20 transition-all duration-500 ${activeTab === "Electronics" ? "" :
+              activeTab === "Beauty" ? "" :
+                activeTab === "Pharmacy" ? "" :
+                  activeTab === "Valentine's" ? "" : "bg-[#FACC15]"
+              }`}
+            style={
+              activeTab === "Valentine's"
+                ? { background: "linear-gradient(0deg, #EF4F5F 38%, #F58290 63%)" }
+                : activeTab === "Electronics"
+                  ? { background: "linear-gradient(0deg,rgba(160, 213, 222, 1) 38%, rgba(81, 184, 175, 1) 63%)" }
+                  : activeTab === "Beauty"
+                    ? { background: "linear-gradient(0deg,rgba(240, 134, 183, 1) 58%, rgba(235, 124, 176, 1) 63%)" }
+                    : activeTab === "Pharmacy"
+                      ? { background: "linear-gradient(0deg,#EF4F5F 22%, #D63D4D 63%)" }
+                      : {}
+            }
+          >
             <div className="px-4 pt-6 flex justify-between items-start mb-0">
               <div className="flex flex-col">
                 <h1 className="text-[10px] uppercase font-black tracking-[0.15em] text-[#3e3212] leading-none mb-0.5">
@@ -458,21 +480,20 @@ const GroceryPage = () => {
                 {topNavCategories.map((cat) => (
                   <div
                     key={cat.id}
-                    className={`flex flex-col items-center gap-1 cursor-pointer group px-2 py-1 rounded-xl transition-colors ${
-                      cat.name === activeTab ? "bg-white/55" : "hover:bg-white/35"
-                    }`}
+                    className={`flex flex-col items-center gap-1 cursor-pointer group px-2 py-1 rounded-xl transition-colors ${cat.name === activeTab ? "bg-white/55" : "hover:bg-white/35"
+                      }`}
                     onClick={() => setActiveTab(cat.name)}
                   >
                     <div className="relative transition-transform group-hover:scale-110">
                       {cat.name === activeTab && (
-                        <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full border border-[#fc9b03] z-10"></div>
+                        <div className="absolute -top-1 -right-1 w-2 h-2 bg-[#EF4F5F] rounded-full border border-[#fc9b03] z-10"></div>
                       )}
                       <img
                         src={cat.img}
                         alt={cat.name}
-                      className="w-8 h-8 object-contain drop-shadow-sm rounded-full"
-                    />
-                  </div>
+                        className="w-8 h-8 object-contain drop-shadow-sm rounded-full"
+                      />
+                    </div>
                     <span
                       className={`text-[11px] font-bold max-w-[68px] text-center line-clamp-1 ${activeTab === cat.name ? "text-[#3e3212]" : "text-[#3e3212]/70"}`}
                     >
@@ -495,7 +516,7 @@ const GroceryPage = () => {
                       key={itemCount}
                       initial={{ scale: 0.5, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
-                      className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center border border-white"
+                      className="absolute -top-1 -right-1 bg-[#EF4F5F] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center border border-white"
                     >
                       {itemCount}
                     </motion.div>
@@ -526,7 +547,7 @@ const GroceryPage = () => {
               <div className="w-[1px] h-6 bg-slate-200 mx-3"></div>
               <Mic
                 onClick={startListening}
-                className={`w-5 h-5 stroke-[2.5] transition-colors cursor-pointer ${isListening ? "text-red-500 animate-pulse" : "text-slate-400"}`}
+                className={`w-5 h-5 stroke-[2.5] transition-colors cursor-pointer ${isListening ? "text-[#EF4F5F] animate-pulse" : "text-slate-400"}`}
               />
             </div>
           </div>
@@ -537,9 +558,8 @@ const GroceryPage = () => {
               {topNavCategories.map((cat) => (
                 <div
                   key={cat.id}
-                  className={`flex flex-col items-center gap-1.5 cursor-pointer min-w-[68px] px-1 py-1 rounded-xl transition-colors ${
-                    activeTab === cat.name ? "bg-white/55" : "hover:bg-white/35"
-                  }`}
+                  className={`flex flex-col items-center gap-1.5 cursor-pointer min-w-[68px] px-1 py-1 rounded-xl transition-colors ${activeTab === cat.name ? "bg-white/55" : "hover:bg-white/35"
+                    }`}
                   onClick={() => setActiveTab(cat.name)}
                 >
                   <div className="relative">
@@ -693,7 +713,7 @@ const GroceryPage = () => {
         </div>
 
         <button
-          className="mb-1 bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"
+          className="mb-1 bg-[#EF4F5F] hover:bg-red-700 text-white px-6 py-2 rounded-full shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"
           onClick={() => navigate("/home")}
         >
           <span className="font-black italic text-lg tracking-tighter">

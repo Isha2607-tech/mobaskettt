@@ -161,7 +161,7 @@ export default function CategoryDirectoryPage() {
         </div>
 
         <button
-          className="mb-1 bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"
+          className="mb-1 bg-[#EF4F5F] hover:bg-red-700 text-white px-6 py-2 rounded-full shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"
           onClick={() => navigate("/home")}
         >
           <span className="font-black italic text-lg tracking-tighter">
