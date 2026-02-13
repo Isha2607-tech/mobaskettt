@@ -6,7 +6,11 @@ import Under250Banner from '../models/Under250Banner.js';
 import DiningBanner from '../models/DiningBanner.js';
 import Top10Restaurant from '../models/Top10Restaurant.js';
 import GourmetRestaurant from '../models/GourmetRestaurant.js';
+import GroceryBestSeller from '../models/GroceryBestSeller.js';
 import Restaurant from '../../restaurant/models/Restaurant.js';
+import GroceryCategory from '../../grocery/models/GroceryCategory.js';
+import GrocerySubcategory from '../../grocery/models/GrocerySubcategory.js';
+import GroceryProduct from '../../grocery/models/GroceryProduct.js';
 import { successResponse, errorResponse } from '../../../shared/utils/response.js';
 import { uploadToCloudinary } from '../../../shared/utils/cloudinaryService.js';
 import { cloudinary } from '../../../config/cloudinary.js';
@@ -18,6 +22,18 @@ const buildPlatformFilter = (platform) =>
   platform === 'mofood'
     ? { $or: [{ platform: 'mofood' }, { platform: { $exists: false } }] }
     : { platform: 'mogrocery' };
+
+const GROCERY_BEST_SELLER_MODEL_BY_TYPE = {
+  category: 'GroceryCategory',
+  subcategory: 'GrocerySubcategory',
+  product: 'GroceryProduct',
+};
+
+const GROCERY_BEST_SELLER_DB_MODEL_BY_TYPE = {
+  category: GroceryCategory,
+  subcategory: GrocerySubcategory,
+  product: GroceryProduct,
+};
 
 /**
  * Get all active hero banners (public endpoint)
@@ -1691,5 +1707,211 @@ export const toggleGourmetRestaurantStatus = async (req, res) => {
   } catch (error) {
     console.error('Error toggling Gourmet restaurant status:', error);
     return errorResponse(res, 500, 'Failed to update Gourmet restaurant status');
+  }
+};
+
+// ==================== GROCERY BEST SELLERS ====================
+
+/**
+ * Get all active grocery best sellers (public endpoint)
+ */
+export const getGroceryBestSellers = async (req, res) => {
+  try {
+    const platform = getPlatformFromRequest(req);
+    const items = await GroceryBestSeller.find({
+      ...buildPlatformFilter(platform),
+      isActive: true,
+    })
+      .populate('itemId')
+      .sort({ order: 1, createdAt: -1 })
+      .lean();
+
+    const bestSellers = items
+      .filter((item) => item.itemId)
+      .map((item) => ({
+        _id: item._id,
+        itemType: item.itemType,
+        itemId: item.itemId?._id || item.itemId,
+        name: item.itemId?.name || '',
+        image:
+          item.itemType === 'product'
+            ? (Array.isArray(item.itemId?.images) ? item.itemId.images[0] : '') || ''
+            : item.itemId?.image || '',
+        order: item.order,
+        isActive: item.isActive,
+        subcategories:
+          item.itemType === 'product' && Array.isArray(item.itemId?.subcategories)
+            ? item.itemId.subcategories
+            : [],
+      }));
+
+    return successResponse(res, 200, 'Grocery best sellers retrieved successfully', {
+      items: bestSellers,
+    });
+  } catch (error) {
+    console.error('Error fetching grocery best sellers:', error);
+    return errorResponse(res, 500, 'Failed to fetch grocery best sellers');
+  }
+};
+
+/**
+ * Get all grocery best sellers (admin endpoint)
+ */
+export const getAllGroceryBestSellers = async (req, res) => {
+  try {
+    const platform = getPlatformFromRequest(req);
+    const items = await GroceryBestSeller.find(buildPlatformFilter(platform))
+      .populate('itemId')
+      .sort({ order: 1, createdAt: -1 })
+      .lean();
+
+    return successResponse(res, 200, 'Grocery best sellers retrieved successfully', {
+      items: items.filter((item) => item.itemId),
+    });
+  } catch (error) {
+    console.error('Error fetching all grocery best sellers:', error);
+    return errorResponse(res, 500, 'Failed to fetch grocery best sellers');
+  }
+};
+
+/**
+ * Create grocery best seller item
+ */
+export const createGroceryBestSeller = async (req, res) => {
+  try {
+    const platform = getPlatformFromRequest(req);
+    const { itemType, itemId } = req.body;
+
+    if (!itemType || !itemId) {
+      return errorResponse(res, 400, 'itemType and itemId are required');
+    }
+
+    const itemModel = GROCERY_BEST_SELLER_MODEL_BY_TYPE[itemType];
+    const dbModel = GROCERY_BEST_SELLER_DB_MODEL_BY_TYPE[itemType];
+    if (!itemModel || !dbModel) {
+      return errorResponse(res, 400, 'Invalid itemType. Use category, subcategory or product');
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(itemId)) {
+      return errorResponse(res, 400, 'Invalid itemId');
+    }
+
+    const exists = await dbModel.findById(itemId).select('_id').lean();
+    if (!exists) {
+      return errorResponse(res, 404, 'Selected item not found');
+    }
+
+    const duplicate = await GroceryBestSeller.findOne({
+      ...buildPlatformFilter(platform),
+      itemType,
+      itemId,
+    }).lean();
+    if (duplicate) {
+      return errorResponse(res, 400, 'Item is already added in Best Sellers');
+    }
+
+    const last = await GroceryBestSeller.findOne(buildPlatformFilter(platform))
+      .sort({ order: -1 })
+      .select('order')
+      .lean();
+
+    const order = last ? Number(last.order || 0) + 1 : 0;
+
+    const created = await GroceryBestSeller.create({
+      platform,
+      itemType,
+      itemModel,
+      itemId,
+      order,
+      isActive: true,
+    });
+
+    const populated = await GroceryBestSeller.findById(created._id).populate('itemId').lean();
+    return successResponse(res, 201, 'Best seller item added successfully', {
+      item: populated,
+    });
+  } catch (error) {
+    console.error('Error creating grocery best seller:', error);
+    return errorResponse(res, 500, 'Failed to add best seller item');
+  }
+};
+
+/**
+ * Delete grocery best seller item
+ */
+export const deleteGroceryBestSeller = async (req, res) => {
+  try {
+    const platform = getPlatformFromRequest(req);
+    const { id } = req.params;
+
+    const existing = await GroceryBestSeller.findOne({ _id: id, ...buildPlatformFilter(platform) });
+    if (!existing) {
+      return errorResponse(res, 404, 'Best seller item not found');
+    }
+
+    await GroceryBestSeller.findByIdAndDelete(id);
+    return successResponse(res, 200, 'Best seller item deleted successfully');
+  } catch (error) {
+    console.error('Error deleting grocery best seller:', error);
+    return errorResponse(res, 500, 'Failed to delete best seller item');
+  }
+};
+
+/**
+ * Update grocery best seller order
+ */
+export const updateGroceryBestSellerOrder = async (req, res) => {
+  try {
+    const platform = getPlatformFromRequest(req);
+    const { id } = req.params;
+    const { order } = req.body;
+
+    if (typeof order !== 'number') {
+      return errorResponse(res, 400, 'Order must be a number');
+    }
+
+    const updated = await GroceryBestSeller.findOneAndUpdate(
+      { _id: id, ...buildPlatformFilter(platform) },
+      { order, updatedAt: new Date() },
+      { new: true }
+    ).populate('itemId');
+
+    if (!updated) {
+      return errorResponse(res, 404, 'Best seller item not found');
+    }
+
+    return successResponse(res, 200, 'Best seller order updated successfully', {
+      item: updated,
+    });
+  } catch (error) {
+    console.error('Error updating grocery best seller order:', error);
+    return errorResponse(res, 500, 'Failed to update best seller order');
+  }
+};
+
+/**
+ * Toggle grocery best seller status
+ */
+export const toggleGroceryBestSellerStatus = async (req, res) => {
+  try {
+    const platform = getPlatformFromRequest(req);
+    const { id } = req.params;
+
+    const item = await GroceryBestSeller.findOne({ _id: id, ...buildPlatformFilter(platform) });
+    if (!item) {
+      return errorResponse(res, 404, 'Best seller item not found');
+    }
+
+    item.isActive = !item.isActive;
+    item.updatedAt = new Date();
+    await item.save();
+
+    await item.populate('itemId');
+    return successResponse(res, 200, 'Best seller status updated successfully', {
+      item,
+    });
+  } catch (error) {
+    console.error('Error toggling grocery best seller status:', error);
+    return errorResponse(res, 500, 'Failed to update best seller status');
   }
 };

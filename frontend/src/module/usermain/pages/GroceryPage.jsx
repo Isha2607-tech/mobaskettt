@@ -102,6 +102,8 @@ const GroceryPage = () => {
   const [selectedCategoryId, setSelectedCategoryId] = useState("all");
   const [vegMode, setVegMode] = useState(false);
   const [showSnow, setShowSnow] = useState(false);
+  const [homepageCategories, setHomepageCategories] = useState([]);
+  const [bestSellerItems, setBestSellerItems] = useState([]);
 
   // Snow effect timer
   useEffect(() => {
@@ -177,6 +179,38 @@ const GroceryPage = () => {
     fetchGroceryBanners();
   }, []);
 
+  useEffect(() => {
+    const fetchHomepageCategories = async () => {
+      try {
+        const response = await api.get("/grocery/categories", {
+          params: { includeSubcategories: true },
+        });
+        const categories = Array.isArray(response?.data?.data) ? response.data.data : [];
+        setHomepageCategories(categories);
+      } catch {
+        setHomepageCategories([]);
+      }
+    };
+
+    fetchHomepageCategories();
+  }, []);
+
+  useEffect(() => {
+    const fetchBestSellers = async () => {
+      try {
+        const response = await api.get("/hero-banners/grocery-best-sellers/public", {
+          params: { platform: "mogrocery" },
+        });
+        const items = Array.isArray(response?.data?.data?.items) ? response.data.data.items : [];
+        setBestSellerItems(items);
+      } catch {
+        setBestSellerItems([]);
+      }
+    };
+
+    fetchBestSellers();
+  }, []);
+
   // Auto-slide carousel
   useEffect(() => {
     if (bannerImages.length <= 1) return undefined;
@@ -196,25 +230,21 @@ const GroceryPage = () => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const categories = [
-    {
-      id: "all",
-      name: "All",
-      img: imgBag3D,
-    },
-    {
-      id: "val",
-      name: "Valentine's",
-      img: imgHeart3D,
-    },
-    {
-      id: "elec",
-      name: "Electronics",
-      img: imgHeadphone3D,
-    },
-    { id: "beau", name: "Beauty", img: imgBeauty3D },
-    { id: "phar", name: "Pharmacy", img: imgMedicine3D },
-  ];
+  const topNavCategories = useMemo(
+    () => [
+      {
+        id: "all",
+        name: "All",
+        img: imgBag3D,
+      },
+      ...homepageCategories.map((category) => ({
+        id: category?._id || category?.slug || category?.name,
+        name: category?.name || "Category",
+        img: category?.image || imgBag3D,
+      })),
+    ],
+    [homepageCategories]
+  );
 
   const bestsellers = [
     {
@@ -265,6 +295,90 @@ const GroceryPage = () => {
     drift: Math.random() * 100 - 50,
   })), []);
 
+  const homepageCategorySections = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    const categoryFiltered =
+      activeTab === "All"
+        ? homepageCategories
+        : homepageCategories.filter((category) => category?.name === activeTab);
+
+    return categoryFiltered
+      .map((category) => {
+        const subcategories = Array.isArray(category?.subcategories) ? category.subcategories : [];
+        const filteredSubcategories = query
+          ? subcategories.filter((sub) => (sub?.name || "").toLowerCase().includes(query))
+          : subcategories;
+
+        const matchesCategory = (category?.name || "").toLowerCase().includes(query);
+        return {
+          ...category,
+          subcategories: matchesCategory ? subcategories : filteredSubcategories,
+        };
+      })
+      .filter((category) => {
+        if (!query) return true;
+        return (category?.name || "").toLowerCase().includes(query) || category.subcategories.length > 0;
+      });
+  }, [activeTab, homepageCategories, searchQuery]);
+
+  const visibleBestSellers = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+
+    if (bestSellerItems.length === 0) {
+      return bestsellers
+        .filter((item) => item.title.toLowerCase().includes(query))
+        .map((item) => ({
+          id: item.categoryId,
+          name: item.title,
+          image: item.images?.[0] || "https://via.placeholder.com/120",
+          itemType: "legacy",
+          categoryId: item.categoryId,
+        }));
+    }
+
+    return bestSellerItems
+      .filter((item) => (item?.name || "").toLowerCase().includes(query))
+      .map((item) => ({
+        id: item._id,
+        name: item.name || "",
+        image: item.image || "https://via.placeholder.com/120",
+        itemType: item.itemType,
+        itemId: item.itemId,
+        subcategories: Array.isArray(item.subcategories) ? item.subcategories : [],
+      }));
+  }, [bestSellerItems, bestsellers, searchQuery]);
+
+  const handleBestSellerClick = (item) => {
+    if (item.itemType && item.itemType !== "legacy" && item.itemId) {
+      navigate(`/grocery/best-seller/${item.itemType}/${item.itemId}`);
+      return;
+    }
+
+    if (item.itemType === "subcategory" && item.itemId) {
+      navigate(`/grocery/subcategory/${item.itemId}`);
+      return;
+    }
+
+    if (item.itemType === "product") {
+      const firstSubcategory = item.subcategories?.[0];
+      const subcategoryId =
+        typeof firstSubcategory === "string"
+          ? firstSubcategory
+          : firstSubcategory?._id;
+      if (subcategoryId) {
+        navigate(`/grocery/subcategory/${subcategoryId}`);
+        return;
+      }
+    }
+
+    if (item.itemType === "legacy" && item.categoryId) {
+      openCategorySheet(item.categoryId);
+      return;
+    }
+
+    navigate("/categories");
+  };
+
   return (
     // Main Container with White Background
     <div className="min-h-screen text-slate-800 pb-24 font-sans w-full shadow-none overflow-x-hidden relative bg-white">
@@ -300,24 +414,7 @@ const GroceryPage = () => {
       >
         <div className="relative z-20">
           {/* Top Info Row - YELLOW BACKGROUND ADDED HERE */}
-          <div
-            className={`rounded-b-[2.5rem] pb-10 shadow-sm relative z-20 transition-all duration-500 ${activeTab === "Electronics" ? "" :
-              activeTab === "Beauty" ? "" :
-                activeTab === "Pharmacy" ? "" :
-                  activeTab === "Valentine's" ? "" : "bg-[#FACC15]"
-              }`}
-            style={
-              activeTab === "Valentine's"
-                ? { background: "linear-gradient(0deg, rgba(220, 101, 117, 1) 38%, rgba(235, 138, 150, 1) 63%)" }
-                : activeTab === "Electronics"
-                  ? { background: "linear-gradient(0deg,rgba(160, 213, 222, 1) 38%, rgba(81, 184, 175, 1) 63%)" }
-                  : activeTab === "Beauty"
-                    ? { background: "linear-gradient(0deg,rgba(240, 134, 183, 1) 58%, rgba(235, 124, 176, 1) 63%)" }
-                    : activeTab === "Pharmacy"
-                      ? { background: "linear-gradient(0deg,rgba(222, 128, 118, 1) 22%, rgba(212, 97, 85, 1) 63%)" }
-                      : {}
-            }
-          >
+          <div className="rounded-b-[2.5rem] pb-10 shadow-sm relative z-20 transition-all duration-500 bg-[#FACC15]">
             <div className="px-4 pt-6 flex justify-between items-start mb-0">
               <div className="flex flex-col">
                 <h1 className="text-[10px] uppercase font-black tracking-[0.15em] text-[#3e3212] leading-none mb-0.5">
@@ -357,11 +454,13 @@ const GroceryPage = () => {
               </div>
 
               {/* Desktop Nav Icons */}
-              <div className="hidden md:flex items-center gap-8 mx-4">
-                {categories.map((cat) => (
+              <div className="hidden md:flex items-center gap-4 mx-4 max-w-[48vw] overflow-x-auto no-scrollbar">
+                {topNavCategories.map((cat) => (
                   <div
                     key={cat.id}
-                    className="flex flex-col items-center gap-1 cursor-pointer group"
+                    className={`flex flex-col items-center gap-1 cursor-pointer group px-2 py-1 rounded-xl transition-colors ${
+                      cat.name === activeTab ? "bg-white/55" : "hover:bg-white/35"
+                    }`}
                     onClick={() => setActiveTab(cat.name)}
                   >
                     <div className="relative transition-transform group-hover:scale-110">
@@ -371,11 +470,11 @@ const GroceryPage = () => {
                       <img
                         src={cat.img}
                         alt={cat.name}
-                        className="w-8 h-8 object-contain drop-shadow-sm"
-                      />
-                    </div>
+                      className="w-8 h-8 object-contain drop-shadow-sm rounded-full"
+                    />
+                  </div>
                     <span
-                      className={`text-[11px] font-bold ${activeTab === cat.name ? "text-[#3e3212]" : "text-[#3e3212]/60"}`}
+                      className={`text-[11px] font-bold max-w-[68px] text-center line-clamp-1 ${activeTab === cat.name ? "text-[#3e3212]" : "text-[#3e3212]/70"}`}
                     >
                       {cat.name}
                     </span>
@@ -434,25 +533,28 @@ const GroceryPage = () => {
 
           {/* Nav Tabs (Mobile Only) - OUTSIDE YELLOW BOX */}
           <div className="px-2 pb-2 mt-2 md:hidden">
-            <div className="flex justify-between items-end gap-2 overflow-x-auto scrollbar-hide no-scrollbar px-2 w-full">
-              {categories.map((cat) => (
+            <div className="flex items-end gap-3 overflow-x-auto scrollbar-hide no-scrollbar px-2 w-full">
+              {topNavCategories.map((cat) => (
                 <div
                   key={cat.id}
-                  className="flex flex-col items-center gap-1.5 cursor-pointer min-w-[60px]"
+                  className={`flex flex-col items-center gap-1.5 cursor-pointer min-w-[68px] px-1 py-1 rounded-xl transition-colors ${
+                    activeTab === cat.name ? "bg-white/55" : "hover:bg-white/35"
+                  }`}
                   onClick={() => setActiveTab(cat.name)}
                 >
                   <div className="relative">
                     <img
                       src={cat.img}
                       alt={cat.name}
-                      className="w-10 h-10 object-contain drop-shadow-md"
+                      className="w-10 h-10 object-contain drop-shadow-md rounded-full"
                     />
                   </div>
                   <span
-                    className={`text-[12px] font-bold tracking-tight ${activeTab === cat.name ? "text-[#1a1a1a] border-b-2 border-[#1a1a1a] pb-0.5" : "text-[#1a1a1a]/80"}`}
+                    className={`text-[11px] font-bold tracking-tight text-center line-clamp-2 min-h-[30px] ${activeTab === cat.name ? "text-[#1a1a1a]" : "text-[#1a1a1a]/80"}`}
                   >
                     {cat.name}
                   </span>
+                  {activeTab === cat.name && <div className="w-6 h-0.5 bg-[#1a1a1a] rounded-full"></div>}
                 </div>
               ))}
             </div>
@@ -496,39 +598,25 @@ const GroceryPage = () => {
         <h3 className="text-lg font-[800] text-[#3e2723] mb-4">Bestsellers</h3>
 
         <div className="flex flex-nowrap gap-4 overflow-x-auto scrollbar-hide no-scrollbar pb-4 px-2 snap-x snap-mandatory touch-pan-x">
-          {bestsellers.filter(item => item.title.toLowerCase().includes(searchQuery.toLowerCase())).map((item, idx) => (
+          {visibleBestSellers.map((item, idx) => (
             <div
-              key={idx}
+              key={`${item.id}-${idx}`}
               className="min-w-[160px] max-w-[160px] snap-center p-2.5 bg-[#eff3f6] rounded-[24px] flex flex-col relative group cursor-pointer active:scale-95 transition-transform shadow-[0_8px_10px_rgba(0,0,0,0.2)] border border-white/60"
-              onClick={() => openCategorySheet(item.categoryId)}
+              onClick={() => handleBestSellerClick(item)}
             >
               {/* Image Grid */}
-              <div className="grid grid-cols-2 gap-1.5 w-full h-[148px] mb-3">
-                {item.images.map((img, i) => (
-                  <div
-                    key={i}
-                    className="bg-white rounded-[14px] flex items-center justify-center p-0 overflow-hidden relative shadow-sm"
-                  >
-                    <img
-                      src={img}
-                      alt=""
-                      className="w-full h-full object-cover drop-shadow-md group-hover:scale-110 transition-transform duration-500 ease-out"
-                    />
-                  </div>
-                ))}
-              </div>
-
-              {/* Floating Badge */}
-              <div className="absolute top-[68%] left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gray-200 px-3 py-1.5 rounded-full shadow-[0_4px_12px_rgba(0,0,0,0.1)] border border-white z-10 whitespace-nowrap leading-none transform scale-90">
-                <span className="text-[11px] font-[800] text-[#1a1a1a] tracking-tight">
-                  {item.count}
-                </span>
+              <div className="w-full h-[148px] mb-3 bg-white rounded-[14px] flex items-center justify-center p-2 overflow-hidden relative shadow-sm">
+                <img
+                  src={item.image}
+                  alt={item.name}
+                  className="w-full h-full object-contain drop-shadow-md group-hover:scale-110 transition-transform duration-500 ease-out"
+                />
               </div>
 
               {/* Title */}
               <div className="mt-auto text-center flex items-end justify-center pb-1">
                 <p className="text-[15px] font-[800] text-[#1a1a1a] leading-[1.2] tracking-tight whitespace-pre-line">
-                  {item.title.replace("&", "&\n")}
+                  {(item.name || "").replace("&", "&\n")}
                 </p>
               </div>
             </div>
@@ -536,236 +624,44 @@ const GroceryPage = () => {
         </div>
       </div>
 
-      {/* --- 5. GROCERY & KITCHEN --- */}
-      <div className="px-4 pb-6 relative z-10 md:max-w-6xl md:mx-auto">
-        <h3 className="text-lg font-[800] text-[#3e2723] mb-4">
-          Grocery & Kitchen
-        </h3>
-        <div className="grid grid-cols-4 gap-2">
-          {[
-            {
-              name: "Vegetables & Fruits",
-              img: vegetables,
-              categoryId: "fresh-veg",
-              span: "col-span-2",
-              aspect: "aspect-[2.1/1]",
-              scale: 1.1,
-            },
-            {
-              name: "Atta, Rice & Dal",
-              img: imgAtta,
-              categoryId: "atta-rice-dal",
-            },
-            {
-              name: "Oil, Ghee & Masala",
-              img: oilMasala,
-              categoryId: "oil-masala",
-            },
-            {
-              name: "Dairy, Bread & Eggs",
-              img: imgMilk,
-              categoryId: "dairy-bread",
-            },
-            {
-              name: "Bakery & Biscuits",
-              img: imgBakery,
-              categoryId: "bakery-biscuits",
-            },
-            {
-              name: "Dry Fruits & Cereals",
-              img: dryfruits,
-              categoryId: "all",
-              scale: 1.1,
-            },
-            { name: "Chicken, Meat & Fish", img: fishmeat, categoryId: "all" },
-            {
-              name: "Kitchenware & Appliances",
-              img: kitchenWare,
-              categoryId: "cleaning",
-              scale: 1.3,
-            },
-          ].filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase())).map((item, idx) => (
-            <div
-              key={idx}
-              className={`flex flex-col items-center gap-2 cursor-pointer active:scale-95 transition-transform ${item.span || ""}`}
-              onClick={() => openCategorySheet(item.categoryId)}
-            >
+      {homepageCategorySections.map((category, sectionIndex) => (
+        <div
+          key={category._id || category.slug || category.name}
+          className={`px-4 relative z-10 md:max-w-6xl md:mx-auto ${sectionIndex === homepageCategorySections.length - 1 ? "pb-24" : "pb-6"}`}
+        >
+          <h3 className="text-lg font-[800] text-[#3e2723] mb-4">{category.name}</h3>
+          {(!category.subcategories || category.subcategories.length === 0) && (
+            <p className="text-sm text-slate-500 mb-2">No subcategories available.</p>
+          )}
+          <div className="grid grid-cols-4 gap-2">
+            {(category.subcategories || []).map((subcategory) => (
               <div
-                className={`w-full ${item.aspect || "aspect-square"} rounded-[20px] flex items-center justify-center p-2 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-white overflow-hidden relative`}
-                style={{
-                  background:
-                    "radial-gradient(circle at center, #ffffff 40%, #f6ffd9 100%)",
-                }}
+                key={subcategory._id}
+                className="flex flex-col items-center gap-2 cursor-pointer active:scale-95 transition-transform"
+                onClick={() => navigate(`/grocery/subcategory/${subcategory._id}`)}
               >
-                <img
-                  src={item.img}
-                  alt={item.name}
+                <div
+                  className="w-full aspect-square rounded-[20px] flex items-center justify-center p-2 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-white overflow-hidden relative"
                   style={{
-                    transform: item.scale ? `scale(${item.scale})` : "none",
+                    background: "radial-gradient(circle at center, #ffffff 40%, #f6ffd9 100%)",
                   }}
-                  className="w-full h-full object-contain drop-shadow-[0_8px_4px_rgba(0,0,0,0.25)] transition-transform duration-300"
-                />
+                >
+                  <img
+                    src={subcategory.image || "https://via.placeholder.com/120"}
+                    alt={subcategory.name}
+                    className="w-full h-full object-contain drop-shadow-[0_8px_4px_rgba(0,0,0,0.25)] transition-transform duration-300"
+                  />
+                </div>
+                <div className="h-8 flex items-start justify-center w-full">
+                  <p className="text-[12px] font-[800] text-center text-[#1a1a1a] leading-tight px-0.5 line-clamp-2">
+                    {subcategory.name}
+                  </p>
+                </div>
               </div>
-              <div className="h-8 flex items-start justify-center w-full">
-                <p className="text-[12px] font-[800] text-center text-[#1a1a1a] leading-tight px-0.5 line-clamp-2">
-                  {item.name}
-                </p>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
-
-      {/* --- 6. SNACKS & DRINKS --- */}
-      <div className="px-4 pb-6 relative z-10 md:max-w-6xl md:mx-auto">
-        <h3 className="text-lg font-[800] text-[#3e2723] mb-4">
-          Snacks & Drinks
-        </h3>
-        <div className="grid grid-cols-4 gap-2">
-          {[
-            {
-              name: "Ice Creams",
-              img: imgIcecream2,
-              categoryId: "sweets-choc",
-              span: "col-span-2",
-              aspect: "aspect-[2.1/1]",
-              scale: 1.1,
-            },
-            {
-              name: "Chips & Namkeen",
-              img: imgLaysBlue,
-              categoryId: "chips-namkeen",
-            },
-            {
-              name: "Sweets & Chocolates",
-              img: imgChoclate,
-              categoryId: "sweets-choc",
-            },
-            {
-              name: "Cold Drinks & Juices",
-              img: imgCoke,
-              categoryId: "drinks-juices",
-            },
-            {
-              name: "Noodles & Pasta",
-              img: noodles,
-              categoryId: "all",
-              scale: 1.2,
-            },
-            {
-              name: "Frozen Food",
-              img: frozenFood,
-              categoryId: "all",
-              scale: 1.2,
-            },
-            {
-              name: "Tea & Coffee",
-              img: teaCoffee,
-              categoryId: "tea-coffee",
-              scale: 1.1,
-            },
-            { name: "Biscuits", img: imgBakery, categoryId: "bakery-biscuits" },
-          ].filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase())).map((item, idx) => (
-            <div
-              key={idx}
-              className={`flex flex-col items-center gap-2 cursor-pointer active:scale-95 transition-transform ${item.span || ""}`}
-              onClick={() => openCategorySheet(item.categoryId)}
-            >
-              <div
-                className={`w-full ${item.aspect || "aspect-square"} rounded-[20px] flex items-center justify-center p-2 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-white overflow-hidden relative`}
-                style={{
-                  background:
-                    "radial-gradient(circle at center, #ffffff 40%, #fef3c7 100%)",
-                }}
-              >
-                <img
-                  src={item.img}
-                  alt={item.name}
-                  style={{
-                    transform: item.scale ? `scale(${item.scale})` : "none",
-                  }}
-                  className="w-full h-full object-contain drop-shadow-[0_8px_4px_rgba(0,0,0,0.25)] transition-transform duration-300"
-                />
-              </div>
-              <div className="h-8 flex items-start justify-center w-full">
-                <p className="text-[12px] font-[800] text-center text-[#1a1a1a] leading-tight px-0.5 line-clamp-2">
-                  {item.name}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* --- 7. BEAUTY & PERSONAL CARE --- */}
-      <div className="px-4 pb-24 relative z-10 md:max-w-6xl md:mx-auto">
-        <h3 className="text-lg font-[800] text-[#3e2723] mb-4">
-          Beauty & Personal Care
-        </h3>
-        <div className="grid grid-cols-4 gap-2">
-          {[
-            {
-              name: "Bath & Body",
-              img: imgBathBody,
-              categoryId: "beauty",
-              span: "col-span-2",
-              aspect: "aspect-[2.1/1]",
-              scale: 1.1,
-            },
-            { name: "Hair", img: imgHair, categoryId: "beauty" },
-            { name: "Skin & Face", img: imgSkinFace, categoryId: "beauty" },
-            {
-              name: "Beauty & Cosmetics",
-              img: imgCosmetics,
-              categoryId: "beauty",
-            },
-            { name: "Health & Pharma", img: imgHealth, categoryId: "beauty" },
-            {
-              name: "Feminine Hygiene",
-              img: stayFree,
-              categoryId: "beauty",
-              scale: 1.2,
-            },
-            {
-              name: "Baby Care",
-              img: babyCare,
-              categoryId: "beauty",
-              scale: 1.2,
-            },
-            {
-              name: "Oral Care",
-              img: oralcare,
-              categoryId: "beauty",
-              scale: 1.2,
-            },
-          ].filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase())).map((item, idx) => (
-            <div
-              key={idx}
-              className={`flex flex-col items-center gap-2 cursor-pointer active:scale-95 transition-transform ${item.span || ""}`}
-              onClick={() => openCategorySheet(item.categoryId)}
-            >
-              <div
-                className={`w-full ${item.aspect || "aspect-square"} rounded-[20px] flex items-center justify-center p-2 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-white overflow-hidden relative`}
-                style={{
-                  background:
-                    "radial-gradient(circle at center, #ffffff 40%, #f6ffd9 100%)",
-                }}
-              >
-                <img
-                  src={item.img}
-                  alt={item.name}
-                  className="w-full h-full object-contain drop-shadow-[0_8px_4px_rgba(0,0,0,0.25)]"
-                />
-              </div>
-              <div className="h-8 flex items-start justify-center w-full">
-                <p className="text-[12px] font-[800] text-center text-[#1a1a1a] leading-tight px-0.5 line-clamp-2">
-                  {item.name}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      ))}
 
       {/* --- 8. BOTTOM FLOATING OFFER --- */}
 

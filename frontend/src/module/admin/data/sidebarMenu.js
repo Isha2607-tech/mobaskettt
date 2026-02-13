@@ -350,12 +350,22 @@ export const mogroceryMenuData = [
         ],
       },
       {
-        type: "expandable",
+        type: "link",
         label: "Categories",
+        path: "/admin/grocery-categories",
         icon: "FolderTree",
-        subItems: [
-          { label: "Category", path: "/admin/grocery-categories" },
-        ],
+      },
+      {
+        type: "link",
+        label: "Subcategories",
+        path: "/admin/grocery-subcategories",
+        icon: "FolderTree",
+      },
+      {
+        type: "link",
+        label: "Products",
+        path: "/admin/grocery-products-catalog",
+        icon: "Package",
       },
     ],
   },

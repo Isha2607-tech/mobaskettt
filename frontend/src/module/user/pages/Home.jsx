@@ -1381,7 +1381,7 @@ export default function Home() {
       </div>
 
       {/* Unified Navbar & Hero Section */}
-      <div className="relative w-full overflow-hidden min-h-[32vh] lg:min-h-[50vh] md:pt-16">
+      <div className="relative w-full overflow-hidden min-h-[28vh] lg:min-h-[38vh] md:pt-16">
         {/* Hero Banner Carousel Background */}
         {loadingBanners ? (
           <div className="absolute top-0 left-0 right-0 bottom-0 z-0 bg-gradient-to-br from-rose-400 to-rose-600 flex items-center justify-center">
@@ -1445,7 +1445,7 @@ export default function Home() {
                       className="w-full h-full"
                       priority={index === 0}
                       sizes="100vw"
-                      objectFit="cover"
+                      objectFit="contain"
                       placeholder="blur"
                     />
                   </div>
