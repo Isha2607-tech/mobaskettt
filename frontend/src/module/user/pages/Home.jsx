@@ -1380,7 +1380,6 @@ export default function Home() {
         `}</style>
       </div>
 
-<<<<<<< HEAD
       {/* 1. Navbar Section (Sticky Top, White Background) */}
       <div className="sticky top-0 z-50 bg-white shadow-sm md:hidden">
         <PageNavbar
@@ -1461,16 +1460,6 @@ export default function Home() {
                   />
                 </button>
               </div>
-=======
-      {/* Unified Navbar & Hero Section */}
-      <div className="relative w-full overflow-hidden min-h-[28vh] lg:min-h-[38vh] md:pt-16">
-        {/* Hero Banner Carousel Background */}
-        {loadingBanners ? (
-          <div className="absolute top-0 left-0 right-0 bottom-0 z-0 bg-gradient-to-br from-rose-400 to-rose-600 flex items-center justify-center">
-            <div className="text-white text-center">
-              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
-              <p className="text-sm">Loading banners...</p>
->>>>>>> 4c99cb73adc1749753f4b4a5405c9b94e83ef533
             </div>
           </motion.div>
 
@@ -1532,7 +1521,6 @@ export default function Home() {
                     transition={{ duration: 0.5, ease: "easeInOut" }}
                     className="absolute inset-0 w-full h-full"
                   >
-<<<<<<< HEAD
                     <div
                       className="w-full h-full relative"
                       onClick={() => {
@@ -1557,79 +1545,6 @@ export default function Home() {
                           priority={true}
                           sizes="(max-width: 768px) 100vw, 1200px"
                           placeholder="blur"
-=======
-                    <OptimizedImage
-                      src={image}
-                      alt={`Hero Banner ${index + 1}`}
-                      className="w-full h-full"
-                      priority={index === 0}
-                      sizes="100vw"
-                      objectFit="contain"
-                      placeholder="blur"
-                    />
-                  </div>
-                );
-              })}
-            </motion.div>
-          </div>
-        ) : (
-          <div className="absolute top-0 left-0 right-0 bottom-0 z-0 bg-gradient-to-br from-[#BE2F2F]/70 to-[#BE2F2F]" />
-        )}
-
-        {/* Navbar */}
-        <motion.div
-          className="relative z-20 pt-2 sm:pt-3 lg:pt-4"
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, ease: "easeOut" }}
-        >
-          <PageNavbar
-            textColor="white"
-            locationIconColor="#BE2F2F"
-            zIndex={20}
-          />
-        </motion.div>
-
-        {/* Hero Section */}
-        <section className="relative z-20 w-full py-4 sm:py-6 md:py-12 lg:py-12">
-          {/* Content */}
-          <div className="relative z-20 max-w-2xl lg:max-w-4xl xl:max-w-5xl mx-auto px-3 sm:px-6 lg:px-8">
-            {/* Search Bar and VEG MODE Container - Sticky */}
-            <motion.div
-              className="sticky top-4 z-30 flex items-center gap-3 sm:gap-4 lg:gap-6"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.2, ease: "easeOut" }}
-            >
-              {/* Enhanced Search Bar */}
-              <motion.div
-                className="flex-1 relative"
-                whileHover={{ scale: 1.02 }}
-                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              >
-                <div className="relative bg-white dark:bg-[#1a1a1a] rounded-xl lg:rounded-2xl shadow-lg border border-gray-200 dark:border-gray-800 p-1 sm:p-1.5 lg:p-2 transition-all duration-300 hover:shadow-xl">
-                  <div className="flex items-center gap-2 sm:gap-3 lg:gap-4">
-                    <Search
-                      className="h-4 w-4 sm:h-4 sm:w-4 lg:h-5 lg:w-5 text-rose-500/80 flex-shrink-0 ml-2 sm:ml-3 lg:ml-4"
-                      strokeWidth={2.5}
-                    />
-                    <div className="flex-1 relative">
-                      <div className="relative w-full">
-                        <Input
-                          value={heroSearch}
-                          onChange={(e) => setHeroSearch(e.target.value)}
-                          onFocus={handleSearchFocus}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && heroSearch.trim()) {
-                              navigate(
-                                `/user/search?q=${encodeURIComponent(heroSearch.trim())}`,
-                              );
-                              closeSearch();
-                              setHeroSearch("");
-                            }
-                          }}
-                          className="pl-0 pr-8 h-8 sm:h-9 lg:h-11 w-full bg-white dark:bg-[#1a1a1a] border-0 text-sm sm:text-base lg:text-lg font-semibold text-gray-700 dark:text-white focus-visible:ring-0 focus-visible:ring-offset-0 rounded-full placeholder:text-gray-400 dark:placeholder:text-gray-500"
->>>>>>> 4c99cb73adc1749753f4b4a5405c9b94e83ef533
                         />
                       </div>
                     </div>
@@ -3052,7 +2967,7 @@ export default function Home() {
               onClick={() => {
                 setShowSwitchOffPopup(false);
                 isHandlingSwitchOff.current = false;
-                setVegMode(true);
+                setVegModeContext(true);
                 // prevVegMode stays true (from before), which is correct
               }}
               className="fixed inset-0 bg-black/50 z-[9998] backdrop-blur-sm"
