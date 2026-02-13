@@ -270,7 +270,7 @@ export default function Profile() {
 
   return (
     <AnimatedPage className="min-h-screen bg-[#f5f5f5] dark:bg-[#0a0a0a]">
-      <div className="max-w-md md:max-w-2xl lg:max-w-4xl xl:max-w-5xl mx-auto px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 py-4 sm:py-6 md:py-8 lg:py-10">
+      <div className="max-w-md md:max-w-2xl lg:max-w-4xl xl:max-w-5xl mx-auto px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 pt-4 pb-36 sm:pt-6 sm:pb-36 md:py-8 lg:py-10">
         {/* Back Arrow */}
         <div className="mb-4">
           <Button
@@ -358,7 +358,7 @@ export default function Profile() {
                     <span className="text-sm font-medium text-gray-900 dark:text-white whitespace-nowrap">
                       {companyName} Money
                     </span>
-                    <span className="text-base font-semibold text-red-600 dark:text-red-400">
+                    <span className="text-base font-semibold text-[#EF4F5F] dark:text-[#EF4F5F]">
                       ₹{userProfile?.wallet?.balance?.toFixed(0) || "0"}
                     </span>
                   </div>
@@ -446,7 +446,7 @@ export default function Profile() {
                   <div className="flex items-center gap-2">
                     <motion.span
                       className={`text-xs font-medium px-2 py-1 rounded ${isComplete
-                        ? "bg-red-100 text-red-700 border border-red-300"
+                        ? "bg-[#EF4F5F]/10 text-[#EF4F5F] border border-[#EF4F5F]/30"
                         : "bg-yellow-200 text-yellow-800"
                         }`}
                       whileHover={{ scale: 1.1 }}
@@ -550,7 +550,7 @@ export default function Profile() {
         {/* Collections Section */}
         <div className="mb-3">
           <div className="flex items-center gap-2 mb-2 px-1">
-            <div className="w-1 h-4 bg-red-600 rounded"></div>
+            <div className="w-1 h-4 bg-[#EF4F5F] rounded"></div>
             <h3 className="text-base font-semibold text-gray-900 dark:text-white">
               Collections
             </h3>
@@ -589,7 +589,7 @@ export default function Profile() {
         {/* Food Orders Section */}
         <div className="mb-3">
           <div className="flex items-center gap-2 mb-2 px-1">
-            <div className="w-1 h-4 bg-red-600 rounded"></div>
+            <div className="w-1 h-4 bg-[#EF4F5F] rounded"></div>
             <h3 className="text-base font-semibold text-gray-900 dark:text-white">
               Food Orders
             </h3>
@@ -630,7 +630,7 @@ export default function Profile() {
         {/* Coupons Section */}
         <div className="mb-3">
           <div className="flex items-center gap-2 mb-2 px-1">
-            <div className="w-1 h-4 bg-red-600 rounded"></div>
+            <div className="w-1 h-4 bg-[#EF4F5F] rounded"></div>
             <h3 className="text-base font-semibold text-gray-900 dark:text-white">
               Coupons
             </h3>
@@ -669,7 +669,7 @@ export default function Profile() {
         {/* More Section */}
         <div className="mb-6 pb-4">
           <div className="flex items-center gap-2 mb-2 px-1">
-            <div className="w-1 h-4 bg-red-600 rounded"></div>
+            <div className="w-1 h-4 bg-[#EF4F5F] rounded"></div>
             <h3 className="text-base font-semibold text-gray-900 dark:text-white">
               More
             </h3>
@@ -849,14 +849,14 @@ export default function Profile() {
                 setVegModeOpen(false);
               }}
               className={`w-full p-3 rounded-xl border-2 transition-all flex items-center justify-between ${vegMode
-                ? "border-[#BE2F2F] bg-[#BE2F2F]/10"
+                ? "border-[#EF4F5F] bg-[#EF4F5F]/10"
                 : "border-gray-200 bg-white hover:border-gray-300"
                 }`}
             >
               <div className="flex items-center gap-3">
                 <div
                   className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${vegMode
-                    ? "border-[#BE2F2F] bg-[#BE2F2F]"
+                    ? "border-[#EF4F5F] bg-[#EF4F5F]"
                     : "border-gray-300"
                     }`}
                 >
@@ -872,7 +872,7 @@ export default function Profile() {
                 </div>
               </div>
               <Leaf
-                className={`h-5 w-5 ${vegMode ? "text-[#BE2F2F]" : "text-gray-400"}`}
+                className={`h-5 w-5 ${vegMode ? "text-[#EF4F5F]" : "text-gray-400"}`}
               />
             </button>
             <button
@@ -881,13 +881,13 @@ export default function Profile() {
                 setVegModeOpen(false);
               }}
               className={`w-full p-3 rounded-xl border-2 transition-all flex items-center justify-between ${!vegMode
-                ? "border-red-600 bg-red-50"
+                ? "border-[#EF4F5F] bg-[#EF4F5F]/10"
                 : "border-gray-200 bg-white hover:border-gray-300"
                 }`}
             >
               <div className="flex items-center gap-3">
                 <div
-                  className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${!vegMode ? "border-red-600 bg-red-600" : "border-gray-300"
+                  className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${!vegMode ? "border-[#EF4F5F] bg-[#EF4F5F]" : "border-gray-300"
                     }`}
                 >
                   {!vegMode && <Check className="h-3 w-3 text-white" />}

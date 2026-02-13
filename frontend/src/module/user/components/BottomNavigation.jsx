@@ -26,56 +26,56 @@ export default function BottomNavigation() {
   const deliveryPath = preference === "grocery" ? "/grocery" : "/home";
 
   return (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 w-full bg-white p-4 border-t border-gray-200 z-50">
+    <div className="fixed bottom-0 left-0 right-0 w-full bg-white p-4 border-t border-gray-200 z-50">
       <div className="flex items-center justify-between max-w-md mx-auto">
         {/* 1. Delivery Option (Active/Red) */}
         <Link
           to="/home"
           className="flex flex-col items-center gap-1 cursor-pointer"
         >
-          <div className={isDelivery ? "text-[#BE2F2F]" : "text-gray-500"}>
+          <div className={isDelivery ? "text-[#EF4F5F]" : "text-gray-500"}>
             <Bike size={26} strokeWidth={2} />
           </div>
           <span
-            className={`text-xs font-bold ${isDelivery ? "text-[#BE2F2F]" : "text-gray-500 font-medium"}`}
+            className={`text-xs font-bold ${isDelivery ? "text-[#EF4F5F]" : "text-gray-500 font-medium"}`}
           >
             Delivery
           </span>
           {/* Active Line Indicator */}
           {isDelivery && (
-            <div className="h-0.5 w-full bg-[#BE2F2F] mt-1 rounded-full"></div>
+            <div className="h-0.5 w-full bg-[#EF4F5F] mt-1 rounded-full"></div>
           )}
         </Link>
 
         {/* 2. Under ₹250 Option */}
         <Link
           to="/under-250"
-          className={`flex flex-col items-center gap-1 cursor-pointer ${isUnder250 ? "text-[#BE2F2F]" : "text-gray-500 hover:text-gray-700"}`}
+          className={`flex flex-col items-center gap-1 cursor-pointer ${isUnder250 ? "text-[#EF4F5F]" : "text-gray-500 hover:text-gray-700"}`}
         >
           <Tag size={24} strokeWidth={1.5} />
           <span
-            className={`text-xs ${isUnder250 ? "font-bold text-[#BE2F2F]" : "font-medium text-gray-500"}`}
+            className={`text-xs ${isUnder250 ? "font-bold text-[#EF4F5F]" : "font-medium text-gray-500"}`}
           >
             Under ₹250
           </span>
           {isUnder250 && (
-            <div className="h-0.5 w-full bg-[#BE2F2F] mt-1 rounded-full"></div>
+            <div className="h-0.5 w-full bg-[#EF4F5F] mt-1 rounded-full"></div>
           )}
         </Link>
 
         {/* 3. Profile Option */}
         <Link
           to="/profile"
-          className={`flex flex-col items-center gap-1 cursor-pointer ${isProfile ? "text-[#BE2F2F]" : "text-gray-500 hover:text-gray-700"}`}
+          className={`flex flex-col items-center gap-1 cursor-pointer ${isProfile ? "text-[#EF4F5F]" : "text-gray-500 hover:text-gray-700"}`}
         >
           <User size={24} strokeWidth={1.5} />
           <span
-            className={`text-xs ${isProfile ? "font-bold text-[#BE2F2F]" : "font-medium text-gray-500"}`}
+            className={`text-xs ${isProfile ? "font-bold text-[#EF4F5F]" : "font-medium text-gray-500"}`}
           >
             Profile
           </span>
           {isProfile && (
-            <div className="h-0.5 w-full bg-[#BE2F2F] mt-1 rounded-full"></div>
+            <div className="h-0.5 w-full bg-[#EF4F5F] mt-1 rounded-full"></div>
           )}
         </Link>
 

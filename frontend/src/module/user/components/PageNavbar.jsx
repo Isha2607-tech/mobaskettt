@@ -1283,7 +1283,19 @@ export default function PageNavbar({
         </div>
 
         {/* Center: Company Logo or Name - Removed as per request (now in banner) */}
-        <div className="flex items-center justify-center"></div>
+        {/* Center: Company Logo */}
+        <div className="flex items-center justify-center">
+          <img
+            src={logoUrl || appzetoFoodLogo}
+            alt="MoBasket"
+            className="h-8 w-auto object-contain"
+            onError={(e) => {
+              if (e.target.src !== appzetoFoodLogo) {
+                e.target.src = appzetoFoodLogo;
+              }
+            }}
+          />
+        </div>
 
         {/* Right: Actions - Hidden on desktop, shown on mobile */}
         <div className="flex md:hidden items-center gap-2 sm:gap-3 flex-shrink-0">
@@ -1324,7 +1336,7 @@ export default function PageNavbar({
               </div>
               {cartCount > 0 && (
                 <span
-                  className={`absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center ring-2 ${textColor === "white" ? "ring-white/50" : "ring-gray-800/30"}`}
+                  className={`absolute -top-0.5 -right-0.5 w-4 h-4 bg-[#EF4F5F] rounded-full flex items-center justify-center ring-2 ${textColor === "white" ? "ring-white/50" : "ring-gray-800/30"}`}
                 >
                   <span className="text-[9px] font-bold text-white">
                     {cartCount > 99 ? "99+" : cartCount}

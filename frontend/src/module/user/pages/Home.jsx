@@ -485,7 +485,7 @@ export default function Home() {
       if (!isSwiping.current) {
         setCurrentBannerIndex((prev) => (prev + 1) % heroBannerImages.length);
       }
-    }, 10000); // Change every 10 seconds
+    }, 5000); // Change every 5 seconds
 
     return () => {
       if (autoSlideIntervalRef.current) {
@@ -1380,19 +1380,122 @@ export default function Home() {
         `}</style>
       </div>
 
-      {/* Unified Navbar & Hero Section */}
-      <div className="relative w-full overflow-hidden min-h-[32vh] lg:min-h-[50vh] md:pt-16">
-        {/* Hero Banner Carousel Background */}
-        {loadingBanners ? (
-          <div className="absolute top-0 left-0 right-0 bottom-0 z-0 bg-gradient-to-br from-rose-400 to-rose-600 flex items-center justify-center">
-            <div className="text-white text-center">
-              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
-              <p className="text-sm">Loading banners...</p>
+      {/* 1. Navbar Section (Sticky Top, White Background) */}
+      <div className="sticky top-0 z-50 bg-white shadow-sm md:hidden">
+        <PageNavbar
+          textColor="black"
+          locationIconColor="black"
+          zIndex={50}
+        />
+      </div>
+
+      {/* 2. Search Bar Section (White Background) */}
+      <div className="bg-white px-3 py-2 pb-4 sm:px-6 lg:px-8 md:pt-20">
+        <div className="max-w-2xl lg:max-w-4xl xl:max-w-5xl mx-auto flex items-center gap-3 sm:gap-4 lg:gap-6">
+          {/* Enhanced Search Bar */}
+          <motion.div
+            className="flex-1 relative"
+            whileHover={{ scale: 1.02 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+          >
+            <div className="relative bg-white dark:bg-[#1a1a1a] rounded-xl lg:rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-1 sm:p-1.5 lg:p-2 transition-all duration-300 hover:shadow-md">
+              <div className="flex items-center gap-2 sm:gap-3 lg:gap-4">
+                <Search
+                  className="h-4 w-4 sm:h-4 sm:w-4 lg:h-5 lg:w-5 text-[#EF4F5F] flex-shrink-0 ml-2 sm:ml-3 lg:ml-4"
+                  strokeWidth={2.5}
+                />
+                <div className="flex-1 relative">
+                  <div className="relative w-full">
+                    <Input
+                      value={heroSearch}
+                      onChange={(e) => setHeroSearch(e.target.value)}
+                      onFocus={handleSearchFocus}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && heroSearch.trim()) {
+                          navigate(
+                            `/user/search?q=${encodeURIComponent(heroSearch.trim())}`,
+                          );
+                          closeSearch();
+                          setHeroSearch("");
+                        }
+                      }}
+                      className="pl-0 pr-8 h-8 sm:h-9 lg:h-11 w-full bg-transparent border-0 text-sm sm:text-base lg:text-lg font-semibold text-gray-700 dark:text-white focus-visible:ring-0 focus-visible:ring-offset-0 rounded-full placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                    />
+                    {/* Animated placeholder */}
+                    {!heroSearch && (
+                      <div className="absolute left-0 top-1/2 -translate-y-1/2 pointer-events-none h-5 lg:h-6 overflow-hidden">
+                        <AnimatePresence mode="wait">
+                          <motion.span
+                            key={placeholderIndex}
+                            initial={{ y: 16, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            exit={{ y: -16, opacity: 0 }}
+                            transition={{ duration: 0.3 }}
+                            className="text-sm sm:text-base lg:text-lg font-semibold text-gray-400 dark:text-gray-500 inline-block"
+                          >
+                            {placeholders[placeholderIndex]}
+                          </motion.span>
+                        </AnimatePresence>
+                      </div>
+                    )}
+                    {/* Clear Button */}
+                    {heroSearch && (
+                      <button
+                        onClick={() => setHeroSearch("")}
+                        className="absolute right-0 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-gray-600 transition-colors z-10"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={startListening}
+                  className={`flex-shrink-0 mr-2 sm:mr-3 lg:mr-4 p-1 lg:p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors ${isListening ? "bg-[#EF4F5F]/10" : ""}`}
+                >
+                  <Mic
+                    className={`h-4 w-4 sm:h-4 sm:w-4 lg:h-5 lg:w-5 ${isListening ? "text-[#EF4F5F] animate-pulse" : "text-[#EF4F5F]"}`}
+                    strokeWidth={2.5}
+                  />
+                </button>
+              </div>
             </div>
+          </motion.div>
+
+          {/* VEG MODE Toggle */}
+          <motion.div
+            ref={vegModeToggleRef}
+            className="flex flex-col items-center gap-0.5 sm:gap-1 lg:gap-1.5 flex-shrink-0 relative"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <div className="flex flex-col items-center">
+              <span className="text-green-700 text-[10px] sm:text-[11px] lg:text-xs font-black leading-none">
+                VEG
+              </span>
+              <span className="text-green-700 text-[8px] sm:text-[9px] lg:text-[10px] font-black leading-none">
+                MODE
+              </span>
+            </div>
+            <Switch
+              checked={vegMode}
+              onCheckedChange={handleVegModeChange}
+              className="data-[state=checked]:bg-green-600 data-[state=unchecked]:bg-gray-300 w-9 h-4 sm:w-10 sm:h-5 lg:w-12 lg:h-6 shadow-sm border border-gray-200"
+            />
+          </motion.div>
+        </div>
+      </div>
+
+      {/* 3. Hero Banner Carousel Section */}
+      <div className="relative w-full overflow-hidden aspect-[2.5/1]">
+        {loadingBanners ? (
+          <div className="absolute inset-0 bg-gray-100 animate-pulse flex items-center justify-center">
+            <Loader2 className="w-6 h-6 text-gray-400 animate-spin" />
           </div>
         ) : heroBannerImages.length > 0 ? (
           <div
-            className="absolute top-0 left-0 right-0 bottom-0 z-0 cursor-grab active:cursor-grabbing overflow-hidden"
+            className="relative w-full h-full cursor-grab active:cursor-grabbing overflow-hidden"
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
@@ -1401,188 +1504,61 @@ export default function Home() {
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
           >
-            <motion.div
-              className="flex h-full"
-              animate={{
-                x: `-${currentBannerIndex * 100}vw`,
-              }}
-              transition={{
-                duration: 0.6,
-                ease: "easeInOut",
-              }}
-              style={{
-                width: `${heroBannerImages.length * 100}vw`,
-              }}
-            >
-              {heroBannerImages.map((image, index) => {
+            <AnimatePresence initial={false} mode="popLayout">
+              {(() => {
+                const index = currentBannerIndex;
+                const image = heroBannerImages[index];
                 const bannerData = heroBannersData[index];
                 const linkedRestaurants = bannerData?.linkedRestaurants || [];
                 const hasLinkedRestaurants = linkedRestaurants.length > 0;
 
                 return (
-                  <div
+                  <motion.div
                     key={index}
-                    className="h-full flex-shrink-0"
-                    style={{
-                      width: "100vw",
-                      cursor: hasLinkedRestaurants ? "pointer" : "default",
-                    }}
-                    onClick={() => {
-                      if (hasLinkedRestaurants) {
-                        // Redirect to first linked restaurant
-                        const firstRestaurant = linkedRestaurants[0];
-                        const restaurantSlug =
-                          firstRestaurant.slug ||
-                          firstRestaurant.restaurantId ||
-                          firstRestaurant._id;
-                        navigate(`/restaurants/${restaurantSlug}`);
-                      }
-                    }}
+                    initial={{ x: "100%" }}
+                    animate={{ x: 0 }}
+                    exit={{ x: "-100%" }}
+                    transition={{ duration: 0.5, ease: "easeInOut" }}
+                    className="absolute inset-0 w-full h-full"
                   >
-                    <OptimizedImage
-                      src={image}
-                      alt={`Hero Banner ${index + 1}`}
-                      className="w-full h-full"
-                      priority={index === 0}
-                      sizes="100vw"
-                      objectFit="cover"
-                      placeholder="blur"
-                    />
-                  </div>
-                );
-              })}
-            </motion.div>
-          </div>
-        ) : (
-          <div className="absolute top-0 left-0 right-0 bottom-0 z-0 bg-gradient-to-br from-[#BE2F2F]/70 to-[#BE2F2F]" />
-        )}
-
-        {/* Navbar */}
-        <motion.div
-          className="relative z-20 pt-2 sm:pt-3 lg:pt-4"
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, ease: "easeOut" }}
-        >
-          <PageNavbar
-            textColor="white"
-            locationIconColor="#BE2F2F"
-            zIndex={20}
-          />
-        </motion.div>
-
-        {/* Hero Section */}
-        <section className="relative z-20 w-full py-4 sm:py-6 md:py-12 lg:py-12">
-          {/* Content */}
-          <div className="relative z-20 max-w-2xl lg:max-w-4xl xl:max-w-5xl mx-auto px-3 sm:px-6 lg:px-8">
-            {/* Search Bar and VEG MODE Container - Sticky */}
-            <motion.div
-              className="sticky top-4 z-30 flex items-center gap-3 sm:gap-4 lg:gap-6"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.2, ease: "easeOut" }}
-            >
-              {/* Enhanced Search Bar */}
-              <motion.div
-                className="flex-1 relative"
-                whileHover={{ scale: 1.02 }}
-                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              >
-                <div className="relative bg-white dark:bg-[#1a1a1a] rounded-xl lg:rounded-2xl shadow-lg border border-gray-200 dark:border-gray-800 p-1 sm:p-1.5 lg:p-2 transition-all duration-300 hover:shadow-xl">
-                  <div className="flex items-center gap-2 sm:gap-3 lg:gap-4">
-                    <Search
-                      className="h-4 w-4 sm:h-4 sm:w-4 lg:h-5 lg:w-5 text-rose-500/80 flex-shrink-0 ml-2 sm:ml-3 lg:ml-4"
-                      strokeWidth={2.5}
-                    />
-                    <div className="flex-1 relative">
-                      <div className="relative w-full">
-                        <Input
-                          value={heroSearch}
-                          onChange={(e) => setHeroSearch(e.target.value)}
-                          onFocus={handleSearchFocus}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && heroSearch.trim()) {
-                              navigate(
-                                `/user/search?q=${encodeURIComponent(heroSearch.trim())}`,
-                              );
-                              closeSearch();
-                              setHeroSearch("");
-                            }
-                          }}
-                          className="pl-0 pr-8 h-8 sm:h-9 lg:h-11 w-full bg-white dark:bg-[#1a1a1a] border-0 text-sm sm:text-base lg:text-lg font-semibold text-gray-700 dark:text-white focus-visible:ring-0 focus-visible:ring-offset-0 rounded-full placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                    <div
+                      className="w-full h-full relative"
+                      onClick={() => {
+                        if (hasLinkedRestaurants) {
+                          const firstRestaurant = linkedRestaurants[0];
+                          const restaurantSlug =
+                            firstRestaurant.slug ||
+                            firstRestaurant.restaurantId ||
+                            firstRestaurant._id;
+                          navigate(`/restaurants/${restaurantSlug}`);
+                        }
+                      }}
+                      style={{
+                        cursor: hasLinkedRestaurants ? "pointer" : "default",
+                      }}
+                    >
+                      <div className="mx-4 my-2 rounded-2xl overflow-hidden shadow-md h-[calc(100%-16px)]">
+                        <OptimizedImage
+                          src={image}
+                          alt={`Hero Banner ${index + 1}`}
+                          className="w-full h-full object-cover"
+                          priority={true}
+                          sizes="(max-width: 768px) 100vw, 1200px"
+                          placeholder="blur"
                         />
-                        {/* Animated placeholder - same animation as RestaurantDetails highlight offer */}
-                        {!heroSearch && (
-                          <div className="absolute left-0 top-1/2 -translate-y-1/2 pointer-events-none h-5 lg:h-6 overflow-hidden">
-                            <AnimatePresence mode="wait">
-                              <motion.span
-                                key={placeholderIndex}
-                                initial={{ y: 16, opacity: 0 }}
-                                animate={{ y: 0, opacity: 1 }}
-                                exit={{ y: -16, opacity: 0 }}
-                                transition={{ duration: 0.3 }}
-                                className="text-sm sm:text-base lg:text-lg font-semibold text-gray-400 dark:text-gray-500 inline-block"
-                              >
-                                {placeholders[placeholderIndex]}
-                              </motion.span>
-                            </AnimatePresence>
-                          </div>
-                        )}
-                        {/* Clear Button */}
-                        {heroSearch && (
-                          <button
-                            onClick={() => setHeroSearch("")}
-                            className="absolute right-0 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-gray-600 transition-colors z-10"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        )}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={startListening}
-                      className={`flex-shrink-0 mr-2 sm:mr-3 lg:mr-4 p-1 lg:p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors ${isListening ? "bg-red-50" : ""}`}
-                    >
-                      <Mic
-                        className={`h-4 w-4 sm:h-4 sm:w-4 lg:h-5 lg:w-5 ${isListening ? "text-red-600 animate-pulse" : "text-[#BE2F2F]"}`}
-                        strokeWidth={2.5}
-                      />
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* VEG MODE Toggle */}
-              <motion.div
-                ref={vegModeToggleRef}
-                className="flex flex-col items-center gap-0.5 sm:gap-1 lg:gap-1.5 flex-shrink-0 relative"
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <div className="flex flex-col items-center">
-                  <span className="text-white text-[13px] sm:text-[11px] lg:text-sm font-black leading-none">
-                    VEG
-                  </span>
-                  <span className="text-white text-[9.5px] sm:text-[10px] lg:text-xs font-black leading-none">
-                    MODE
-                  </span>
-                </div>
-                <Switch
-                  checked={vegMode}
-                  onCheckedChange={handleVegModeChange}
-                  className="data-[state=checked]:bg-[#BE2F2F] data-[state=unchecked]:bg-gray-300 w-9 h-4 sm:w-10 sm:h-5 lg:w-12 lg:h-6 shadow-lg [&_[data-slot=switch-thumb]]:bg-white [&_[data-slot=switch-thumb]]:h-3 [&_[data-slot=switch-thumb]]:w-3 sm:[&_[data-slot=switch-thumb]]:h-4 sm:[&_[data-slot=switch-thumb]]:w-4 lg:[&_[data-slot=switch-thumb]]:h-5 lg:[&_[data-slot=switch-thumb]]:w-5 [&_[data-slot=switch-thumb]]:data-[state=checked]:translate-x-5 sm:[&_[data-slot=switch-thumb]]:data-[state=checked]:translate-x-5 lg:[&_[data-slot=switch-thumb]]:data-[state=checked]:translate-x-6 [&_[data-slot=switch-thumb]]:data-[state=unchecked]:translate-x-0"
-                />
-              </motion.div>
-            </motion.div>
+                  </motion.div>
+                );
+              })()}
+            </AnimatePresence>
           </div>
-        </section>
+        ) : (
+          <div className="w-full h-full bg-gray-200" />
+        )}
       </div>
 
-      {/* Rest of Content - Container Width with Unified Background */}
+      {/* Rest of Content */}
       <motion.div
         className="relative max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 space-y-0 pt-2 sm:pt-3 lg:pt-6"
         initial={{ opacity: 0 }}
@@ -1692,9 +1668,9 @@ export default function Home() {
                     onClick={() => setShowAllCategoriesModal(true)}
                   >
                     <div className="flex flex-col items-center gap-2 w-[62px] sm:w-24 md:w-28">
-                      <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all bg-[#BE2F2F]/10 flex items-center justify-center">
+                      <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all bg-[#EF4F5F]/10 flex items-center justify-center">
                         <div className="flex items-center justify-center w-full h-full">
-                          <UtensilsCrossed className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-[#BE2F2F]" />
+                          <UtensilsCrossed className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-[#EF4F5F]" />
                         </div>
                       </div>
                       <span className="text-xs sm:text-sm md:text-base font-semibold text-gray-800 dark:text-gray-200 text-center">
@@ -1760,9 +1736,9 @@ export default function Home() {
                     onClick={() => setShowAllCategoriesModal(true)}
                   >
                     <div className="flex flex-col items-center gap-2 w-[62px] sm:w-24 md:w-28">
-                      <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all bg-[#BE2F2F]/10 flex items-center justify-center">
+                      <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all bg-[#EF4F5F]/10 flex items-center justify-center">
                         <div className="flex items-center justify-center w-full h-full">
-                          <UtensilsCrossed className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-[#BE2F2F]" />
+                          <UtensilsCrossed className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-[#EF4F5F]" />
                         </div>
                       </div>
                       <span className="text-xs sm:text-sm md:text-base font-semibold text-gray-800 dark:text-gray-200 text-center">
@@ -1857,7 +1833,7 @@ export default function Home() {
                   onClick={() => navigate("/user/restaurants")}
                 >
                   <div className="flex flex-col items-center gap-2 w-[62px] sm:w-24 md:w-28">
-                    <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all bg-[#BE2F2F] flex items-center justify-center">
+                    <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all bg-[#EF4F5F] flex items-center justify-center">
                       <div className="flex items-center justify-center w-full h-full">
                         <Store className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-white" />
                       </div>
@@ -1942,7 +1918,7 @@ export default function Home() {
                       }, 500);
                     }}
                     className={`h-7 sm:h-8 px-2 sm:px-3 rounded-md flex items-center gap-1.5 whitespace-nowrap flex-shrink-0 transition-all font-medium ${isActive
-                      ? "bg-[#BE2F2F] text-white border border-[#BE2F2F] hover:bg-[#BE2F2F]/90"
+                      ? "bg-[#EF4F5F] text-white border border-[#EF4F5F] hover:bg-[#EF4F5F]/90"
                       : "bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300"
                       }`}
                   >
@@ -2141,7 +2117,7 @@ export default function Home() {
                 >
                   <div className="flex flex-col items-center gap-3">
                     <Loader2
-                      className="h-8 w-8 text-[#BE2F2F] animate-spin"
+                      className="h-8 w-8 text-[#EF4F5F] animate-spin"
                       strokeWidth={2.5}
                     />
                     <span className="text-sm font-medium text-gray-700 dark:text-white">
@@ -2276,12 +2252,12 @@ export default function Home() {
                                 size="icon"
                                 onClick={handleToggleFavorite}
                                 className={`h-8 w-8 rounded-full border flex items-center justify-center transition-all duration-300 ${favorite
-                                  ? "border-[#BE2F2F] bg-[#BE2F2F]/10 text-[#BE2F2F]"
+                                  ? "border-[#EF4F5F] bg-[#EF4F5F]/10 text-[#EF4F5F]"
                                   : "border-white bg-white/90 text-gray-600 hover:bg-white"
                                   }`}
                               >
                                 <Bookmark
-                                  className={`h-4 w-4 transition-all duration-300 ${favorite ? "fill-[#BE2F2F]" : ""
+                                  className={`h-4 w-4 transition-all duration-300 ${favorite ? "fill-[#EF4F5F]" : ""
                                     }`}
                                 />
                               </Button>
@@ -2330,7 +2306,7 @@ export default function Home() {
           </div>
           <div className="flex justify-center pt-2 sm:pt-3">
             {/* <Link to="/user/restaurants">
-              <Button variant="outline" className="bg-transparent outline-none text-rose-500/80 hover:opacity-80 border-none underline shadow-none  text-xs sm:text-sm md:text-base sm:hidden">
+              <Button variant="outline" className="bg-transparent outline-none text-[#EF4F5F]/80 hover:opacity-80 border-none underline shadow-none  text-xs sm:text-sm md:text-base sm:hidden">
                 See All Restaurants
               </Button>
             </Link> */}
@@ -2376,7 +2352,7 @@ export default function Home() {
                     setSortBy(null);
                     setSelectedCuisine(null);
                   }}
-                  className="text-rose-500/80 font-medium text-sm"
+                  className="text-[#EF4F5F]/80 font-medium text-sm"
                 >
                   Clear all
                 </button>
@@ -2414,12 +2390,12 @@ export default function Home() {
                           }
                         }}
                         className={`flex flex-col items-center gap-1 py-4 px-2 text-center relative transition-colors ${isActive
-                          ? "bg-white dark:bg-[#1a1a1a] text-rose-500/80"
+                          ? "bg-white dark:bg-[#1a1a1a] text-[#EF4F5F]/80"
                           : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                           }`}
                       >
                         {isActive && (
-                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-rose-500/80 rounded-r" />
+                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#EF4F5F]/80 rounded-r" />
                         )}
                         <Icon className="h-5 w-5" strokeWidth={1.5} />
                         <span className="text-xs font-medium leading-tight">
@@ -2456,12 +2432,12 @@ export default function Home() {
                           key={option.id || "relevance"}
                           onClick={() => setSortBy(option.id)}
                           className={`px-4 py-3 rounded-xl border text-left transition-colors ${sortBy === option.id
-                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                            ? "border-[#EF4F5F]/80 bg-rose-50 dark:bg-rose-900/20"
+                            : "border-gray-200 dark:border-gray-800 hover:border-[#EF4F5F]/80"
                             }`}
                         >
                           <span
-                            className={`text-sm font-medium ${sortBy === option.id ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
+                            className={`text-sm font-medium ${sortBy === option.id ? "text-[#EF4F5F]/80" : "text-gray-700 dark:text-gray-300"}`}
                           >
                             {option.label}
                           </span>
@@ -2483,16 +2459,16 @@ export default function Home() {
                       <button
                         onClick={() => toggleFilter("delivery-under-30")}
                         className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${activeFilters.has("delivery-under-30")
-                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          ? "border-[#EF4F5F]/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-[#EF4F5F]/80"
                           }`}
                       >
                         <Timer
-                          className={`h-6 w-6 ${activeFilters.has("delivery-under-30") ? "text-rose-500/80" : "text-gray-600 dark:text-gray-400"}`}
+                          className={`h-6 w-6 ${activeFilters.has("delivery-under-30") ? "text-[#EF4F5F]/80" : "text-gray-600 dark:text-gray-400"}`}
                           strokeWidth={1.5}
                         />
                         <span
-                          className={`text-sm font-medium ${activeFilters.has("delivery-under-30") ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
+                          className={`text-sm font-medium ${activeFilters.has("delivery-under-30") ? "text-[#EF4F5F]/80" : "text-gray-700 dark:text-gray-300"}`}
                         >
                           Under 30 mins
                         </span>
@@ -2500,16 +2476,16 @@ export default function Home() {
                       <button
                         onClick={() => toggleFilter("delivery-under-45")}
                         className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${activeFilters.has("delivery-under-45")
-                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          ? "border-[#EF4F5F]/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-[#EF4F5F]/80"
                           }`}
                       >
                         <Timer
-                          className={`h-6 w-6 ${activeFilters.has("delivery-under-45") ? "text-rose-500/80" : "text-gray-600 dark:text-gray-400"}`}
+                          className={`h-6 w-6 ${activeFilters.has("delivery-under-45") ? "text-[#EF4F5F]/80" : "text-gray-600 dark:text-gray-400"}`}
                           strokeWidth={1.5}
                         />
                         <span
-                          className={`text-sm font-medium ${activeFilters.has("delivery-under-45") ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
+                          className={`text-sm font-medium ${activeFilters.has("delivery-under-45") ? "text-[#EF4F5F]/80" : "text-gray-700 dark:text-gray-300"}`}
                         >
                           Under 45 mins
                         </span>
@@ -2530,15 +2506,15 @@ export default function Home() {
                       <button
                         onClick={() => toggleFilter("rating-35-plus")}
                         className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${activeFilters.has("rating-35-plus")
-                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          ? "border-[#EF4F5F]/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-[#EF4F5F]/80"
                           }`}
                       >
                         <Star
                           className={`h-6 w-6 ${activeFilters.has("rating-35-plus") ? "text-yellow-500 fill-yellow-500" : "text-gray-400 dark:text-gray-500"}`}
                         />
                         <span
-                          className={`text-sm font-medium ${activeFilters.has("rating-35-plus") ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
+                          className={`text-sm font-medium ${activeFilters.has("rating-35-plus") ? "text-[#EF4F5F]/80" : "text-gray-700 dark:text-gray-300"}`}
                         >
                           Rated 3.5+
                         </span>
@@ -2546,15 +2522,15 @@ export default function Home() {
                       <button
                         onClick={() => toggleFilter("rating-4-plus")}
                         className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${activeFilters.has("rating-4-plus")
-                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          ? "border-[#EF4F5F]/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-[#EF4F5F]/80"
                           }`}
                       >
                         <Star
                           className={`h-6 w-6 ${activeFilters.has("rating-4-plus") ? "text-yellow-500 fill-yellow-500" : "text-gray-400 dark:text-gray-500"}`}
                         />
                         <span
-                          className={`text-sm font-medium ${activeFilters.has("rating-4-plus") ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
+                          className={`text-sm font-medium ${activeFilters.has("rating-4-plus") ? "text-[#EF4F5F]/80" : "text-gray-700 dark:text-gray-300"}`}
                         >
                           Rated 4.0+
                         </span>
@@ -2562,15 +2538,15 @@ export default function Home() {
                       <button
                         onClick={() => toggleFilter("rating-45-plus")}
                         className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${activeFilters.has("rating-45-plus")
-                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          ? "border-[#EF4F5F]/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-[#EF4F5F]/80"
                           }`}
                       >
                         <Star
                           className={`h-6 w-6 ${activeFilters.has("rating-45-plus") ? "text-yellow-500 fill-yellow-500" : "text-gray-400 dark:text-gray-500"}`}
                         />
                         <span
-                          className={`text-sm font-medium ${activeFilters.has("rating-45-plus") ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
+                          className={`text-sm font-medium ${activeFilters.has("rating-45-plus") ? "text-[#EF4F5F]/80" : "text-gray-700 dark:text-gray-300"}`}
                         >
                           Rated 4.5+
                         </span>
@@ -2591,16 +2567,16 @@ export default function Home() {
                       <button
                         onClick={() => toggleFilter("distance-under-1km")}
                         className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${activeFilters.has("distance-under-1km")
-                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          ? "border-[#EF4F5F]/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-[#EF4F5F]/80"
                           }`}
                       >
                         <MapPin
-                          className={`h-6 w-6 ${activeFilters.has("distance-under-1km") ? "text-rose-500/80" : "text-gray-600 dark:text-gray-400"}`}
+                          className={`h-6 w-6 ${activeFilters.has("distance-under-1km") ? "text-[#EF4F5F]/80" : "text-gray-600 dark:text-gray-400"}`}
                           strokeWidth={1.5}
                         />
                         <span
-                          className={`text-sm font-medium ${activeFilters.has("distance-under-1km") ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
+                          className={`text-sm font-medium ${activeFilters.has("distance-under-1km") ? "text-[#EF4F5F]/80" : "text-gray-700 dark:text-gray-300"}`}
                         >
                           Under 1 km
                         </span>
@@ -2608,16 +2584,16 @@ export default function Home() {
                       <button
                         onClick={() => toggleFilter("distance-under-2km")}
                         className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-colors ${activeFilters.has("distance-under-2km")
-                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          ? "border-[#EF4F5F]/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-[#EF4F5F]/80"
                           }`}
                       >
                         <MapPin
-                          className={`h-6 w-6 ${activeFilters.has("distance-under-2km") ? "text-rose-500/80" : "text-gray-600 dark:text-gray-400"}`}
+                          className={`h-6 w-6 ${activeFilters.has("distance-under-2km") ? "text-[#EF4F5F]/80" : "text-gray-600 dark:text-gray-400"}`}
                           strokeWidth={1.5}
                         />
                         <span
-                          className={`text-sm font-medium ${activeFilters.has("distance-under-2km") ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
+                          className={`text-sm font-medium ${activeFilters.has("distance-under-2km") ? "text-[#EF4F5F]/80" : "text-gray-700 dark:text-gray-300"}`}
                         >
                           Under 2 km
                         </span>
@@ -2638,12 +2614,12 @@ export default function Home() {
                       <button
                         onClick={() => toggleFilter("price-under-200")}
                         className={`px-4 py-3 rounded-xl border text-left transition-colors ${activeFilters.has("price-under-200")
-                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          ? "border-[#EF4F5F]/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-[#EF4F5F]/80"
                           }`}
                       >
                         <span
-                          className={`text-sm font-medium ${activeFilters.has("price-under-200") ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
+                          className={`text-sm font-medium ${activeFilters.has("price-under-200") ? "text-[#EF4F5F]/80" : "text-gray-700 dark:text-gray-300"}`}
                         >
                           Under ₹200
                         </span>
@@ -2651,12 +2627,12 @@ export default function Home() {
                       <button
                         onClick={() => toggleFilter("price-under-500")}
                         className={`px-4 py-3 rounded-xl border text-left transition-colors ${activeFilters.has("price-under-500")
-                          ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                          : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                          ? "border-[#EF4F5F]/80 bg-rose-50 dark:bg-rose-900/20"
+                          : "border-gray-200 dark:border-gray-800 hover:border-[#EF4F5F]/80"
                           }`}
                       >
                         <span
-                          className={`text-sm font-medium ${activeFilters.has("price-under-500") ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
+                          className={`text-sm font-medium ${activeFilters.has("price-under-500") ? "text-[#EF4F5F]/80" : "text-gray-700 dark:text-gray-300"}`}
                         >
                           Under ₹500
                         </span>
@@ -2695,12 +2671,12 @@ export default function Home() {
                             )
                           }
                           className={`px-4 py-3 rounded-xl border text-center transition-colors ${selectedCuisine === cuisine
-                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                            ? "border-[#EF4F5F]/80 bg-rose-50 dark:bg-rose-900/20"
+                            : "border-gray-200 dark:border-gray-800 hover:border-[#EF4F5F]/80"
                             }`}
                         >
                           <span
-                            className={`text-sm font-medium ${selectedCuisine === cuisine ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
+                            className={`text-sm font-medium ${selectedCuisine === cuisine ? "text-[#EF4F5F]/80" : "text-gray-700 dark:text-gray-300"}`}
                           >
                             {cuisine}
                           </span>
@@ -2723,12 +2699,12 @@ export default function Home() {
                         <button
                           onClick={() => toggleFilter("top-rated")}
                           className={`px-4 py-3 rounded-xl border text-left transition-colors ${activeFilters.has("top-rated")
-                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                            ? "border-[#EF4F5F]/80 bg-rose-50 dark:bg-rose-900/20"
+                            : "border-gray-200 dark:border-gray-800 hover:border-[#EF4F5F]/80"
                             }`}
                         >
                           <span
-                            className={`text-sm font-medium ${activeFilters.has("top-rated") ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
+                            className={`text-sm font-medium ${activeFilters.has("top-rated") ? "text-[#EF4F5F]/80" : "text-gray-700 dark:text-gray-300"}`}
                           >
                             Top Rated
                           </span>
@@ -2736,12 +2712,12 @@ export default function Home() {
                         <button
                           onClick={() => toggleFilter("trusted")}
                           className={`px-4 py-3 rounded-xl border text-left transition-colors ${activeFilters.has("trusted")
-                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                            ? "border-[#EF4F5F]/80 bg-rose-50 dark:bg-rose-900/20"
+                            : "border-gray-200 dark:border-gray-800 hover:border-[#EF4F5F]/80"
                             }`}
                         >
                           <span
-                            className={`text-sm font-medium ${activeFilters.has("trusted") ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
+                            className={`text-sm font-medium ${activeFilters.has("trusted") ? "text-[#EF4F5F]/80" : "text-gray-700 dark:text-gray-300"}`}
                           >
                             Trusted by 1000+ users
                           </span>
@@ -2764,12 +2740,12 @@ export default function Home() {
                         <button
                           onClick={() => toggleFilter("has-offers")}
                           className={`px-4 py-3 rounded-xl border text-left transition-colors ${activeFilters.has("has-offers")
-                            ? "border-rose-500/80 bg-rose-50 dark:bg-rose-900/20"
-                            : "border-gray-200 dark:border-gray-800 hover:border-rose-500/80"
+                            ? "border-[#EF4F5F]/80 bg-rose-50 dark:bg-rose-900/20"
+                            : "border-gray-200 dark:border-gray-800 hover:border-[#EF4F5F]/80"
                             }`}
                         >
                           <span
-                            className={`text-sm font-medium ${activeFilters.has("has-offers") ? "text-rose-500/80" : "text-gray-700 dark:text-gray-300"}`}
+                            className={`text-sm font-medium ${activeFilters.has("has-offers") ? "text-[#EF4F5F]/80" : "text-gray-700 dark:text-gray-300"}`}
                           >
                             Restaurants with offers
                           </span>
@@ -2813,7 +2789,7 @@ export default function Home() {
                     }
                   }}
                   className={`flex-1 py-3 font-semibold rounded-xl transition-colors ${activeFilters.size > 0 || sortBy || selectedCuisine
-                    ? "bg-rose-500/80 text-white hover:bg-rose-600"
+                    ? "bg-[#EF4F5F]/80 text-white hover:bg-[#EF4F5F]"
                     : "bg-gray-200 text-gray-500"
                     }`}
                   disabled={isLoadingFilterResults}
@@ -2898,7 +2874,7 @@ export default function Home() {
                     />
                     <div
                       className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${vegModeOption === "all"
-                        ? "border-rose-500/80 dark:border-rose-500/80 bg-rose-500/80 dark:bg-rose-500/80"
+                        ? "border-[#EF4F5F]/80 dark:border-[#EF4F5F]/80 bg-[#EF4F5F]/80 dark:bg-[#EF4F5F]/80"
                         : "border-gray-300 dark:border-gray-600 bg-white dark:bg-[#2a2a2a]"
                         }`}
                     >
@@ -3016,7 +2992,7 @@ export default function Home() {
                 <div className="flex justify-center mb-4">
                   <div className="w-20 h-20 rounded-full bg-pink-100 flex items-center justify-center">
                     <AlertCircle
-                      className="w-20 h-20 text-white bg-rose-500/80/90 rounded-full p-2"
+                      className="w-20 h-20 text-white bg-[#EF4F5F]/80/90 rounded-full p-2"
                       strokeWidth={2.5}
                     />
                   </div>
@@ -3047,7 +3023,7 @@ export default function Home() {
                         setPrevVegMode(false); // Set to false to match current state (veg mode is OFF)
                       }, 2000);
                     }}
-                    className="w-full bg-transparent text-[#BE2F2F] font-normal py-1 text-normal rounded-xl hover:bg-[#BE2F2F]/10 transition-colors text-base"
+                    className="w-full bg-transparent text-[#EF4F5F] font-normal py-1 text-normal rounded-xl hover:bg-[#EF4F5F]/10 transition-colors text-base"
                   >
                     Switch off
                   </button>
@@ -3386,7 +3362,7 @@ export default function Home() {
                       ease: "linear",
                     },
                   }}
-                  className="absolute w-16 h-16 border-[4px] border-transparent border-t-[#BE2F2F] border-r-[#BE2F2F] rounded-full"
+                  className="absolute w-16 h-16 border-[4px] border-transparent border-t-[#EF4F5F] border-r-[#EF4F5F] rounded-full"
                 />
 
                 {/* Inner Circle - Spins Counter-clockwise */}
@@ -3399,7 +3375,7 @@ export default function Home() {
                       ease: "linear",
                     },
                   }}
-                  className="absolute w-12 h-12 border-[4px] border-transparent border-r-[#BE2F2F] rounded-full"
+                  className="absolute w-12 h-12 border-[4px] border-transparent border-r-[#EF4F5F] rounded-full"
                 />
               </motion.div>
 
@@ -3503,8 +3479,8 @@ export default function Home() {
                         // Don't close modal on click, let checkbox handle it
                       }}
                     >
-                      <div className="h-12 w-12 rounded-lg bg-[#BE2F2F]/10 flex items-center justify-center flex-shrink-0">
-                        <Bookmark className="h-6 w-6 text-[#BE2F2F] fill-[#BE2F2F]" />
+                      <div className="h-12 w-12 rounded-lg bg-[#EF4F5F]/10 flex items-center justify-center flex-shrink-0">
+                        <Bookmark className="h-6 w-6 text-[#EF4F5F] fill-[#EF4F5F]" />
                       </div>
                       <div className="flex-1 text-left">
                         <div className="flex items-center justify-between">
@@ -3522,12 +3498,12 @@ export default function Home() {
                                     setShowManageCollections(false);
                                   }
                                 }}
-                                className="h-5 w-5 rounded border-2 border-[#BE2F2F] data-[state=checked]:bg-[#BE2F2F] data-[state=checked]:border-[#BE2F2F]"
+                                className="h-5 w-5 rounded border-2 border-[#EF4F5F] data-[state=checked]:bg-[#EF4F5F] data-[state=checked]:border-[#EF4F5F]"
                               />
                             </div>
                           )}
                           {!selectedRestaurantSlug && (
-                            <div className="h-5 w-5 rounded border-2 border-[#BE2F2F] bg-[#BE2F2F] flex items-center justify-center">
+                            <div className="h-5 w-5 rounded border-2 border-[#EF4F5F] bg-[#EF4F5F] flex items-center justify-center">
                               <Check className="h-3 w-3 text-white" />
                             </div>
                           )}
@@ -3544,8 +3520,8 @@ export default function Home() {
                       className="w-full flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg transition-colors"
                       onClick={() => setShowManageCollections(false)}
                     >
-                      <div className="h-12 w-12 rounded-lg bg-[#BE2F2F]/10 flex items-center justify-center flex-shrink-0">
-                        <Plus className="h-6 w-6 text-[#BE2F2F]" />
+                      <div className="h-12 w-12 rounded-lg bg-[#EF4F5F]/10 flex items-center justify-center flex-shrink-0">
+                        <Plus className="h-6 w-6 text-[#EF4F5F]" />
                       </div>
                       <div className="flex-1 text-left">
                         <span className="text-base font-medium text-gray-900">
