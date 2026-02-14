@@ -382,7 +382,87 @@ export default function GroceryStoresList() {
         </div>
       )}
 
-      {/* Delete/Ban Dialogs placeholder */}
+      {/* Ban/Unban Confirm Dialog */}
+      {banConfirmDialog && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+          onClick={() => !banning && setBanConfirmDialog(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-slate-900 mb-2">
+              {banConfirmDialog.action === "ban" ? "Disable Store" : "Enable Store"}
+            </h3>
+            <p className="text-sm text-slate-600 mb-6">
+              Are you sure you want to {banConfirmDialog.action === "ban" ? "disable" : "enable"}{" "}
+              <span className="font-semibold text-slate-900">{banConfirmDialog.store?.name}</span>?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                disabled={banning}
+                onClick={() => setBanConfirmDialog(null)}
+                className="px-4 py-2 text-sm font-medium rounded-lg border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={banning}
+                onClick={confirmBanStore}
+                className={`px-4 py-2 text-sm font-medium rounded-lg text-white disabled:opacity-50 ${
+                  banConfirmDialog.action === "ban"
+                    ? "bg-red-600 hover:bg-red-700"
+                    : "bg-green-600 hover:bg-green-700"
+                }`}
+              >
+                {banning
+                  ? (banConfirmDialog.action === "ban" ? "Disabling..." : "Enabling...")
+                  : (banConfirmDialog.action === "ban" ? "Disable" : "Enable")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirm Dialog */}
+      {deleteConfirmDialog && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+          onClick={() => !deleting && setDeleteConfirmDialog(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Delete Store</h3>
+            <p className="text-sm text-slate-600 mb-6">
+              This action cannot be undone. Delete{" "}
+              <span className="font-semibold text-slate-900">{deleteConfirmDialog.store?.name}</span>?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setDeleteConfirmDialog(null)}
+                className="px-4 py-2 text-sm font-medium rounded-lg border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={confirmDeleteStore}
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+              >
+                {deleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

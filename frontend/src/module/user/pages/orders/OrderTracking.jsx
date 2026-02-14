@@ -219,6 +219,7 @@ export default function OrderTracking() {
   const [showConfirmation, setShowConfirmation] = useState(confirmed)
   const [orderStatus, setOrderStatus] = useState('placed')
   const [estimatedTime, setEstimatedTime] = useState(29)
+  const [driverDistanceKm, setDriverDistanceKm] = useState(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [showCancelDialog, setShowCancelDialog] = useState(false)
   const [cancellationReason, setCancellationReason] = useState("")
@@ -486,10 +487,31 @@ export default function OrderTracking() {
     return () => clearInterval(timer)
   }, [])
 
+  useEffect(() => {
+    const handleDriverDistanceUpdate = (event) => {
+      const detail = event?.detail || {}
+      const eventOrderId = detail.orderId ? String(detail.orderId) : ""
+      const currentOrderId = String(orderId || "")
+      const currentMongoId = String(order?.id || "")
+
+      if (eventOrderId && eventOrderId !== currentOrderId && eventOrderId !== currentMongoId) {
+        return
+      }
+
+      const km = Number(detail.distanceKm)
+      if (Number.isFinite(km) && km >= 0) {
+        setDriverDistanceKm(km)
+      }
+    }
+
+    window.addEventListener("driverDistanceUpdate", handleDriverDistanceUpdate)
+    return () => window.removeEventListener("driverDistanceUpdate", handleDriverDistanceUpdate)
+  }, [orderId, order?.id])
+
   // Listen for order status updates from socket (e.g., "Delivery partner on the way")
   useEffect(() => {
     const handleOrderStatusNotification = (event) => {
-      const { message, title, status, estimatedDeliveryTime } = event.detail;
+      const { message, status, estimatedDeliveryTime } = event.detail;
       
       console.log('📢 Order status notification received:', { message, status });
 
@@ -657,6 +679,9 @@ export default function OrderTracking() {
             name: apiOrder.deliveryPartnerId.name || 'Delivery Partner',
             avatar: null
           } : null,
+          deliveryPartnerId: apiOrder.deliveryPartnerId?._id || apiOrder.deliveryPartnerId || apiOrder.assignmentInfo?.deliveryPartnerId || null,
+          assignmentInfo: apiOrder.assignmentInfo || null,
+          deliveryState: apiOrder.deliveryState || null,
           tracking: apiOrder.tracking || {}
         }
         setOrder(transformedOrder)
@@ -836,6 +861,14 @@ export default function OrderTracking() {
                 <span className="text-sm text-green-200">On time</span>
               </>
             )}
+            {driverDistanceKm != null && (orderStatus === 'pickup' || order?.status === 'out_for_delivery') && (
+              <>
+                <span className="w-1 h-1 rounded-full bg-white" />
+                <span className="text-sm text-green-200">
+                  Driver {driverDistanceKm < 1 ? `${Math.round(driverDistanceKm * 1000)} m` : `${driverDistanceKm.toFixed(1)} km`} away
+                </span>
+              </>
+            )}
             <motion.button 
               onClick={handleRefresh}
               className="ml-1"
@@ -916,7 +949,9 @@ export default function OrderTracking() {
           transition={{ delay: 0.65 }}
         >
           <p className="text-yellow-800 font-medium">
-            All your delivery details in one place 👇
+            {driverDistanceKm != null && (orderStatus === 'pickup' || order?.status === 'out_for_delivery')
+              ? `Driver is ${driverDistanceKm < 1 ? `${Math.round(driverDistanceKm * 1000)} m` : `${driverDistanceKm.toFixed(1)} km`} from your location`
+              : 'All your delivery details in one place 👇'}
           </p>
         </motion.div>
 

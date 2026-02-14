@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, CheckCircle2, XCircle, Eye, Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import {
@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { adminAPI } from "@/lib/api";
 import { toast } from "sonner";
+import alertSound from "@/assets/audio/alert.mp3";
 
 export default function GroceryApproval() {
   const [requests, setRequests] = useState([]);
@@ -21,24 +22,70 @@ export default function GroceryApproval() {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [processing, setProcessing] = useState(false);
+  const previousPendingCountRef = useRef(null);
+  const userInteractedRef = useRef(false);
+  const audioRef = useRef(null);
 
-  const fetchPendingApprovals = async () => {
+  const playNotificationSound = () => {
     try {
-      setLoading(true);
+      if (!audioRef.current || !userInteractedRef.current) return;
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(() => {});
+    } catch {
+      // ignore browser autoplay/runtime audio errors
+    }
+  };
+
+  const fetchPendingApprovals = async ({ showLoader = true } = {}) => {
+    try {
+      if (showLoader) setLoading(true);
       const response = await adminAPI.getPendingFoodApprovals({ platform: "mogrocery" });
       const data = response?.data?.data?.requests || response?.data?.requests || [];
+
+      const previousCount = previousPendingCountRef.current;
+      if (previousCount !== null && data.length > previousCount) {
+        playNotificationSound();
+        toast.info("New grocery approval request received");
+      }
+
+      previousPendingCountRef.current = data.length;
       setRequests(data);
     } catch (error) {
       console.error("Error fetching grocery order approvals:", error);
       toast.error("Failed to load pending grocery order approvals");
       setRequests([]);
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchPendingApprovals();
+    audioRef.current = new Audio(alertSound);
+    audioRef.current.volume = 0.7;
+
+    const markUserInteraction = () => {
+      userInteractedRef.current = true;
+    };
+    window.addEventListener("click", markUserInteraction, { passive: true });
+    window.addEventListener("keydown", markUserInteraction, { passive: true });
+    window.addEventListener("touchstart", markUserInteraction, { passive: true });
+
+    fetchPendingApprovals({ showLoader: true });
+
+    const pollTimer = setInterval(() => {
+      fetchPendingApprovals({ showLoader: false });
+    }, 10000);
+
+    return () => {
+      clearInterval(pollTimer);
+      window.removeEventListener("click", markUserInteraction);
+      window.removeEventListener("keydown", markUserInteraction);
+      window.removeEventListener("touchstart", markUserInteraction);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
   }, []);
 
   const filteredRequests = useMemo(() => {

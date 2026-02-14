@@ -7151,12 +7151,14 @@ export default function DeliveryHome() {
   useEffect(() => {
     const orderStatus = selectedRestaurant?.orderStatus || selectedRestaurant?.status || '';
     const deliveryPhase = selectedRestaurant?.deliveryPhase || selectedRestaurant?.deliveryState?.currentPhase || '';
+    const deliveryStateStatus = selectedRestaurant?.deliveryState?.status || '';
     
     // Check if order is picked up or out for delivery
     const isPickedUp = orderStatus === 'out_for_delivery' || 
                        orderStatus === 'picked_up' ||
                        deliveryPhase === 'en_route_to_delivery' ||
-                       deliveryPhase === 'picked_up';
+                       deliveryPhase === 'picked_up' ||
+                       deliveryStateStatus === 'accepted';
     
     // Check if we have customer location
     const hasCustomerLocation = selectedRestaurant?.customerLat && selectedRestaurant?.customerLng;
@@ -7165,9 +7167,30 @@ export default function DeliveryHome() {
     if (isPickedUp && hasCustomerLocation && riderLocation && riderLocation.length === 2) {
       // Check if we already have a route to customer (avoid recalculating unnecessarily)
       const currentDirections = directionsResponseRef.current;
+      const toCoordNumber = (coord) => {
+        if (coord == null) return null;
+        if (typeof coord === 'function') {
+          const value = coord();
+          return Number.isFinite(value) ? value : null;
+        }
+        const value = Number(coord);
+        return Number.isFinite(value) ? value : null;
+      };
+
+      const currentEndLocation = currentDirections?.routes?.[0]?.legs?.[0]?.end_location;
+      const currentEndLat = toCoordNumber(currentEndLocation?.lat);
+      const currentEndLng = toCoordNumber(currentEndLocation?.lng);
+
+      const isCurrentRouteToCustomer =
+        currentEndLat != null &&
+        currentEndLng != null &&
+        Math.abs(currentEndLat - selectedRestaurant.customerLat) < 0.0005 &&
+        Math.abs(currentEndLng - selectedRestaurant.customerLng) < 0.0005;
+
       const needsCustomerRoute = !currentDirections || 
                                  !currentDirections.routes || 
-                                 currentDirections.routes.length === 0;
+                                 currentDirections.routes.length === 0 ||
+                                 !isCurrentRouteToCustomer;
       
       if (needsCustomerRoute) {
         console.log('🔄 Order picked up - switching route to customer location');
@@ -7238,6 +7261,7 @@ export default function DeliveryHome() {
     selectedRestaurant?.status,
     selectedRestaurant?.deliveryPhase,
     selectedRestaurant?.deliveryState?.currentPhase,
+    selectedRestaurant?.deliveryState?.status,
     selectedRestaurant?.customerLat,
     selectedRestaurant?.customerLng,
     riderLocation,

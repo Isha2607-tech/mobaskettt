@@ -18,8 +18,9 @@ import {
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCart } from "../../user/context/CartContext";
+import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
 import { CategoryFoodsContent } from "./CategoryFoodsPage";
-import api from "@/lib/api";
+import api, { restaurantAPI } from "@/lib/api";
 
 // Assets Imports
 // Vegetables
@@ -93,6 +94,7 @@ import imgMedicine3D from "@/assets/icons/medicine_5488699.png";
 const GroceryPage = () => {
   const navigate = useNavigate();
   const { getGroceryCartCount } = useCart();
+  const { location: userLocation } = useUserLocation();
   const itemCount = getGroceryCartCount();
   const [activeTab, setActiveTab] = useState("All");
 
@@ -105,6 +107,41 @@ const GroceryPage = () => {
   const [showSnow, setShowSnow] = useState(false);
   const [homepageCategories, setHomepageCategories] = useState([]);
   const [bestSellerItems, setBestSellerItems] = useState([]);
+  const [groceryStores, setGroceryStores] = useState([]);
+
+  const getStoreCoordinates = (store) => {
+    const geoCoordinates = store?.location?.coordinates;
+    if (
+      Array.isArray(geoCoordinates) &&
+      geoCoordinates.length >= 2 &&
+      Number.isFinite(Number(geoCoordinates[0])) &&
+      Number.isFinite(Number(geoCoordinates[1]))
+    ) {
+      return { lng: Number(geoCoordinates[0]), lat: Number(geoCoordinates[1]) };
+    }
+
+    const lat = Number(store?.location?.latitude);
+    const lng = Number(store?.location?.longitude);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return { lat, lng };
+    }
+
+    return null;
+  };
+
+  const calculateDistanceKm = (lat1, lng1, lat2, lng2) => {
+    const earthRadiusKm = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadiusKm * c;
+  };
 
   // Snow effect timer
   useEffect(() => {
@@ -210,6 +247,23 @@ const GroceryPage = () => {
     };
 
     fetchBestSellers();
+  }, []);
+
+  useEffect(() => {
+    const fetchGroceryStores = async () => {
+      try {
+        const response = await restaurantAPI.getRestaurants({ limit: 200 });
+        const restaurants = Array.isArray(response?.data?.data?.restaurants)
+          ? response.data.data.restaurants
+          : [];
+        const stores = restaurants.filter((restaurant) => restaurant?.platform === "mogrocery" && restaurant?.isActive);
+        setGroceryStores(stores);
+      } catch {
+        setGroceryStores([]);
+      }
+    };
+
+    fetchGroceryStores();
   }, []);
 
   // Auto-slide carousel
@@ -349,6 +403,64 @@ const GroceryPage = () => {
       }));
   }, [bestSellerItems, bestsellers, searchQuery]);
 
+  const nearestStoreDistanceKm = useMemo(() => {
+    const userLat = Number(userLocation?.latitude);
+    const userLng = Number(userLocation?.longitude);
+    if (!Number.isFinite(userLat) || !Number.isFinite(userLng) || groceryStores.length === 0) {
+      return null;
+    }
+
+    let nearestDistance = null;
+    for (const store of groceryStores) {
+      const coords = getStoreCoordinates(store);
+      if (!coords) continue;
+
+      const distanceKm = calculateDistanceKm(userLat, userLng, coords.lat, coords.lng);
+      if (!Number.isFinite(distanceKm)) continue;
+      if (nearestDistance === null || distanceKm < nearestDistance) {
+        nearestDistance = distanceKm;
+      }
+    }
+
+    return nearestDistance;
+  }, [groceryStores, userLocation?.latitude, userLocation?.longitude]);
+
+  const deliveryEtaMinutes = useMemo(() => {
+    if (!Number.isFinite(nearestStoreDistanceKm)) return 8;
+    // Base prep/packing + travel estimate (~4 min per km)
+    return Math.max(8, Math.min(60, Math.round(8 + nearestStoreDistanceKm * 4)));
+  }, [nearestStoreDistanceKm]);
+
+  const topAddress = useMemo(() => {
+    const formattedAddress = (userLocation?.formattedAddress || "").trim();
+    if (formattedAddress) {
+      return formattedAddress;
+    }
+
+    const address = (userLocation?.address || "").trim();
+    if (address) {
+      return address;
+    }
+
+    const fallbackParts = [
+      userLocation?.street,
+      userLocation?.area,
+      userLocation?.city,
+      userLocation?.state,
+      userLocation?.postalCode || userLocation?.zipCode,
+    ]
+      .map((part) => (typeof part === "string" ? part.trim() : ""))
+      .filter(Boolean);
+
+    if (fallbackParts.length) {
+      return fallbackParts.join(", ");
+    }
+
+    return (
+      "Select your location"
+    );
+  }, [userLocation]);
+
   const handleBestSellerClick = (item) => {
     if (item.itemType && item.itemType !== "legacy" && item.itemId) {
       navigate(`/grocery/best-seller/${item.itemType}/${item.itemId}`);
@@ -449,12 +561,12 @@ const GroceryPage = () => {
                       fontFamily: "system-ui, -apple-system, sans-serif",
                     }}
                   >
-                    8 minutes
+                    {deliveryEtaMinutes} minutes
                   </span>
                 </div>
                 <div className="flex items-center gap-1 -mt-0.5 cursor-pointer">
-                  <span className="text-[#1a1a1a] text-[0.85rem] font-bold tracking-tight line-clamp-1">
-                    Vandana Nagar, Indore
+                  <span className="text-[#1a1a1a] text-[0.8rem] font-bold tracking-tight leading-tight line-clamp-2">
+                    {topAddress}
                   </span>
                   <ChevronDown
                     size={14}

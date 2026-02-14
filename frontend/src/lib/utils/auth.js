@@ -18,7 +18,9 @@ export function decodeToken(token) {
 
     // Decode base64url encoded payload
     const payload = parts[1];
-    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+    const decoded = JSON.parse(atob(base64 + padding));
     
     return decoded;
   } catch (error) {

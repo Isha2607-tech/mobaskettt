@@ -269,7 +269,7 @@ export default function AddGroceryStore() {
       mapTypeControl: true,
       streetViewControl: false,
       fullscreenControl: true,
-      draggableCursor: "crosshair",
+      draggableCursor: "grab",
       draggingCursor: "grabbing",
     })
     mapInstanceRef.current = map
@@ -310,13 +310,14 @@ export default function AddGroceryStore() {
       strokeWeight: 2,
       fillColor: "#3b82f6",
       fillOpacity: 0.2,
+      clickable: false,
       map,
     })
 
     const bounds = new googleLib.maps.LatLngBounds()
     selectedZonePath.forEach((coord) => bounds.extend(coord))
     map.fitBounds(bounds)
-    map.setOptions({ draggableCursor: "crosshair", draggingCursor: "grabbing" })
+    map.setOptions({ draggableCursor: "grab", draggingCursor: "grabbing" })
 
     // If marker exists but is outside the newly selected zone, clear it.
     if (hasPinnedLocation && !isPointInsidePolygon(step1.location.latitude, step1.location.longitude, selectedZonePath)) {
@@ -448,6 +449,16 @@ export default function AddGroceryStore() {
     const centerLat = total.lat / selectedZonePath.length
     const centerLng = total.lng / selectedZonePath.length
     setStoreCoordinates(centerLat, centerLng)
+  }
+
+  const pinToMapCenter = () => {
+    const map = mapInstanceRef.current
+    if (!map) return
+    const center = map.getCenter?.()
+    const lat = center?.lat?.()
+    const lng = center?.lng?.()
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
+    setStoreCoordinates(lat, lng)
   }
 
   const handleUpload = async (file, folder) => {
@@ -632,22 +643,35 @@ export default function AddGroceryStore() {
                 {mapLoading && <p className="text-xs text-slate-500">Loading map...</p>}
                 {mapError && <p className="text-xs text-red-600">{mapError}</p>}
                 <div className="pt-1">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={pinToZoneCenter}
-                    disabled={!selectedZonePath.length || !!mapError}
-                  >
-                    Use Zone Center as Store Pin
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      onClick={pinToMapCenter}
+                      disabled={!!mapError}
+                    >
+                      Set Pin At Map Center
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={pinToZoneCenter}
+                      disabled={!selectedZonePath.length || !!mapError}
+                    >
+                      Use Zone Center as Store Pin
+                    </Button>
+                  </div>
                 </div>
                 {!mapError && Number.isFinite(step1.location?.latitude) && Number.isFinite(step1.location?.longitude) && (
                   <p className="text-xs text-slate-600">
                     Selected: {step1.location.latitude}, {step1.location.longitude}
                   </p>
                 )}
-                <p className="text-xs text-slate-500">Click anywhere on the map to set store location. Zone is auto-detected when point falls inside a saved zone.</p>
+                <p className="text-xs text-slate-500">
+                  OLA-style: drag the map so your target is at center, then tap "Set Pin At Map Center". You can also click map or drag marker.
+                </p>
               </div>
             </section>
           </div>

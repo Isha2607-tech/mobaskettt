@@ -1377,6 +1377,44 @@ const DeliveryTrackingMap = ({
     }
   }, [isMapLoaded, userLiveCoords, userLocationAccuracy]);
 
+  // Emit live rider-to-customer distance for OrderTracking UI (same behavior across MoFood/MoGrocery)
+  useEffect(() => {
+    if (!window?.dispatchEvent) return;
+
+    const riderLat = deliveryBoyLocation?.lat ?? currentLocation?.lat;
+    const riderLng = deliveryBoyLocation?.lng ?? currentLocation?.lng;
+    const customerLat = customerCoords?.lat;
+    const customerLng = customerCoords?.lng;
+
+    if (
+      typeof riderLat !== 'number' || Number.isNaN(riderLat) ||
+      typeof riderLng !== 'number' || Number.isNaN(riderLng) ||
+      typeof customerLat !== 'number' || Number.isNaN(customerLat) ||
+      typeof customerLng !== 'number' || Number.isNaN(customerLng)
+    ) {
+      return;
+    }
+
+    const distanceMeters = calculateHaversineDistance(riderLat, riderLng, customerLat, customerLng);
+    const distanceKm = distanceMeters / 1000;
+
+    window.dispatchEvent(new CustomEvent('driverDistanceUpdate', {
+      detail: {
+        orderId,
+        distanceMeters,
+        distanceKm
+      }
+    }));
+  }, [
+    orderId,
+    deliveryBoyLocation?.lat,
+    deliveryBoyLocation?.lng,
+    currentLocation?.lat,
+    currentLocation?.lng,
+    customerCoords?.lat,
+    customerCoords?.lng
+  ]);
+
   // Periodic check to ensure bike marker is created if it should be visible
   // DISABLED - prevents duplicate marker creation
   // useEffect(() => {

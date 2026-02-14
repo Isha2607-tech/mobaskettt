@@ -177,7 +177,14 @@ export const verifyOTP = asyncHandler(async (req, res) => {
         await delivery.save();
 
         // Set refresh token in httpOnly cookie
+        // Keep legacy cookie for backward compatibility + module-specific cookie to avoid cross-module collisions.
         res.cookie('refreshToken', tokens.refreshToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
+        res.cookie('deliveryRefreshToken', tokens.refreshToken, {
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
           sameSite: 'strict',
@@ -218,7 +225,14 @@ export const verifyOTP = asyncHandler(async (req, res) => {
     await delivery.save();
 
     // Set refresh token in httpOnly cookie
+    // Keep legacy cookie for backward compatibility + module-specific cookie to avoid cross-module collisions.
     res.cookie('refreshToken', tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+    res.cookie('deliveryRefreshToken', tokens.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
@@ -259,8 +273,11 @@ export const verifyOTP = asyncHandler(async (req, res) => {
  * POST /api/delivery/auth/refresh-token
  */
 export const refreshToken = asyncHandler(async (req, res) => {
-  // Get refresh token from cookie or header
-  const refreshToken = req.cookies?.refreshToken || req.headers['x-refresh-token'];
+  // Get refresh token from module-specific cookie first, then legacy cookie/header.
+  const refreshToken =
+    req.cookies?.deliveryRefreshToken ||
+    req.cookies?.refreshToken ||
+    req.headers['x-refresh-token'];
 
   if (!refreshToken) {
     return errorResponse(res, 401, 'Refresh token not found');
@@ -314,8 +331,13 @@ export const logout = asyncHandler(async (req, res) => {
     await req.delivery.save();
   }
 
-  // Clear refresh token cookie
+  // Clear refresh token cookies
   res.clearCookie('refreshToken', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict'
+  });
+  res.clearCookie('deliveryRefreshToken', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict'

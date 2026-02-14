@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   Search,
@@ -8,13 +8,50 @@ import {
   LayoutGrid,
   ChevronDown,
 } from "lucide-react";
-import api from "@/lib/api";
+import api, { restaurantAPI } from "@/lib/api";
+import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
 
 export default function CategoryDirectoryPage() {
   const navigate = useNavigate();
+  const { location: userLocation } = useUserLocation();
   const [categories, setCategories] = useState([]);
+  const [groceryStores, setGroceryStores] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const getStoreCoordinates = (store) => {
+    const geoCoordinates = store?.location?.coordinates;
+    if (
+      Array.isArray(geoCoordinates) &&
+      geoCoordinates.length >= 2 &&
+      Number.isFinite(Number(geoCoordinates[0])) &&
+      Number.isFinite(Number(geoCoordinates[1]))
+    ) {
+      return { lng: Number(geoCoordinates[0]), lat: Number(geoCoordinates[1]) };
+    }
+
+    const lat = Number(store?.location?.latitude);
+    const lng = Number(store?.location?.longitude);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return { lat, lng };
+    }
+
+    return null;
+  };
+
+  const calculateDistanceKm = (lat1, lng1, lat2, lng2) => {
+    const earthRadiusKm = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadiusKm * c;
+  };
 
   useEffect(() => {
     const loadCategories = async () => {
@@ -39,6 +76,71 @@ export default function CategoryDirectoryPage() {
     loadCategories();
   }, []);
 
+  useEffect(() => {
+    const fetchGroceryStores = async () => {
+      try {
+        const response = await restaurantAPI.getRestaurants({ limit: 200 });
+        const restaurants = Array.isArray(response?.data?.data?.restaurants)
+          ? response.data.data.restaurants
+          : [];
+        const stores = restaurants.filter((restaurant) => restaurant?.platform === "mogrocery" && restaurant?.isActive);
+        setGroceryStores(stores);
+      } catch {
+        setGroceryStores([]);
+      }
+    };
+
+    fetchGroceryStores();
+  }, []);
+
+  const nearestStoreDistanceKm = useMemo(() => {
+    const userLat = Number(userLocation?.latitude);
+    const userLng = Number(userLocation?.longitude);
+    if (!Number.isFinite(userLat) || !Number.isFinite(userLng) || groceryStores.length === 0) {
+      return null;
+    }
+
+    let nearestDistance = null;
+    for (const store of groceryStores) {
+      const coords = getStoreCoordinates(store);
+      if (!coords) continue;
+
+      const distanceKm = calculateDistanceKm(userLat, userLng, coords.lat, coords.lng);
+      if (!Number.isFinite(distanceKm)) continue;
+      if (nearestDistance === null || distanceKm < nearestDistance) {
+        nearestDistance = distanceKm;
+      }
+    }
+
+    return nearestDistance;
+  }, [groceryStores, userLocation?.latitude, userLocation?.longitude]);
+
+  const deliveryEtaMinutes = useMemo(() => {
+    if (!Number.isFinite(nearestStoreDistanceKm)) return 8;
+    return Math.max(8, Math.min(60, Math.round(8 + nearestStoreDistanceKm * 4)));
+  }, [nearestStoreDistanceKm]);
+
+  const topAddress = useMemo(() => {
+    const formattedAddress = (userLocation?.formattedAddress || "").trim();
+    if (formattedAddress) return formattedAddress;
+
+    const address = (userLocation?.address || "").trim();
+    if (address) return address;
+
+    const fallbackParts = [
+      userLocation?.street,
+      userLocation?.area,
+      userLocation?.city,
+      userLocation?.state,
+      userLocation?.postalCode || userLocation?.zipCode,
+    ]
+      .map((part) => (typeof part === "string" ? part.trim() : ""))
+      .filter(Boolean);
+
+    if (fallbackParts.length) return fallbackParts.join(", ");
+    return "Select your location";
+  }, [userLocation]);
+
   return (
     <div className="min-h-screen bg-white pb-24 font-sans w-full">
       {/* Top Navbar Header */}
@@ -52,12 +154,12 @@ export default function CategoryDirectoryPage() {
               </h1>
               <div className="flex items-baseline gap-1 leading-none">
                 <span className="text-[24px] font-[900] tracking-tight">
-                  8 minutes
+                  {deliveryEtaMinutes} minutes
                 </span>
               </div>
               <div className="flex items-center gap-1 mt-0.5 cursor-pointer">
-                <span className="text-[13px] font-bold tracking-tight line-clamp-1">
-                  Vandana Nagar, Indore
+                <span className="text-[13px] font-bold tracking-tight leading-tight line-clamp-2">
+                  {topAddress}
                 </span>
                 <ChevronDown size={16} className="stroke-[3]" />
               </div>

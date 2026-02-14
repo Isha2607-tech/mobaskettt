@@ -1,7 +1,7 @@
 import axios from "axios";
 import { toast } from "sonner";
 import { API_BASE_URL } from "./config.js";
-import { getRoleFromToken, clearModuleAuth } from "../utils/auth.js";
+import { getRoleFromToken } from "../utils/auth.js";
 
 // Network error tracking to prevent spam
 const networkErrorState = {
@@ -46,6 +46,9 @@ const apiClient = axios.create({
   },
   withCredentials: true, // Include cookies for refresh token
 });
+
+// Prevent parallel refresh races that can cause false logout flows.
+let refreshRequestPromise = null;
 
 /**
  * Get the appropriate module token based on the current route
@@ -309,7 +312,11 @@ apiClient.interceptors.response.use(
 
       // Only store the token if the role matches the current module
       if (!role || role !== expectedRole) {
-        clearModuleAuth(tokenKey.replace("_accessToken", ""));
+        if (import.meta.env.DEV) {
+          console.warn(
+            `[API Interceptor] Ignoring accessToken due to role mismatch. expected=${expectedRole}, actual=${role || "unknown"}`,
+          );
+        }
       } else {
         localStorage.setItem(tokenKey, token);
       }
@@ -340,15 +347,22 @@ apiClient.interceptors.response.use(
           refreshEndpoint = "/delivery/auth/refresh-token";
         }
 
-        // Try to refresh the token
-        // The refresh token is sent via httpOnly cookie automatically
-        const response = await axios.post(
-          `${API_BASE_URL}${refreshEndpoint}`,
-          {},
-          {
-            withCredentials: true,
-          },
-        );
+        // Try to refresh the token (single-flight).
+        // The refresh token is sent via httpOnly cookie automatically.
+        if (!refreshRequestPromise) {
+          refreshRequestPromise = axios
+            .post(
+              `${API_BASE_URL}${refreshEndpoint}`,
+              {},
+              {
+                withCredentials: true,
+              },
+            )
+            .finally(() => {
+              refreshRequestPromise = null;
+            });
+        }
+        const response = await refreshRequestPromise;
 
         const { accessToken } = response.data.data || response.data;
 
@@ -385,7 +399,6 @@ apiClient.interceptors.response.use(
 
           // Only store token if role matches expected module; otherwise treat as invalid for this module
           if (!role || role !== expectedRole) {
-            clearModuleAuth(tokenKey.replace("_accessToken", ""));
             throw new Error("Role mismatch on refreshed token");
           }
 
@@ -429,10 +442,11 @@ apiClient.interceptors.response.use(
         const isLandingPageManagement =
           currentPath.includes("/hero-banner-management") ||
           currentPath.includes("/landing-page");
+        const isDeliveryPath = currentPath.startsWith("/delivery");
 
         // For landing page management, don't auto-logout on 401 - let component handle it
         // Only auto-logout for other pages after token refresh fails
-        if (!isOnboardingPage && !isLandingPageManagement) {
+        if (!isOnboardingPage && !isLandingPageManagement && !isDeliveryPath) {
           if (currentPath.startsWith("/admin")) {
             localStorage.removeItem("admin_accessToken");
             localStorage.removeItem("admin_authenticated");
@@ -447,11 +461,6 @@ apiClient.interceptors.response.use(
             localStorage.removeItem("restaurant_authenticated");
             localStorage.removeItem("restaurant_user");
             window.location.href = "/restaurant/login";
-          } else if (currentPath.startsWith("/delivery")) {
-            localStorage.removeItem("delivery_accessToken");
-            localStorage.removeItem("delivery_authenticated");
-            localStorage.removeItem("delivery_user");
-            window.location.href = "/delivery/sign-in";
           } else {
             // User module includes /restaurants/* paths
             localStorage.removeItem("user_accessToken");
@@ -461,9 +470,13 @@ apiClient.interceptors.response.use(
           }
         }
 
-        // For onboarding page, reject the promise so component can handle it
-        return Promise.reject(refreshError);
+        // For delivery module, avoid force-logout loops from transient refresh failures.
+        // Route guard will handle a graceful re-check/redirect if auth is actually invalid.
+        if (isDeliveryPath) {
+          return Promise.reject(refreshError);
+        }
 
+        // For onboarding page, reject the promise so component can handle it
         return Promise.reject(refreshError);
       }
     }
@@ -569,9 +582,6 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 404) {
       if (import.meta.env.DEV) {
         const url = error.config?.url || "unknown";
-        const fullUrl = error.config?.baseURL
-          ? `${error.config.baseURL}${url}`
-          : url;
         // 404 error logging removed - errors handled via toast notifications
 
         // Show toast for auth routes (important)

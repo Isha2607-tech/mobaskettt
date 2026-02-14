@@ -4,6 +4,9 @@ import { asyncHandler } from '../../../shared/middleware/asyncHandler.js';
 import { successResponse, errorResponse } from '../../../shared/utils/response.js';
 import Order from '../../order/models/Order.js';
 import Restaurant from '../../restaurant/models/Restaurant.js';
+import { notifyRestaurantOrderUpdate } from '../../order/services/restaurantNotificationService.js';
+import { findNearestDeliveryBoys, findNearestDeliveryBoy } from '../../order/services/deliveryAssignmentService.js';
+import { notifyMultipleDeliveryBoys } from '../../order/services/deliveryNotificationService.js';
 
 const logger = winston.createLogger({
   level: 'info',
@@ -22,6 +25,115 @@ const resolveOrderById = async (id) => {
   }
 
   return Order.findOne({ orderId: id });
+};
+
+const resolveRestaurantForOrder = async (order) => {
+  if (!order?.restaurantId) return null;
+
+  const restaurantId = String(order.restaurantId);
+  if (mongoose.Types.ObjectId.isValid(restaurantId) && restaurantId.length === 24) {
+    const byId = await Restaurant.findById(restaurantId).lean();
+    if (byId) return byId;
+  }
+
+  return Restaurant.findOne({
+    $or: [
+      { restaurantId },
+      { slug: restaurantId }
+    ]
+  }).lean();
+};
+
+const triggerDeliveryBroadcastForApprovedGroceryOrder = async (order, restaurantDoc) => {
+  try {
+    if (!order || order.status === 'cancelled' || order.deliveryPartnerId) return;
+
+    const coords = restaurantDoc?.location?.coordinates;
+    if (!Array.isArray(coords) || coords.length < 2) return;
+
+    const [restaurantLng, restaurantLat] = coords;
+    if ((restaurantLng === 0 && restaurantLat === 0) || !restaurantLng || !restaurantLat) return;
+
+    const freshOrder = await Order.findById(order._id);
+    if (!freshOrder || freshOrder.deliveryPartnerId || freshOrder.status === 'cancelled') return;
+
+    const restaurantLookupId = restaurantDoc?._id?.toString() || String(order.restaurantId);
+    const priorityDeliveryBoys = await findNearestDeliveryBoys(restaurantLat, restaurantLng, restaurantLookupId, 5);
+
+    if (priorityDeliveryBoys && priorityDeliveryBoys.length > 0) {
+      const priorityIds = priorityDeliveryBoys.map((db) => db.deliveryPartnerId);
+      freshOrder.assignmentInfo = {
+        ...(freshOrder.assignmentInfo || {}),
+        priorityNotifiedAt: new Date(),
+        priorityDeliveryPartnerIds: priorityIds,
+        notificationPhase: 'priority'
+      };
+      await freshOrder.save();
+
+      const populatedOrder = await Order.findById(freshOrder._id)
+        .populate('userId', 'name phone')
+        .lean();
+
+      if (populatedOrder) {
+        await notifyMultipleDeliveryBoys(populatedOrder, priorityIds, 'priority');
+      }
+
+      setTimeout(async () => {
+        try {
+          const checkOrder = await Order.findById(order._id);
+          if (!checkOrder || checkOrder.deliveryPartnerId || checkOrder.status === 'cancelled') return;
+
+          const allDeliveryBoys = await findNearestDeliveryBoys(restaurantLat, restaurantLng, restaurantLookupId, 50);
+          const expandedDeliveryBoys = allDeliveryBoys.filter(
+            (db) => !priorityIds.includes(db.deliveryPartnerId)
+          );
+
+          if (expandedDeliveryBoys.length === 0) return;
+
+          const expandedIds = expandedDeliveryBoys.map((db) => db.deliveryPartnerId);
+          checkOrder.assignmentInfo = {
+            ...(checkOrder.assignmentInfo || {}),
+            expandedNotifiedAt: new Date(),
+            expandedDeliveryPartnerIds: expandedIds,
+            notificationPhase: 'expanded'
+          };
+          await checkOrder.save();
+
+          const expandedOrder = await Order.findById(checkOrder._id)
+            .populate('userId', 'name phone')
+            .lean();
+
+          if (expandedOrder) {
+            await notifyMultipleDeliveryBoys(expandedOrder, expandedIds, 'expanded');
+          }
+        } catch (expandedErr) {
+          logger.error(`Expanded delivery broadcast failed for ${order.orderId}: ${expandedErr.message}`);
+        }
+      }, 30000);
+      return;
+    }
+
+    const anyDeliveryBoy = await findNearestDeliveryBoy(restaurantLat, restaurantLng, restaurantLookupId, 50);
+    if (!anyDeliveryBoy) return;
+
+    freshOrder.assignmentInfo = {
+      ...(freshOrder.assignmentInfo || {}),
+      priorityNotifiedAt: new Date(),
+      priorityDeliveryPartnerIds: [anyDeliveryBoy.deliveryPartnerId],
+      notificationPhase: 'immediate'
+    };
+    await freshOrder.save();
+
+    const populatedOrder = await Order.findById(freshOrder._id)
+      .populate('userId', 'name phone')
+      .lean();
+
+    if (populatedOrder) {
+      await notifyMultipleDeliveryBoys(populatedOrder, [anyDeliveryBoy.deliveryPartnerId], 'immediate');
+    }
+  } catch (error) {
+    logger.error(`Failed to trigger delivery broadcast for grocery order ${order?.orderId}: ${error.message}`);
+  }
 };
 
 const mapOrderToApprovalRow = (order) => {
@@ -150,6 +262,9 @@ export const approveFoodItem = asyncHandler(async (req, res) => {
       return errorResponse(res, 400, 'Order is already approved');
     }
 
+    const restaurantDoc = await resolveRestaurantForOrder(order);
+    const isMoGroceryOrder = restaurantDoc?.platform === 'mogrocery';
+
     order.adminApproval = {
       status: 'approved',
       reason: '',
@@ -157,7 +272,25 @@ export const approveFoodItem = asyncHandler(async (req, res) => {
       reviewedBy: adminId || null
     };
 
+    // For MoGrocery, admin approval acts as acceptance and should open delivery assignment flow.
+    if (isMoGroceryOrder) {
+      order.status = 'preparing';
+      if (!order.tracking?.confirmed?.status) {
+        order.tracking.confirmed = { status: true, timestamp: new Date() };
+      }
+      order.tracking.preparing = { status: true, timestamp: new Date() };
+    }
+
     await order.save();
+
+    if (isMoGroceryOrder) {
+      try {
+        await notifyRestaurantOrderUpdate(order._id.toString(), 'preparing');
+      } catch (notifError) {
+        logger.error(`Failed to emit preparing update for grocery order ${order.orderId}: ${notifError.message}`);
+      }
+      void triggerDeliveryBroadcastForApprovedGroceryOrder(order, restaurantDoc);
+    }
 
     logger.info(`Order approved by admin: ${order.orderId}`, {
       orderId: order.orderId,
@@ -168,7 +301,8 @@ export const approveFoodItem = asyncHandler(async (req, res) => {
       orderId: order.orderId,
       orderMongoId: order._id,
       approvalStatus: order.adminApproval.status,
-      approvedAt: order.adminApproval.reviewedAt
+      approvedAt: order.adminApproval.reviewedAt,
+      orderStatus: order.status
     });
   } catch (error) {
     logger.error(`Error approving order: ${error.message}`, { error: error.stack });
