@@ -233,6 +233,24 @@ const orderSchema = new mongoose.Schema({
     enum: ['user', 'restaurant', 'admin'],
     default: null
   },
+  postOrderActions: {
+    modificationWindowStartAt: {
+      type: Date,
+      default: null
+    },
+    modificationWindowExpiresAt: {
+      type: Date,
+      default: null
+    },
+    lastCartEditedAt: {
+      type: Date,
+      default: null
+    },
+    cartEditCount: {
+      type: Number,
+      default: 0
+    }
+  },
   // Customer Review and Rating
   review: {
     rating: {

@@ -26,6 +26,74 @@ const logger = winston.createLogger({
   ]
 });
 
+const ORDER_MODIFICATION_WINDOW_MS = 2 * 60 * 1000;
+
+const startOrderModificationWindow = (order) => {
+  const startAt = new Date();
+  const expiresAt = new Date(startAt.getTime() + ORDER_MODIFICATION_WINDOW_MS);
+  order.postOrderActions = {
+    ...(order.postOrderActions || {}),
+    modificationWindowStartAt: startAt,
+    modificationWindowExpiresAt: expiresAt
+  };
+  return { startAt, expiresAt };
+};
+
+const getOrderModificationWindow = (order) => {
+  const startAtRaw =
+    order?.postOrderActions?.modificationWindowStartAt ||
+    order?.tracking?.confirmed?.timestamp ||
+    order?.createdAt ||
+    null;
+
+  let expiresAtRaw = order?.postOrderActions?.modificationWindowExpiresAt || null;
+  if (!expiresAtRaw && startAtRaw) {
+    expiresAtRaw = new Date(new Date(startAtRaw).getTime() + ORDER_MODIFICATION_WINDOW_MS);
+  }
+
+  const startAt = startAtRaw ? new Date(startAtRaw) : null;
+  const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : null;
+  const remainingMs = expiresAt ? expiresAt.getTime() - Date.now() : 0;
+  const isOpen = remainingMs > 0;
+
+  return {
+    isOpen,
+    remainingSeconds: isOpen ? Math.ceil(remainingMs / 1000) : 0,
+    startAt,
+    expiresAt
+  };
+};
+
+const enrichOrderWithModificationWindow = (order) => ({
+  ...order,
+  modificationWindow: getOrderModificationWindow(order)
+});
+
+const sanitizeEditedItems = (items) =>
+  items.map((item) => ({
+    itemId: item.itemId,
+    name: item.name,
+    price: Number(item.price),
+    quantity: Number(item.quantity),
+    image: item.image || '',
+    description: item.description || '',
+    isVeg: item.isVeg !== false
+  }));
+
+const calculateUpdatedTotals = (order, items) => {
+  const subtotal = items.reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity)), 0);
+  const deliveryFee = Number(order.pricing?.deliveryFee || 0);
+  const platformFee = Number(order.pricing?.platformFee || 0);
+  const tax = Number(order.pricing?.tax || 0);
+  const discount = Number(order.pricing?.discount || 0);
+  const total = Math.max(0, subtotal + deliveryFee + platformFee + tax - discount);
+
+  return {
+    subtotal: Number(subtotal.toFixed(2)),
+    total: Number(total.toFixed(2))
+  };
+};
+
 /**
  * Create a new order and initiate Razorpay payment
  */
@@ -508,6 +576,7 @@ export const createOrder = async (req, res) => {
           status: true,
           timestamp: new Date()
         };
+        startOrderModificationWindow(order);
         await order.save();
 
         // Notify restaurant about new wallet payment order
@@ -530,7 +599,8 @@ export const createOrder = async (req, res) => {
               id: order._id.toString(),
               orderId: order.orderId,
               status: order.status,
-              total: pricing.total
+              total: pricing.total,
+              modificationWindow: getOrderModificationWindow(order)
             },
             razorpay: null,
             wallet: {
@@ -588,6 +658,7 @@ export const createOrder = async (req, res) => {
         status: true,
         timestamp: new Date()
       };
+      startOrderModificationWindow(order);
       await order.save();
 
       // Notify restaurant about new COD order via Socket.IO (non-blocking)
@@ -613,7 +684,8 @@ export const createOrder = async (req, res) => {
             id: order._id.toString(),
             orderId: order.orderId,
             status: order.status,
-            total: pricing.total
+            total: pricing.total,
+            modificationWindow: getOrderModificationWindow(order)
           },
           razorpay: null
         }
@@ -801,6 +873,7 @@ export const verifyOrderPayment = async (req, res) => {
     order.payment.transactionId = razorpayPaymentId;
     order.status = 'confirmed';
     order.tracking.confirmed = { status: true, timestamp: new Date() };
+    startOrderModificationWindow(order);
     await order.save();
 
     // Calculate order settlement and hold escrow
@@ -893,7 +966,8 @@ export const verifyOrderPayment = async (req, res) => {
         order: {
           id: order._id.toString(),
           orderId: order.orderId,
-          status: order.status
+          status: order.status,
+          modificationWindow: getOrderModificationWindow(order)
         },
         payment: {
           id: payment._id.toString(),
@@ -974,11 +1048,12 @@ export const getUserOrders = async (req, res) => {
     const total = await Order.countDocuments(query);
 
     logger.info(`Found ${orders.length} orders for user ${userId} (total: ${total})`);
+    const ordersWithModificationWindow = orders.map(enrichOrderWithModificationWindow);
 
     res.json({
       success: true,
       data: {
-        orders,
+        orders: ordersWithModificationWindow,
         pagination: {
           total,
           page: parseInt(page),
@@ -1045,7 +1120,7 @@ export const getOrderDetails = async (req, res) => {
     res.json({
       success: true,
       data: {
-        order,
+        order: enrichOrderWithModificationWindow(order),
         payment
       }
     });
@@ -1113,6 +1188,14 @@ export const cancelOrder = async (req, res) => {
       });
     }
 
+    const modificationWindow = getOrderModificationWindow(order);
+    if (!modificationWindow.isOpen) {
+      return res.status(400).json({
+        success: false,
+        message: `You can only cancel within 2 minutes of order confirmation. Window expired at ${modificationWindow.expiresAt?.toISOString() || 'N/A'}.`
+      });
+    }
+
     // Get payment method from order or payment record
     const paymentMethod = order.payment?.method;
     const payment = await Payment.findOne({ orderId: order._id });
@@ -1156,7 +1239,8 @@ export const cancelOrder = async (req, res) => {
           orderId: order.orderId,
           status: order.status,
           cancellationReason: order.cancellationReason,
-          cancelledAt: order.cancelledAt
+          cancelledAt: order.cancelledAt,
+          modificationWindow: getOrderModificationWindow(order)
         }
       }
     });
@@ -1168,6 +1252,110 @@ export const cancelOrder = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to cancel order'
+    });
+  }
+};
+
+/**
+ * Edit cart items within 2 minutes after order confirmation
+ * PATCH /api/order/:id/edit-cart
+ */
+export const editOrderCart = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { items } = req.body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Updated cart items are required'
+      });
+    }
+
+    const hasInvalidItem = items.some((item) =>
+      !item ||
+      !item.itemId ||
+      !item.name ||
+      Number(item.price) < 0 ||
+      !Number.isFinite(Number(item.price)) ||
+      Number(item.quantity) < 1 ||
+      !Number.isFinite(Number(item.quantity))
+    );
+
+    if (hasInvalidItem) {
+      return res.status(400).json({
+        success: false,
+        message: 'Each item must include itemId, name, valid price, and quantity >= 1'
+      });
+    }
+
+    let order = null;
+    if (mongoose.Types.ObjectId.isValid(id) && id.length === 24) {
+      order = await Order.findOne({ _id: id, userId });
+    }
+    if (!order) {
+      order = await Order.findOne({ orderId: id, userId });
+    }
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    if (order.status === 'cancelled' || order.status === 'delivered') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot edit cart for cancelled or delivered orders'
+      });
+    }
+
+    const modificationWindow = getOrderModificationWindow(order);
+    if (!modificationWindow.isOpen) {
+      return res.status(400).json({
+        success: false,
+        message: `Cart can only be edited within 2 minutes of order confirmation. Window expired at ${modificationWindow.expiresAt?.toISOString() || 'N/A'}.`
+      });
+    }
+
+    const sanitizedItems = sanitizeEditedItems(items);
+    const totals = calculateUpdatedTotals(order, sanitizedItems);
+
+    order.items = sanitizedItems;
+    order.pricing.subtotal = totals.subtotal;
+    order.pricing.total = totals.total;
+    order.postOrderActions = {
+      ...(order.postOrderActions || {}),
+      lastCartEditedAt: new Date(),
+      cartEditCount: Number(order.postOrderActions?.cartEditCount || 0) + 1
+    };
+
+    await order.save();
+
+    return res.json({
+      success: true,
+      message: 'Order cart updated successfully',
+      data: {
+        order: {
+          id: order._id.toString(),
+          orderId: order.orderId,
+          status: order.status,
+          items: order.items,
+          pricing: order.pricing,
+          modificationWindow: getOrderModificationWindow(order)
+        }
+      }
+    });
+  } catch (error) {
+    logger.error(`Error editing order cart: ${error.message}`, {
+      error: error.message,
+      stack: error.stack
+    });
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to edit order cart'
     });
   }
 };

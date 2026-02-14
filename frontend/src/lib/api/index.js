@@ -1658,6 +1658,11 @@ export const orderAPI = {
   cancelOrder: (orderId, reason) => {
     return apiClient.patch(API_ENDPOINTS.ORDER.CANCEL.replace(':id', orderId), { reason });
   },
+
+  // Edit order cart during post-order modification window
+  editOrderCart: (orderId, items) => {
+    return apiClient.patch(API_ENDPOINTS.ORDER.EDIT_CART.replace(':id', orderId), { items });
+  },
 };
 
 // Export dining API helper functions

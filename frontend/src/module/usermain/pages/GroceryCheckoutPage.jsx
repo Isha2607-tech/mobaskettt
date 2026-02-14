@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -17,10 +17,21 @@ import {
 } from "lucide-react";
 import { useCart } from "../../user/context/CartContext";
 import { motion, AnimatePresence } from "framer-motion";
+import { useProfile } from "../../user/context/ProfileContext";
+import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
+import { useZone } from "../../user/hooks/useZone";
+import { orderAPI, restaurantAPI } from "@/lib/api";
+import { initRazorpayPayment } from "@/lib/utils/razorpay";
+import { toast } from "sonner";
 
 export default function GroceryCheckoutPage() {
   const navigate = useNavigate();
-  const { cart, total, clearCart } = useCart();
+  const { cart, clearCart } = useCart();
+  const { getDefaultAddress, userProfile } = useProfile();
+  const { location: liveLocation } = useUserLocation();
+  const { zoneId } = useZone(liveLocation);
+
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("card");
   const [deliveryOption, setDeliveryOption] = useState("now");
   const [scheduledDate, setScheduledDate] = useState(new Date());
@@ -33,24 +44,211 @@ export default function GroceryCheckoutPage() {
   );
 
   const deliveryAddress =
-    "202, Princess Centre, 2nd Floor, 6/3, 452001, New Delhi";
-  const estimatedTime = "8-12 min";
+    "Select delivery address";
   const handlingCharge = 2;
   const deliveryFee = 0;
+
+  const selectedAddress = useMemo(() => {
+    const defaultAddress = getDefaultAddress();
+    if (defaultAddress) {
+      return defaultAddress;
+    }
+
+    if (liveLocation?.latitude && liveLocation?.longitude) {
+      return {
+        label: "Home",
+        street: liveLocation.street || liveLocation.address || "",
+        additionalDetails: liveLocation.area || "",
+        city: liveLocation.city || "",
+        state: liveLocation.state || "",
+        zipCode: liveLocation.postalCode || liveLocation.zipCode || "",
+        formattedAddress: liveLocation.formattedAddress || liveLocation.address || "",
+        location: {
+          coordinates: [liveLocation.longitude, liveLocation.latitude],
+        },
+      };
+    }
+
+    return null;
+  }, [getDefaultAddress, liveLocation]);
+
+  const formattedDeliveryAddress = useMemo(() => {
+    if (!selectedAddress) return deliveryAddress;
+    if (selectedAddress.formattedAddress) return selectedAddress.formattedAddress;
+
+    const parts = [
+      selectedAddress.street,
+      selectedAddress.additionalDetails,
+      selectedAddress.city,
+      selectedAddress.state,
+      selectedAddress.zipCode,
+    ].filter(Boolean);
+
+    return parts.join(", ") || deliveryAddress;
+  }, [selectedAddress]);
 
   const itemsTotal = groceryItems.reduce(
     (sum, item) => sum + (item.mrp || item.price) * item.quantity,
     0,
   );
-  const subtotal = total;
+  const subtotal = groceryItems.reduce(
+    (sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)),
+    0,
+  );
   const totalSavings = itemsTotal - subtotal;
   const grandTotal = subtotal + handlingCharge + deliveryFee;
 
-  const handlePlaceOrder = () => {
-    // Navigate to a success page or payment processing
-    // For now, let's just clear cart and go home or to orders
-    // clearCart();
-    navigate("/orders");
+  const resolveGroceryRestaurant = async () => {
+    const cartRestaurantId = groceryItems[0]?.restaurantId;
+    const cartRestaurantName = groceryItems[0]?.restaurant || "MoGrocery";
+
+    if (cartRestaurantId && cartRestaurantId !== "grocery-store") {
+      return { restaurantId: cartRestaurantId, restaurantName: cartRestaurantName };
+    }
+
+    const restaurantsResponse = await restaurantAPI.getRestaurants({ limit: 100 });
+    const restaurants = restaurantsResponse?.data?.data?.restaurants || [];
+    if (!restaurants.length) {
+      throw new Error("No active stores found. Please try again.");
+    }
+
+    const groceryLikeStore =
+      restaurants.find((r) => /grocery|mart|basket/i.test(r?.name || "")) || restaurants[0];
+
+    const resolvedRestaurantId = groceryLikeStore?._id || groceryLikeStore?.restaurantId;
+    if (!resolvedRestaurantId) {
+      throw new Error("Unable to resolve store for checkout.");
+    }
+
+    return {
+      restaurantId: resolvedRestaurantId,
+      restaurantName: groceryLikeStore?.name || cartRestaurantName,
+    };
+  };
+
+  const buildOrderItems = () =>
+    groceryItems.map((item) => ({
+      itemId: item.id,
+      name: item.name,
+      price: Number(item.price || 0),
+      quantity: Number(item.quantity || 1),
+      image: item.image || "",
+      description: item.description || "",
+      isVeg: item.isVeg !== false,
+    }));
+
+  const handlePlaceOrder = async () => {
+    if (isPlacingOrder) return;
+    if (!groceryItems.length) {
+      toast.error("Your grocery cart is empty.");
+      return;
+    }
+    if (!selectedAddress) {
+      toast.error("Please add/select a delivery address first.");
+      return;
+    }
+    if (deliveryOption === "schedule" && !scheduledTime) {
+      toast.error("Please select a delivery time slot.");
+      return;
+    }
+
+    setIsPlacingOrder(true);
+    try {
+      const { restaurantId, restaurantName } = await resolveGroceryRestaurant();
+      const items = buildOrderItems();
+
+      const pricingResponse = await orderAPI.calculateOrder({
+        items,
+        restaurantId,
+        deliveryAddress: selectedAddress,
+        deliveryFleet: "standard",
+      });
+      const calculatedPricing = pricingResponse?.data?.data?.pricing;
+      if (!calculatedPricing?.total) {
+        throw new Error("Failed to calculate order pricing.");
+      }
+
+      const scheduleNote =
+        deliveryOption === "schedule"
+          ? `Scheduled delivery: ${scheduledDate.toLocaleDateString("en-IN")} ${scheduledTime}`
+          : "Deliver now";
+
+      const backendPaymentMethod = paymentMethod === "cash" ? "cash" : "razorpay";
+
+      const orderPayload = {
+        items,
+        address: selectedAddress,
+        restaurantId,
+        restaurantName,
+        pricing: calculatedPricing,
+        deliveryFleet: "standard",
+        note: `[MoGrocery] ${scheduleNote}`,
+        sendCutlery: false,
+        paymentMethod: backendPaymentMethod,
+        zoneId: zoneId || undefined,
+      };
+
+      const orderResponse = await orderAPI.createOrder(orderPayload);
+      const { order, razorpay } = orderResponse?.data?.data || {};
+      const orderIdentifier = order?.orderId || order?.id;
+
+      if (backendPaymentMethod === "cash") {
+        clearCart();
+        toast.success("Order placed successfully.");
+        navigate(`/orders/${orderIdentifier}?confirmed=true`);
+        return;
+      }
+
+      if (!razorpay?.orderId || !razorpay?.key) {
+        throw new Error("Online payment initialization failed.");
+      }
+
+      await new Promise((resolve, reject) => {
+        initRazorpayPayment({
+          key: razorpay.key,
+          amount: razorpay.amount,
+          currency: razorpay.currency,
+          order_id: razorpay.orderId,
+          name: "MoBasket Grocery",
+          description: `Payment for order ${order?.orderId || ""}`.trim(),
+          prefill: {
+            name: userProfile?.name || "",
+            email: userProfile?.email || "",
+            contact: (userProfile?.phone || "").replace(/\D/g, "").slice(-10),
+          },
+          notes: {
+            orderId: order?.orderId || order?.id || "",
+          },
+          handler: async (response) => {
+            try {
+              await orderAPI.verifyPayment({
+                orderId: order?.id,
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+              });
+              clearCart();
+              toast.success("Payment successful. Order confirmed.");
+              navigate(`/orders/${orderIdentifier}?confirmed=true`);
+              resolve();
+            } catch (verifyError) {
+              reject(
+                new Error(
+                  verifyError?.response?.data?.message || "Payment verification failed.",
+                ),
+              );
+            }
+          },
+          onError: (error) =>
+            reject(new Error(error?.description || error?.message || "Payment failed.")),
+          onClose: () => reject(new Error("Payment cancelled.")),
+        }).catch(reject);
+      });
+    } catch (error) {
+      toast.error(error?.response?.data?.message || error?.message || "Failed to place order.");
+    } finally {
+      setIsPlacingOrder(false);
+    }
   };
 
   return (
@@ -79,8 +277,11 @@ export default function GroceryCheckoutPage() {
               <h3 className="text-sm font-bold text-gray-900 mb-1">
                 Delivery Address
               </h3>
-              <p className="text-xs text-gray-600">{deliveryAddress}</p>
-              <button className="text-yellow-700 text-xs font-bold mt-2 hover:underline">
+              <p className="text-xs text-gray-600">{formattedDeliveryAddress}</p>
+              <button
+                onClick={() => navigate("/profile/addresses")}
+                className="text-yellow-700 text-xs font-bold mt-2 hover:underline"
+              >
                 Change Address
               </button>
             </div>
@@ -374,8 +575,13 @@ export default function GroceryCheckoutPage() {
         <button
           className="w-full bg-[#facd01] hover:bg-[#e6bc01] text-gray-900 font-black py-4 rounded-2xl text-base shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"
           onClick={handlePlaceOrder}
+          disabled={isPlacingOrder || groceryItems.length === 0}
         >
-          {paymentMethod === "cash" ? "Place Order" : "Proceed to Payment"}
+          {isPlacingOrder
+            ? "Processing..."
+            : paymentMethod === "cash"
+              ? "Place Order"
+              : "Proceed to Payment"}
           <ChevronRight
             size={20}
             className="group-hover:translate-x-1 transition-transform"
