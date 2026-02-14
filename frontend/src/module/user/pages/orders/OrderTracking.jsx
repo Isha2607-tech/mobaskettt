@@ -252,19 +252,50 @@ export default function OrderTracking() {
   const [isEditingOrder, setIsEditingOrder] = useState(false)
 
   const defaultAddress = getDefaultAddress()
-  const deriveUiOrderStatus = (rawStatus) => {
-    const normalized = String(rawStatus || "").toLowerCase()
+  const deriveUiOrderStatus = (rawStatus, rawOrder = null) => {
+    const normalized = String(rawStatus || rawOrder?.status || "").toLowerCase()
+    const deliveryStatus = String(rawOrder?.deliveryState?.status || "").toLowerCase()
+    const deliveryPhase = String(rawOrder?.deliveryState?.currentPhase || "").toLowerCase()
+    const isOutForDeliveryFromTracking = Boolean(
+      rawOrder?.tracking?.outForDelivery?.status === true ||
+      rawOrder?.tracking?.out_for_delivery?.status === true
+    )
+
     if (normalized === "cancelled") return "cancelled"
-    if (normalized === "delivered") return "delivered"
-    if (normalized === "preparing" || normalized === "accepted" || normalized === "confirmed") return "preparing"
     if (
-      normalized === "ready" ||
+      normalized === "delivered" ||
+      deliveryStatus === "delivered" ||
+      deliveryPhase === "at_delivery" ||
+      deliveryPhase === "completed"
+    ) {
+      return "delivered"
+    }
+
+    if (
       normalized === "out_for_delivery" ||
       normalized === "picked_up" ||
-      normalized === "on_the_way"
+      normalized === "on_the_way" ||
+      deliveryStatus === "order_confirmed" ||
+      deliveryStatus === "en_route_to_delivery" ||
+      deliveryPhase === "en_route_to_delivery" ||
+      isOutForDeliveryFromTracking
     ) {
       return "pickup"
     }
+
+    if (
+      normalized === "ready" ||
+      normalized === "preparing" ||
+      normalized === "accepted" ||
+      normalized === "confirmed" ||
+      deliveryStatus === "accepted" ||
+      deliveryStatus === "reached_pickup" ||
+      deliveryPhase === "en_route_to_pickup" ||
+      deliveryPhase === "at_pickup"
+    ) {
+      return "preparing"
+    }
+
     return "placed"
   }
 
@@ -354,9 +385,9 @@ export default function OrderTracking() {
                                currentPhase === 'at_pickup' ||
                                currentPhase === 'en_route_to_delivery';
     
-    // If delivery partner is assigned, reduce polling frequency to 30 seconds
+    // If delivery partner is assigned, keep polling reasonably fast so status feels live.
     // If not assigned, poll every 5 seconds to detect assignment
-    const pollInterval = hasDeliveryPartner ? 30000 : 5000;
+    const pollInterval = hasDeliveryPartner ? 8000 : 5000;
     
     const interval = setInterval(async () => {
       try {
@@ -430,7 +461,7 @@ export default function OrderTracking() {
             };
             
             setOrder(transformedOrder);
-            setOrderStatus(deriveUiOrderStatus(apiOrder.status));
+            setOrderStatus(deriveUiOrderStatus(apiOrder.status, apiOrder));
             syncModificationWindow(apiOrder);
           }
         }
@@ -563,7 +594,9 @@ export default function OrderTracking() {
             status: apiOrder.status || 'pending',
             deliveryPartner: apiOrder.deliveryPartnerId ? {
               name: apiOrder.deliveryPartnerId.name || 'Delivery Partner',
-              avatar: null
+              phone: apiOrder.deliveryPartnerId.phone || null,
+              avatar: apiOrder.deliveryPartnerId.avatar || null,
+              availability: apiOrder.deliveryPartnerId.availability || null
             } : null,
             deliveryPartnerId: apiOrder.deliveryPartnerId?._id || apiOrder.deliveryPartnerId || apiOrder.assignmentInfo?.deliveryPartnerId || null,
             assignmentInfo: apiOrder.assignmentInfo || null,
@@ -573,7 +606,7 @@ export default function OrderTracking() {
           }
           
           setOrder(transformedOrder)
-          setOrderStatus(deriveUiOrderStatus(apiOrder.status))
+          setOrderStatus(deriveUiOrderStatus(apiOrder.status, apiOrder))
           syncModificationWindow(apiOrder)
         } else {
           throw new Error('Order not found')
@@ -596,11 +629,22 @@ export default function OrderTracking() {
     if (confirmed) {
       const timer1 = setTimeout(() => {
         setShowConfirmation(false)
-        setOrderStatus('preparing')
+        setOrderStatus(order ? deriveUiOrderStatus(order.status, order) : 'preparing')
       }, 3000)
       return () => clearTimeout(timer1)
     }
-  }, [confirmed])
+  }, [confirmed, order?.status, order?.deliveryState?.status, order?.deliveryState?.currentPhase])
+
+  useEffect(() => {
+    if (!order) return
+    setOrderStatus(deriveUiOrderStatus(order.status, order))
+  }, [
+    order?.status,
+    order?.deliveryState?.status,
+    order?.deliveryState?.currentPhase,
+    order?.tracking?.outForDelivery?.status,
+    order?.tracking?.out_for_delivery?.status
+  ])
 
   // Countdown timer
   useEffect(() => {
@@ -656,7 +700,7 @@ export default function OrderTracking() {
 
       // Update order status in UI
       if (status) {
-        setOrderStatus(deriveUiOrderStatus(status));
+        setOrderStatus(deriveUiOrderStatus(status, order));
       }
 
       if (typeof estimatedDeliveryTime === "number" && Number.isFinite(estimatedDeliveryTime) && estimatedDeliveryTime > 0) {
@@ -899,7 +943,9 @@ export default function OrderTracking() {
           status: apiOrder.status || 'pending',
           deliveryPartner: apiOrder.deliveryPartnerId ? {
             name: apiOrder.deliveryPartnerId.name || 'Delivery Partner',
-            avatar: null
+            phone: apiOrder.deliveryPartnerId.phone || null,
+            avatar: apiOrder.deliveryPartnerId.avatar || null,
+            availability: apiOrder.deliveryPartnerId.availability || null
           } : null,
           deliveryPartnerId: apiOrder.deliveryPartnerId?._id || apiOrder.deliveryPartnerId || apiOrder.assignmentInfo?.deliveryPartnerId || null,
           assignmentInfo: apiOrder.assignmentInfo || null,
@@ -908,7 +954,7 @@ export default function OrderTracking() {
           modificationWindow: apiOrder.modificationWindow || null
         }
         setOrder(transformedOrder)
-        setOrderStatus(deriveUiOrderStatus(apiOrder.status))
+        setOrderStatus(deriveUiOrderStatus(apiOrder.status, apiOrder))
         syncModificationWindow(apiOrder)
       }
     } catch (err) {
@@ -945,6 +991,11 @@ export default function OrderTracking() {
     )
   }
 
+  const isRiderHeadingToPickup = order?.deliveryState?.status === "accepted" ||
+    order?.deliveryState?.status === "reached_pickup" ||
+    order?.deliveryState?.currentPhase === "en_route_to_pickup" ||
+    order?.deliveryState?.currentPhase === "at_pickup"
+
   const statusConfig = {
     placed: {
       title: "Order placed",
@@ -952,8 +1003,8 @@ export default function OrderTracking() {
       color: "bg-green-700"
     },
     preparing: {
-      title: "Preparing your order",
-      subtitle: `Arriving in ${estimatedTime} mins`,
+      title: isRiderHeadingToPickup ? "Delivery partner is heading to pickup" : "Preparing your order",
+      subtitle: isRiderHeadingToPickup ? "Restaurant is handing over your order" : `Arriving in ${estimatedTime} mins`,
       color: "bg-green-700"
     },
     pickup: {
@@ -1111,10 +1162,14 @@ export default function OrderTracking() {
         {(() => {
           // Check if delivery partner has accepted pickup
           // Delivery partner accepts when status is 'ready' or 'out_for_delivery' or tracking shows outForDelivery
-          const hasAcceptedPickup = order?.tracking?.outForDelivery?.status === true || 
-                                    order?.tracking?.out_for_delivery?.status === true ||
-                                    order?.status === 'out_for_delivery' ||
-                                    order?.status === 'ready'
+          const hasAcceptedPickup =
+            order?.tracking?.outForDelivery?.status === true ||
+            order?.tracking?.out_for_delivery?.status === true ||
+            order?.status === 'out_for_delivery' ||
+            order?.status === 'ready' ||
+            order?.deliveryState?.status === 'order_confirmed' ||
+            order?.deliveryState?.status === 'en_route_to_delivery' ||
+            order?.deliveryState?.currentPhase === 'en_route_to_delivery'
           
           // Show "Food is Cooking" until delivery partner accepts pickup
           if (!hasAcceptedPickup) {

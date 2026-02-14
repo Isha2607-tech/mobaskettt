@@ -23,6 +23,33 @@ const logger = winston.createLogger({
   ]
 });
 
+const emitOrderTrackingUpdate = async (orderLike, payload = {}) => {
+  try {
+    const serverModule = await import('../../../server.js');
+    const getIO = serverModule.getIO;
+    const io = getIO ? getIO() : null;
+    if (!io) return;
+
+    const aliases = Array.from(new Set([
+      orderLike?._id?.toString?.(),
+      orderLike?._id,
+      orderLike?.id,
+      orderLike?.orderId
+    ].filter(Boolean).map((value) => String(value))));
+
+    if (aliases.length === 0) return;
+
+    aliases.forEach((alias) => {
+      io.to(`order:${alias}`).emit('order_status_update', {
+        orderId: orderLike?.orderId || alias,
+        ...payload
+      });
+    });
+  } catch (emitError) {
+    logger.warn(`⚠️ Failed to emit order tracking update: ${emitError.message}`);
+  }
+};
+
 /**
  * Get Delivery Partner Orders
  * GET /api/delivery/orders
@@ -716,7 +743,7 @@ export const acceptOrder = asyncHandler(async (req, res) => {
     }
     const orderWithPayment = { ...updatedOrder, paymentMethod };
 
-    return successResponse(res, 200, 'Order accepted successfully', {
+    const response = successResponse(res, 200, 'Order accepted successfully', {
       order: orderWithPayment,
       route: {
         coordinates: routeData.coordinates,
@@ -727,6 +754,16 @@ export const acceptOrder = asyncHandler(async (req, res) => {
       estimatedEarnings: estimatedEarnings,
       deliveryDistance: deliveryDistance
     });
+
+    emitOrderTrackingUpdate(updatedOrder, {
+      title: 'Order Update',
+      message: 'Delivery partner accepted your order and is heading to pickup.',
+      status: 'accepted',
+      phase: 'en_route_to_pickup',
+      estimatedPickupTime: routeData?.duration || null
+    });
+
+    return response;
   } catch (error) {
     logger.error(`Error accepting order: ${error.message}`);
     console.error('❌ Error accepting order - Full error:', {
@@ -875,10 +912,19 @@ export const confirmReachedPickup = asyncHandler(async (req, res) => {
       }
     }, 10000); // 10 seconds delay
 
-    return successResponse(res, 200, 'Reached pickup confirmed', {
+    const response = successResponse(res, 200, 'Reached pickup confirmed', {
       order,
       message: 'Order ID confirmation will be requested in 10 seconds'
     });
+
+    emitOrderTrackingUpdate(order, {
+      title: 'Order Update',
+      message: 'Delivery partner reached pickup location.',
+      status: 'reached_pickup',
+      phase: 'at_pickup'
+    });
+
+    return response;
   } catch (error) {
     logger.error(`Error confirming reached pickup: ${error.message}`);
     return errorResponse(res, 500, 'Failed to confirm reached pickup');
@@ -1170,36 +1216,14 @@ export const confirmOrderId = asyncHandler(async (req, res) => {
     };
 
     const response = successResponse(res, 200, 'Order ID confirmed', responseData);
-
-    // Emit socket event to customer asynchronously (don't block response)
-    (async () => {
-      try {
-        // Get IO instance dynamically to avoid circular dependencies
-        const serverModule = await import('../../../server.js');
-        const getIO = serverModule.getIO;
-        const io = getIO ? getIO() : null;
-
-        if (io) {
-          // Emit to customer tracking this order
-          // Format matches server.js: order:${orderId}
-          io.to(`order:${updatedOrder._id.toString()}`).emit('order_status_update', {
-            title: "Order Update",
-            message: "Your delivery partner is on the way! 🏍️",
-            status: 'out_for_delivery',
-            orderId: updatedOrder.orderId,
-            deliveryStartedAt: new Date(),
-            estimatedDeliveryTime: routeData.duration || null
-          });
-
-          console.log(`📢 Notified customer for order ${updatedOrder.orderId} - Delivery partner on the way`);
-        } else {
-          console.warn('⚠️ Socket.IO not initialized, skipping customer notification');
-        }
-      } catch (notifError) {
-        console.error('Error sending customer notification:', notifError);
-        // Don't fail the response if notification fails
-      }
-    })();
+    emitOrderTrackingUpdate(updatedOrder, {
+      title: 'Order Update',
+      message: 'Your delivery partner is on the way!',
+      status: 'out_for_delivery',
+      phase: 'en_route_to_delivery',
+      deliveryStartedAt: new Date(),
+      estimatedDeliveryTime: routeData.duration || null
+    });
 
     return response;
   } catch (error) {
@@ -1362,10 +1386,19 @@ export const confirmReachedDrop = asyncHandler(async (req, res) => {
     const orderIdForLog = finalOrder.orderId || finalOrder._id?.toString() || orderId;
     console.log(`✅ Delivery partner ${delivery._id} reached drop location for order ${orderIdForLog}`);
 
-    return successResponse(res, 200, 'Reached drop confirmed', {
+    const response = successResponse(res, 200, 'Reached drop confirmed', {
       order: finalOrder,
       message: 'Reached drop location confirmed'
     });
+
+    emitOrderTrackingUpdate(finalOrder, {
+      title: 'Order Update',
+      message: 'Delivery partner reached your location.',
+      status: 'at_delivery',
+      phase: 'at_delivery'
+    });
+
+    return response;
   } catch (error) {
     logger.error(`Error confirming reached drop: ${error.message}`);
     console.error('Error stack:', error.stack);
@@ -1880,6 +1913,14 @@ export const completeDelivery = asyncHandler(async (req, res) => {
     // Send response immediately
     const response = successResponse(res, 200, 'Delivery completed successfully', responseData);
 
+    emitOrderTrackingUpdate(updatedOrder, {
+      title: 'Order Delivered',
+      message: 'Your order has been delivered successfully.',
+      status: 'delivered',
+      phase: 'completed',
+      deliveredAt: updatedOrder?.deliveredAt || new Date()
+    });
+
     // Handle notifications asynchronously (don't block response)
     const orderIdForNotification = orderMongoId?.toString ? orderMongoId.toString() : orderMongoId;
     Promise.all([
@@ -1920,4 +1961,5 @@ export const completeDelivery = asyncHandler(async (req, res) => {
     return errorResponse(res, 500, `Failed to complete delivery: ${error.message}`);
   }
 });
+
 

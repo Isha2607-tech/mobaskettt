@@ -1177,7 +1177,7 @@ export const getOrderDetails = async (req, res) => {
         userId
       })
         .populate('restaurantId', 'name slug profileImage location estimatedDeliveryTime distance phone ownerPhone platform')
-        .populate('deliveryPartnerId', 'name email phone')
+        .populate('deliveryPartnerId', 'name email phone avatar availability.currentLocation')
         .populate('userId', 'name fullName phone email')
         .lean();
     }
@@ -1189,7 +1189,7 @@ export const getOrderDetails = async (req, res) => {
         userId
       })
         .populate('restaurantId', 'name slug profileImage location estimatedDeliveryTime distance phone ownerPhone platform')
-        .populate('deliveryPartnerId', 'name email phone')
+        .populate('deliveryPartnerId', 'name email phone avatar availability.currentLocation')
         .populate('userId', 'name fullName phone email')
         .lean();
     }

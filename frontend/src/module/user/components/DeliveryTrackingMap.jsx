@@ -63,6 +63,61 @@ const DeliveryTrackingMap = ({
     })
   }, [])
 
+  const getInitialRiderLocationFromOrder = useCallback(() => {
+    const toFiniteNumber = (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+
+    const extractFromCoordinates = (coordinates) => {
+      if (!Array.isArray(coordinates) || coordinates.length < 2) return null;
+      const lng = toFiniteNumber(coordinates[0]);
+      const lat = toFiniteNumber(coordinates[1]);
+      if (lat == null || lng == null) return null;
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+      return { lat, lng, heading: 0 };
+    };
+
+    const extractFromLatLng = (obj) => {
+      if (!obj || typeof obj !== 'object') return null;
+      const lat = toFiniteNumber(obj.lat ?? obj.latitude);
+      const lng = toFiniteNumber(obj.lng ?? obj.longitude);
+      if (lat == null || lng == null) return null;
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+      return { lat, lng, heading: toFiniteNumber(obj.heading ?? obj.bearing) ?? 0 };
+    };
+
+    const partnerCandidates = [
+      order?.deliveryPartner,
+      order?.deliveryPartnerId
+    ];
+
+    for (const partner of partnerCandidates) {
+      if (!partner || typeof partner !== 'object') continue;
+
+      const currentLocation = partner?.availability?.currentLocation || partner?.currentLocation || null;
+      const fromCoords = extractFromCoordinates(currentLocation?.coordinates);
+      if (fromCoords) return fromCoords;
+
+      const fromLatLng = extractFromLatLng(currentLocation);
+      if (fromLatLng) return fromLatLng;
+    }
+
+    return null;
+  }, [order]);
+
+  useEffect(() => {
+    if (deliveryBoyLocation?.lat && deliveryBoyLocation?.lng) return;
+    if (currentLocation?.lat && currentLocation?.lng) return;
+
+    const seededLocation = getInitialRiderLocationFromOrder();
+    if (seededLocation) {
+      console.log('✅ Seeded rider location from order payload:', seededLocation);
+      setDeliveryBoyLocation(seededLocation);
+      setCurrentLocation(seededLocation);
+    }
+  }, [getInitialRiderLocationFromOrder, deliveryBoyLocation?.lat, deliveryBoyLocation?.lng, currentLocation?.lat, currentLocation?.lng]);
+
   // Draw route using Google Maps Directions API with live updates
   // OPTIMIZED: Added caching to reduce API calls
   const drawRoute = useCallback((start, end) => {
@@ -626,6 +681,17 @@ const DeliveryTrackingMap = ({
   useEffect(() => {
     if (!orderId) return;
 
+    const orderAliases = Array.from(
+      new Set(
+        [
+          String(orderId || '').trim(),
+          String(order?.orderId || '').trim(),
+          String(order?._id || '').trim(),
+          String(order?.id || '').trim()
+        ].filter(Boolean)
+      )
+    );
+
     socketRef.current = io(backendUrl, {
       transports: ['websocket', 'polling'],
       reconnection: true,
@@ -636,14 +702,18 @@ const DeliveryTrackingMap = ({
 
     socketRef.current.on('connect', () => {
       console.log('✅ Socket connected for order:', orderId);
-      socketRef.current.emit('join-order-tracking', orderId);
-      socketRef.current.emit('request-current-location', orderId);
-      console.log('📡 Requested current location for order:', orderId);
+      orderAliases.forEach((alias) => {
+        socketRef.current.emit('join-order-tracking', alias);
+        socketRef.current.emit('request-current-location', alias);
+      });
+      console.log('📡 Requested current location for order aliases:', orderAliases);
       
       // Also request location updates periodically
       const locationRequestInterval = setInterval(() => {
         if (socketRef.current && socketRef.current.connected) {
-          socketRef.current.emit('request-current-location', orderId);
+          orderAliases.forEach((alias) => {
+            socketRef.current.emit('request-current-location', alias);
+          });
         }
       }, 5000); // Request every 5 seconds
       
@@ -655,14 +725,14 @@ const DeliveryTrackingMap = ({
       console.log('❌ Socket disconnected');
     });
 
-    socketRef.current.on(`location-receive-${orderId}`, (data) => {
+    const handleLocationUpdate = (data) => {
       console.log('📍📍📍 Received REAL-TIME location update via socket:', data);
       if (data && typeof data.lat === 'number' && typeof data.lng === 'number') {
         const location = { lat: data.lat, lng: data.lng, heading: data.heading || data.bearing || 0 };
         console.log('✅✅✅ Updating bike to REAL delivery boy location:', location);
         setCurrentLocation(location);
         setDeliveryBoyLocation(location);
-        
+
         // RAPIDO-STYLE: Use route-based animation if progress is available
         if (isMapLoaded && mapInstance.current) {
           if (data.progress !== undefined && animationControllerRef.current && routePolylinePointsRef.current) {
@@ -682,9 +752,9 @@ const DeliveryTrackingMap = ({
       } else {
         console.warn('⚠️ Invalid location data received:', data);
       }
-    });
+    };
 
-    socketRef.current.on(`current-location-${orderId}`, (data) => {
+    const handleCurrentLocation = (data) => {
       console.log('📍📍📍 Received CURRENT location via socket:', data);
       if (data && typeof data.lat === 'number' && typeof data.lng === 'number') {
         const location = { lat: data.lat, lng: data.lng, heading: data.heading || data.bearing || 0 };
@@ -711,6 +781,11 @@ const DeliveryTrackingMap = ({
       } else {
         console.warn('⚠️ Invalid current location data received:', data);
       }
+    };
+
+    orderAliases.forEach((alias) => {
+      socketRef.current.on(`location-receive-${alias}`, handleLocationUpdate);
+      socketRef.current.on(`current-location-${alias}`, handleCurrentLocation);
     });
     
     // Listen for route initialization from backend
@@ -737,9 +812,8 @@ const DeliveryTrackingMap = ({
     socketRef.current.on('order_status_update', (data) => {
       console.log('Received order status update:', data);
 
-      const incomingOrderId = data?.orderId ? String(data.orderId) : '';
-      const currentOrderId = String(orderId || '');
-      if (incomingOrderId && incomingOrderId !== currentOrderId) {
+      const incomingOrderId = data?.orderId ? String(data.orderId).trim() : '';
+      if (incomingOrderId && !orderAliases.includes(incomingOrderId)) {
         return;
       }
 
@@ -749,7 +823,7 @@ const DeliveryTrackingMap = ({
         window.dispatchEvent(new CustomEvent('orderStatusNotification', {
           detail: {
             ...data,
-            orderId: incomingOrderId || currentOrderId
+            orderId: incomingOrderId || orderAliases[0]
           }
         }));
       }
@@ -761,13 +835,15 @@ const DeliveryTrackingMap = ({
         if (socketRef.current._locationRequestInterval) {
           clearInterval(socketRef.current._locationRequestInterval);
         }
-        socketRef.current.off(`location-receive-${orderId}`);
-        socketRef.current.off(`current-location-${orderId}`);
+        orderAliases.forEach((alias) => {
+          socketRef.current.off(`location-receive-${alias}`, handleLocationUpdate);
+          socketRef.current.off(`current-location-${alias}`, handleCurrentLocation);
+        });
         socketRef.current.off('order_status_update');
         socketRef.current.disconnect();
       }
     };
-  }, [orderId, backendUrl, moveBikeSmoothly]);
+  }, [orderId, order?.orderId, order?._id, order?.id, backendUrl, moveBikeSmoothly]);
 
   // Initialize Google Map (only once - prevent re-initialization)
   useEffect(() => {

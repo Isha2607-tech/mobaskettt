@@ -448,9 +448,68 @@ app.use(errorHandler);
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 
+  const ORDER_ALIAS_CACHE_TTL_MS = 30000;
+  const orderAliasCache = new Map();
+
+  const getCachedAliases = (rawOrderId) => {
+    const key = String(rawOrderId || '').trim();
+    if (!key) return null;
+    const cached = orderAliasCache.get(key);
+    if (!cached) return null;
+    if (Date.now() - cached.timestamp > ORDER_ALIAS_CACHE_TTL_MS) {
+      orderAliasCache.delete(key);
+      return null;
+    }
+    return cached.aliases;
+  };
+
+  const setCachedAliases = (aliases) => {
+    if (!Array.isArray(aliases) || aliases.length === 0) return;
+    const uniqueAliases = Array.from(new Set(aliases.map((alias) => String(alias || '').trim()).filter(Boolean)));
+    const payload = { aliases: uniqueAliases, timestamp: Date.now() };
+    uniqueAliases.forEach((alias) => orderAliasCache.set(alias, payload));
+  };
+
+  const resolveOrderByAnyId = async (rawOrderId, includeDeliveryLocation = false) => {
+    const input = String(rawOrderId || '').trim();
+    if (!input) return { order: null, aliases: [] };
+
+    const { default: Order } = await import('./modules/order/models/Order.js');
+
+    const query = mongoose.Types.ObjectId.isValid(input) && input.length === 24
+      ? { $or: [{ _id: input }, { orderId: input }] }
+      : { orderId: input };
+
+    let orderQuery = Order.findOne(query).select('_id orderId deliveryPartnerId');
+    if (includeDeliveryLocation) {
+      orderQuery = orderQuery.populate({
+        path: 'deliveryPartnerId',
+        select: 'availability.currentLocation'
+      });
+    }
+
+    const order = await orderQuery.lean();
+    if (!order) {
+      return { order: null, aliases: [input] };
+    }
+
+    const aliases = Array.from(new Set([input, order._id?.toString(), order.orderId].filter(Boolean)));
+    setCachedAliases(aliases);
+    return { order, aliases };
+  };
+
+  const resolveAliasesFast = async (rawOrderId) => {
+    const input = String(rawOrderId || '').trim();
+    if (!input) return [];
+    const cachedAliases = getCachedAliases(input);
+    if (cachedAliases && cachedAliases.length > 0) return cachedAliases;
+    const { aliases } = await resolveOrderByAnyId(input, false);
+    return aliases?.length ? aliases : [input];
+  };
+
   // Delivery boy sends location update
   socket.on('update-location', (data) => {
-    try {
+    const processLocationUpdate = async () => {
       // Validate data
       if (!data.orderId || typeof data.lat !== 'number' || typeof data.lng !== 'number') {
         console.error('Invalid location update data:', data);
@@ -467,8 +526,13 @@ io.on('connection', (socket) => {
         timestamp: Date.now()
       };
 
-      // Send to specific order room
-      io.to(`order:${data.orderId}`).emit(`location-receive-${data.orderId}`, locationData);
+      const aliases = await resolveAliasesFast(data.orderId);
+      aliases.forEach((alias) => {
+        io.to(`order:${alias}`).emit(`location-receive-${alias}`, {
+          ...locationData,
+          orderId: alias
+        });
+      });
 
       console.log(`📍 Location broadcasted to order room ${data.orderId}:`, {
         lat: locationData.lat,
@@ -481,45 +545,39 @@ io.on('connection', (socket) => {
         lng: data.lng,
         heading: data.heading
       });
-    } catch (error) {
+    };
+
+    processLocationUpdate().catch((error) => {
       console.error('Error handling location update:', error);
-    }
+    });
   });
 
   // Customer joins order tracking room
   socket.on('join-order-tracking', async (orderId) => {
     if (orderId) {
-      socket.join(`order:${orderId}`);
-      console.log(`Customer joined order tracking: ${orderId}`);
+      const { order, aliases } = await resolveOrderByAnyId(orderId, true);
+      const roomsToJoin = aliases?.length ? aliases : [String(orderId)];
+      roomsToJoin.forEach((alias) => socket.join(`order:${alias}`));
+      console.log(`Customer joined order tracking rooms:`, roomsToJoin);
 
       // Send current location immediately when customer joins
       try {
-        // Dynamic import to avoid circular dependencies
-        const { default: Order } = await import('./modules/order/models/Order.js');
-
-        const order = await Order.findById(orderId)
-          .populate({
-            path: 'deliveryPartnerId',
-            select: 'availability',
-            populate: {
-              path: 'availability.currentLocation'
-            }
-          })
-          .lean();
-
         if (order?.deliveryPartnerId?.availability?.currentLocation) {
           const coords = order.deliveryPartnerId.availability.currentLocation.coordinates;
-          const locationData = {
-            orderId,
+          const baseLocationData = {
             lat: coords[1],
             lng: coords[0],
             heading: 0,
             timestamp: Date.now()
           };
 
-          // Send current location immediately
-          socket.emit(`current-location-${orderId}`, locationData);
-          console.log(`📍 Sent current location to customer for order ${orderId}`);
+          roomsToJoin.forEach((alias) => {
+            socket.emit(`current-location-${alias}`, {
+              ...baseLocationData,
+              orderId: alias
+            });
+          });
+          console.log(`📍 Sent current location to customer for order aliases:`, roomsToJoin);
         }
       } catch (error) {
         console.error('Error sending current location:', error.message);
@@ -532,29 +590,25 @@ io.on('connection', (socket) => {
     if (!orderId) return;
 
     try {
-      // Dynamic import to avoid circular dependencies
-      const { default: Order } = await import('./modules/order/models/Order.js');
-
-      const order = await Order.findById(orderId)
-        .populate({
-          path: 'deliveryPartnerId',
-          select: 'availability'
-        })
-        .lean();
+      const { order, aliases } = await resolveOrderByAnyId(orderId, true);
 
       if (order?.deliveryPartnerId?.availability?.currentLocation) {
         const coords = order.deliveryPartnerId.availability.currentLocation.coordinates;
-        const locationData = {
-          orderId,
+        const baseLocationData = {
           lat: coords[1],
           lng: coords[0],
           heading: 0,
           timestamp: Date.now()
         };
 
-        // Send current location immediately
-        socket.emit(`current-location-${orderId}`, locationData);
-        console.log(`📍 Sent requested location for order ${orderId}`);
+        const emitAliases = aliases?.length ? aliases : [String(orderId)];
+        emitAliases.forEach((alias) => {
+          socket.emit(`current-location-${alias}`, {
+            ...baseLocationData,
+            orderId: alias
+          });
+        });
+        console.log(`📍 Sent requested location for order aliases:`, emitAliases);
       }
     } catch (error) {
       console.error('Error fetching current location:', error.message);
