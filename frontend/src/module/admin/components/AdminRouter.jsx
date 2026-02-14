@@ -165,6 +165,19 @@ export default function AdminRouter() {
         <Route path="orders/refunded" element={<OrdersPage statusKey="refunded" />} />
         <Route path="orders/offline-payments" element={<OrdersPage statusKey="offline-payments" />} />
         <Route path="order-detect-delivery" element={<OrderDetectDelivery />} />
+        <Route path="grocery-orders/all" element={<OrdersPage statusKey="all" platformOverride="mogrocery" />} />
+        <Route path="grocery-orders/scheduled" element={<OrdersPage statusKey="scheduled" platformOverride="mogrocery" />} />
+        <Route path="grocery-orders/pending" element={<OrdersPage statusKey="pending" platformOverride="mogrocery" />} />
+        <Route path="grocery-orders/accepted" element={<OrdersPage statusKey="accepted" platformOverride="mogrocery" />} />
+        <Route path="grocery-orders/processing" element={<OrdersPage statusKey="processing" platformOverride="mogrocery" />} />
+        <Route path="grocery-orders/on-the-way" element={<OrdersPage statusKey="food-on-the-way" platformOverride="mogrocery" />} />
+        <Route path="grocery-orders/delivered" element={<OrdersPage statusKey="delivered" platformOverride="mogrocery" />} />
+        <Route path="grocery-orders/canceled" element={<OrdersPage statusKey="canceled" platformOverride="mogrocery" />} />
+        <Route path="grocery-orders/store-cancelled" element={<OrdersPage statusKey="restaurant-cancelled" platformOverride="mogrocery" />} />
+        <Route path="grocery-orders/payment-failed" element={<OrdersPage statusKey="payment-failed" platformOverride="mogrocery" />} />
+        <Route path="grocery-orders/refunded" element={<OrdersPage statusKey="refunded" platformOverride="mogrocery" />} />
+        <Route path="grocery-orders/offline-payments" element={<OrdersPage statusKey="offline-payments" platformOverride="mogrocery" />} />
+        <Route path="grocery-order-detect-delivery" element={<OrderDetectDelivery platformOverride="mogrocery" />} />
         {/* Order Refunds */}
         <Route path="order-refunds/new" element={<NewRefundRequests />} />
 

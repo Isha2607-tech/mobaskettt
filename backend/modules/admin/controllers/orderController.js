@@ -3,6 +3,22 @@ import { successResponse, errorResponse } from '../../../shared/utils/response.j
 import asyncHandler from '../../../shared/middleware/asyncHandler.js';
 import mongoose from 'mongoose';
 
+const normalizePlatform = (value) => (value === 'mogrocery' ? 'mogrocery' : 'mofood');
+
+const getRestaurantIdsByPlatform = async (platform) => {
+  const Restaurant = (await import('../../restaurant/models/Restaurant.js')).default;
+  const restaurants = await Restaurant.find({ platform })
+    .select('_id restaurantId')
+    .lean();
+
+  return [...new Set(restaurants.flatMap((restaurant) => {
+    const ids = [];
+    if (restaurant?._id) ids.push(restaurant._id.toString());
+    if (restaurant?.restaurantId) ids.push(String(restaurant.restaurantId));
+    return ids;
+  }))];
+};
+
 /**
  * Get all orders for admin
  * GET /api/admin/orders
@@ -21,11 +37,32 @@ export const getOrders = asyncHandler(async (req, res) => {
       paymentStatus,
       zone,
       customer,
-      cancelledBy
+      cancelledBy,
+      platform
     } = req.query;
 
     // Build query
     const query = {};
+    const normalizedPlatform = platform ? normalizePlatform(platform) : null;
+    let platformRestaurantIds = null;
+
+    if (normalizedPlatform) {
+      platformRestaurantIds = await getRestaurantIdsByPlatform(normalizedPlatform);
+
+      if (platformRestaurantIds.length === 0) {
+        return successResponse(res, 200, 'Orders retrieved successfully', {
+          orders: [],
+          pagination: {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            total: 0,
+            pages: 0
+          }
+        });
+      }
+
+      query.restaurantId = { $in: platformRestaurantIds };
+    }
 
     // Status filter
     if (status && status !== 'all') {
@@ -88,16 +125,29 @@ export const getOrders = asyncHandler(async (req, res) => {
     if (restaurant && restaurant !== 'All restaurants') {
       // Try to find restaurant by name or ID
       const Restaurant = (await import('../../restaurant/models/Restaurant.js')).default;
-      const restaurantDoc = await Restaurant.findOne({
+      const restaurantSearchQuery = {
         $or: [
           { name: { $regex: restaurant, $options: 'i' } },
           { _id: mongoose.Types.ObjectId.isValid(restaurant) ? restaurant : null },
           { restaurantId: restaurant }
         ]
-      }).select('_id restaurantId').lean();
+      };
+
+      if (normalizedPlatform) {
+        restaurantSearchQuery.platform = normalizedPlatform;
+      }
+
+      const restaurantDoc = await Restaurant.findOne(restaurantSearchQuery)
+        .select('_id restaurantId')
+        .lean();
 
       if (restaurantDoc) {
-        query.restaurantId = restaurantDoc._id?.toString() || restaurantDoc.restaurantId;
+        const selectedRestaurantId = restaurantDoc._id?.toString() || String(restaurantDoc.restaurantId || '');
+        if (platformRestaurantIds && !platformRestaurantIds.includes(selectedRestaurantId)) {
+          query.restaurantId = { $in: [] };
+        } else {
+          query.restaurantId = selectedRestaurantId;
+        }
       }
     }
 

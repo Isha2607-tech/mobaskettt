@@ -1087,7 +1087,9 @@ export const adminAPI = {
 
   // Get orders
   getOrders: (params = {}) => {
-    return apiClient.get(API_ENDPOINTS.ADMIN.ORDERS, { params });
+    return apiClient.get(API_ENDPOINTS.ADMIN.ORDERS, {
+      params: { ...params, platform: params.platform || getAdminPlatform() }
+    });
   },
 
   // Get orders searching for deliveryman
@@ -1745,4 +1747,3 @@ export const heroBannerAPI = {
     return apiClient.get(API_ENDPOINTS.HERO_BANNER.GOURMET_PUBLIC);
   },
 };
-

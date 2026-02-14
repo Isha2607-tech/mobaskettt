@@ -27,7 +27,7 @@ const statusConfig = {
   "offline-payments": { title: "Offline Payments", color: "slate", icon: Package },
 }
 
-export default function OrdersPage({ statusKey = "all" }) {
+export default function OrdersPage({ statusKey = "all", platformOverride }) {
   const config = statusConfig[statusKey] || statusConfig["all"]
   const [orders, setOrders] = useState([])
   const [isLoading, setIsLoading] = useState(true)
@@ -46,7 +46,8 @@ export default function OrdersPage({ statusKey = "all" }) {
           limit: 1000, // Fetch all orders for now (can be optimized with pagination later)
           status: statusKey === "all" ? undefined : 
                  statusKey === "restaurant-cancelled" ? "cancelled" : statusKey,
-          cancelledBy: statusKey === "restaurant-cancelled" ? "restaurant" : undefined
+          cancelledBy: statusKey === "restaurant-cancelled" ? "restaurant" : undefined,
+          platform: platformOverride || undefined,
         }
         
         const response = await adminAPI.getOrders(params)
@@ -69,7 +70,7 @@ export default function OrdersPage({ statusKey = "all" }) {
     }
 
     fetchOrders()
-  }, [statusKey])
+  }, [statusKey, platformOverride])
 
   // Handle refund button click - show modal for wallet payments, confirm dialog for others
   const handleRefund = (order) => {
@@ -148,7 +149,8 @@ export default function OrdersPage({ statusKey = "all" }) {
           limit: 1000,
           status: statusKey === "all" ? undefined : 
                  statusKey === "restaurant-cancelled" ? "cancelled" : statusKey,
-          cancelledBy: statusKey === "restaurant-cancelled" ? "restaurant" : undefined
+          cancelledBy: statusKey === "restaurant-cancelled" ? "restaurant" : undefined,
+          platform: platformOverride || undefined,
         }
         const refreshResponse = await adminAPI.getOrders(params)
         if (refreshResponse.data?.success && refreshResponse.data?.data?.orders) {

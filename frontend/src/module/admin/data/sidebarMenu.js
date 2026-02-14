@@ -652,4 +652,3 @@ export const mogroceryMenuData = [
 
 // Export mofoodMenuData as alias to sidebarMenuData for consistency
 export const mofoodMenuData = sidebarMenuData
-

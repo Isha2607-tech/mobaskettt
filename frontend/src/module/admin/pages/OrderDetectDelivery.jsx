@@ -213,7 +213,7 @@ const transformOrder = (order, index) => {
   }
 }
 
-export default function OrderDetectDelivery() {
+export default function OrderDetectDelivery({ platformOverride }) {
   const [visibleColumns, setVisibleColumns] = useState({
     si: true,
     orderId: true,
@@ -237,6 +237,7 @@ export default function OrderDetectDelivery() {
         const params = {
           page: 1,
           limit: 1000, // Fetch all orders for now
+          platform: platformOverride || undefined,
         }
         
         const response = await adminAPI.getOrders(params)
@@ -263,7 +264,7 @@ export default function OrderDetectDelivery() {
     }
 
     fetchOrders()
-  }, [])
+  }, [platformOverride])
 
   const {
     searchQuery,
