@@ -95,6 +95,12 @@ const restaurantSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    platform: {
+      type: String,
+      enum: ['mofood', 'mogrocery'],
+      default: 'mofood',
+      index: true
+    },
     slug: {
       type: String,
       unique: true,
@@ -280,6 +286,14 @@ restaurantSchema.index({ googleId: 1 }, { unique: true, sparse: true });
 
   // Hash password before saving
   restaurantSchema.pre('save', async function(next) {
+    // Single Store Constraint for MoGrocery
+    if (this.isNew && this.platform === 'mogrocery') {
+      const existingStore = await mongoose.models.Restaurant.findOne({ platform: 'mogrocery' });
+      if (existingStore) {
+        return next(new Error('A grocery store already exists. Only one store is allowed for the mogrocery platform.'));
+      }
+    }
+
     // Generate restaurantId FIRST (before any validation)
     if (!this.restaurantId) {
       const timestamp = Date.now();

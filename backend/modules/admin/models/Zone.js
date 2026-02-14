@@ -11,6 +11,17 @@ const coordinateSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
+const storeLocationSchema = new mongoose.Schema({
+  latitude: {
+    type: Number,
+    required: true
+  },
+  longitude: {
+    type: Number,
+    required: true
+  }
+}, { _id: false });
+
 const zoneSchema = new mongoose.Schema(
   {
     name: {
@@ -59,6 +70,23 @@ const zoneSchema = new mongoose.Schema(
           return coords.length >= 3; // Minimum 3 points for a polygon
         },
         message: 'Zone must have at least 3 coordinates'
+      }
+    },
+    // Store coordinates (used by mogrocery)
+    storeLocation: {
+      type: storeLocationSchema,
+      required: false
+    },
+    // GeoJSON point for store location
+    storePoint: {
+      type: {
+        type: String,
+        enum: ['Point'],
+        default: 'Point'
+      },
+      coordinates: {
+        type: [Number],
+        required: false
       }
     },
     // GeoJSON polygon for spatial queries
@@ -122,6 +150,7 @@ zoneSchema.index({ restaurantId: 1 });
 zoneSchema.index({ isActive: 1 });
 zoneSchema.index({ platform: 1, isActive: 1 });
 zoneSchema.index({ boundary: '2dsphere' }); // For spatial queries
+zoneSchema.index({ storePoint: '2dsphere' });
 zoneSchema.index({ serviceLocation: 'text', name: 'text' }); // For text search
 
 // Pre-save middleware to create GeoJSON boundary
@@ -136,6 +165,19 @@ zoneSchema.pre('save', function(next) {
       type: 'Polygon',
       coordinates: [geoJsonCoords]
     };
+  }
+
+  if (
+    this.storeLocation &&
+    typeof this.storeLocation.latitude === 'number' &&
+    typeof this.storeLocation.longitude === 'number'
+  ) {
+    this.storePoint = {
+      type: 'Point',
+      coordinates: [this.storeLocation.longitude, this.storeLocation.latitude]
+    };
+  } else {
+    this.storePoint = undefined;
   }
   next();
 });

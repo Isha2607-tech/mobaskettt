@@ -16,7 +16,8 @@ export async function processAutoRejectOrders() {
     // Find all orders with status 'pending' or 'confirmed' that haven't been accepted yet
     // These are orders waiting for restaurant to accept
     const validPendingOrders = await Order.find({
-      status: { $in: ['pending', 'confirmed'] }
+      status: { $in: ['pending', 'confirmed'] },
+      'adminApproval.status': { $ne: 'approved' }
     }).lean();
 
     if (validPendingOrders.length === 0) {
@@ -43,6 +44,11 @@ export async function processAutoRejectOrders() {
           // Only reject if still in pending/confirmed status
           if (!['pending', 'confirmed'].includes(currentOrder.status)) {
             continue; // Order was already accepted/rejected
+          }
+
+          // Admin-approved orders should not be auto-rejected.
+          if (currentOrder.adminApproval?.status === 'approved') {
+            continue;
           }
 
           // Update order status to cancelled

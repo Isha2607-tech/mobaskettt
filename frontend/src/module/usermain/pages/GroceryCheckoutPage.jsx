@@ -29,7 +29,7 @@ export default function GroceryCheckoutPage() {
   const { cart, clearCart } = useCart();
   const { getDefaultAddress, userProfile } = useProfile();
   const { location: liveLocation } = useUserLocation();
-  const { zoneId } = useZone(liveLocation);
+  const { zoneId } = useZone(liveLocation, "mogrocery");
 
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("card");
@@ -106,14 +106,16 @@ export default function GroceryCheckoutPage() {
       return { restaurantId: cartRestaurantId, restaurantName: cartRestaurantName };
     }
 
-    const restaurantsResponse = await restaurantAPI.getRestaurants({ limit: 100 });
+    const restaurantsResponse = await restaurantAPI.getRestaurants({ limit: 200 });
     const restaurants = restaurantsResponse?.data?.data?.restaurants || [];
-    if (!restaurants.length) {
+    const groceryStores = restaurants.filter((r) => r?.platform === "mogrocery" && r?.isActive);
+
+    if (!groceryStores.length) {
       throw new Error("No active stores found. Please try again.");
     }
 
     const groceryLikeStore =
-      restaurants.find((r) => /grocery|mart|basket/i.test(r?.name || "")) || restaurants[0];
+      groceryStores.find((r) => /grocery|mart|basket/i.test(r?.name || "")) || groceryStores[0];
 
     const resolvedRestaurantId = groceryLikeStore?._id || groceryLikeStore?.restaurantId;
     if (!resolvedRestaurantId) {
@@ -128,7 +130,7 @@ export default function GroceryCheckoutPage() {
 
   const buildOrderItems = () =>
     groceryItems.map((item) => ({
-      itemId: item.id,
+      itemId: String(item.id || item._id || item.itemId || item.productId || ""),
       name: item.name,
       price: Number(item.price || 0),
       quantity: Number(item.quantity || 1),
@@ -156,6 +158,10 @@ export default function GroceryCheckoutPage() {
     try {
       const { restaurantId, restaurantName } = await resolveGroceryRestaurant();
       const items = buildOrderItems();
+      const invalidItem = items.find((i) => !i.itemId || !i.name || !Number.isFinite(i.price) || i.quantity <= 0);
+      if (invalidItem) {
+        throw new Error("Cart item data is invalid. Please refresh grocery cart and try again.");
+      }
 
       const pricingResponse = await orderAPI.calculateOrder({
         items,
@@ -245,6 +251,11 @@ export default function GroceryCheckoutPage() {
         }).catch(reject);
       });
     } catch (error) {
+      console.error("Grocery order create error:", {
+        status: error?.response?.status,
+        backendMessage: error?.response?.data?.message,
+        errorMessage: error?.message,
+      });
       toast.error(error?.response?.data?.message || error?.message || "Failed to place order.");
     } finally {
       setIsPlacingOrder(false);

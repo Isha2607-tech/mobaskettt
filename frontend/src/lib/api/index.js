@@ -909,6 +909,31 @@ export const adminAPI = {
     return apiClient.put(API_ENDPOINTS.ADMIN.RESTAURANT_STATUS.replace(':id', id), { isActive });
   },
 
+  // Grocery Store Management (New Segregated Backend)
+  getGroceryStores: (params = {}) => {
+    return apiClient.get('/grocery/stores', { params });
+  },
+
+  createGroceryStore: (data) => {
+    return apiClient.post('/grocery/stores', data);
+  },
+
+  getGroceryStoreById: (id) => {
+    return apiClient.get(`/grocery/stores/${id}`);
+  },
+
+  updateGroceryStore: (id, data) => {
+    return apiClient.put(`/grocery/stores/${id}`, data);
+  },
+
+  updateGroceryStoreStatus: (id, isActive) => {
+    return apiClient.patch(`/grocery/stores/${id}/status`, { isActive });
+  },
+
+  deleteGroceryStore: (id) => {
+    return apiClient.delete(`/grocery/stores/${id}`);
+  },
+
   // Get restaurant join requests
   getRestaurantJoinRequests: (params = {}) => {
     return apiClient.get(API_ENDPOINTS.ADMIN.RESTAURANT_REQUESTS, { params });

@@ -5,7 +5,7 @@ import { zoneAPI } from '@/lib/api'
  * Hook to detect and manage user's zone based on location
  * Automatically detects zone when location is available
  */
-export function useZone(location) {
+export function useZone(location, platform = 'mofood') {
   const [zoneId, setZoneId] = useState(null)
   const [zoneStatus, setZoneStatus] = useState('loading') // 'loading' | 'IN_SERVICE' | 'OUT_OF_SERVICE'
   const [zone, setZone] = useState(null)
@@ -26,7 +26,7 @@ export function useZone(location) {
       setLoading(true)
       setError(null)
       
-      const response = await zoneAPI.detectZone(lat, lng)
+      const response = await zoneAPI.detectZone(lat, lng, platform)
       
       if (response.data?.success) {
         const data = response.data.data
@@ -68,7 +68,7 @@ export function useZone(location) {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [platform])
 
   // Auto-detect zone when location changes
   useEffect(() => {

@@ -37,6 +37,12 @@ const orderSchema = new mongoose.Schema({
     unique: true
     // Note: unique: true automatically creates an index, so index: true is redundant
   },
+  // Backward-compatibility field: some deployments still have a unique index on orderNumber.
+  // Keep it synchronized with orderId to avoid duplicate-key conflicts.
+  orderNumber: {
+    type: String,
+    index: true
+  },
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -233,6 +239,26 @@ const orderSchema = new mongoose.Schema({
     enum: ['user', 'restaurant', 'admin'],
     default: null
   },
+  adminApproval: {
+    status: {
+      type: String,
+      enum: ['pending', 'approved', 'rejected'],
+      default: 'pending'
+    },
+    reason: {
+      type: String,
+      default: ''
+    },
+    reviewedAt: {
+      type: Date,
+      default: null
+    },
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Admin',
+      default: null
+    }
+  },
   postOrderActions: {
     modificationWindowStartAt: {
       type: Date,
@@ -326,10 +352,18 @@ orderSchema.index({ 'payment.razorpayOrderId': 1 });
 
 // Generate order ID before saving (fallback if not provided)
 orderSchema.pre('save', async function (next) {
-  if (!this.orderId) {
+  if (!this.orderId && !this.orderNumber) {
     const timestamp = Date.now();
     const random = Math.floor(Math.random() * 1000);
-    this.orderId = `ORD-${timestamp}-${random}`;
+    const generated = `ORD-${timestamp}-${random}`;
+    this.orderId = generated;
+    this.orderNumber = generated;
+  } else if (!this.orderId && this.orderNumber) {
+    this.orderId = this.orderNumber;
+  } else if (!this.orderNumber && this.orderId) {
+    this.orderNumber = this.orderId;
+  } else if (this.orderId && this.orderNumber && this.orderId !== this.orderNumber) {
+    this.orderNumber = this.orderId;
   }
   next();
 });

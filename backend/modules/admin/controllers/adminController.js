@@ -1014,7 +1014,12 @@ export const getRestaurants = asyncHandler(async (req, res) => {
     } = req.query;
 
     // Build query
-    const query = {};
+    const query = {
+      $or: [
+        { platform: 'mofood' },
+        { platform: { $exists: false } }
+      ]
+    };
 
     // Status filter - Default to active only (approved restaurants)
     // Only show inactive if explicitly requested via status filter

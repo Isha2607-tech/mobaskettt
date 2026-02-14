@@ -4,6 +4,7 @@ import { createOrder as createRazorpayOrder, verifyPayment } from '../../payment
 import Restaurant from '../../restaurant/models/Restaurant.js';
 import Zone from '../../admin/models/Zone.js';
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 import winston from 'winston';
 import { calculateOrderPricing } from '../services/orderCalculationService.js';
 import { getRazorpayCredentials } from '../../../shared/utils/envService.js';
@@ -92,6 +93,52 @@ const calculateUpdatedTotals = (order, items) => {
     subtotal: Number(subtotal.toFixed(2)),
     total: Number(total.toFixed(2))
   };
+};
+
+const generateUniqueOrderId = async () => {
+  // Retry a few times in case of rare ID collisions on unique index.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const timestamp = Date.now();
+    const random = crypto.randomInt(100000, 999999);
+    const candidate = `ORD-${timestamp}-${random}`;
+    // eslint-disable-next-line no-await-in-loop
+    const exists = await Order.exists({
+      $or: [
+        { orderId: candidate },
+        { orderNumber: candidate }
+      ]
+    });
+    if (!exists) return candidate;
+  }
+  throw new Error('Unable to generate unique order ID');
+};
+
+const saveOrderWithIdRetry = async (orderDoc, maxRetries = 3) => {
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await orderDoc.save();
+      return;
+    } catch (error) {
+      const isDuplicateOrderLikeField =
+        error?.code === 11000 &&
+        (
+          error?.keyPattern?.orderId ||
+          error?.keyPattern?.orderNumber ||
+          String(error?.message || '').includes('orderId') ||
+          String(error?.message || '').includes('orderNumber')
+        );
+
+      if (!isDuplicateOrderLikeField || attempt === maxRetries) {
+        throw error;
+      }
+
+      // eslint-disable-next-line no-await-in-loop
+      const regeneratedOrderId = await generateUniqueOrderId();
+      orderDoc.orderId = regeneratedOrderId;
+      orderDoc.orderNumber = regeneratedOrderId;
+    }
+  }
 };
 
 /**
@@ -237,7 +284,9 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // CRITICAL: Validate that restaurant's location (pin) is within an active zone
+    const restaurantPlatform = restaurant.platform === 'mogrocery' ? 'mogrocery' : 'mofood';
+
+    // CRITICAL: Validate that restaurant/store location (pin) is within an active zone for its platform
     const restaurantLat = restaurant.location?.latitude || restaurant.location?.coordinates?.[1];
     const restaurantLng = restaurant.location?.longitude || restaurant.location?.coordinates?.[0];
 
@@ -248,15 +297,21 @@ export const createOrder = async (req, res) => {
       });
       return res.status(400).json({
         success: false,
-        message: 'Restaurant location is not set. Please contact support.'
+        message: restaurantPlatform === 'mogrocery'
+          ? 'Store location is not set. Please contact support.'
+          : 'Restaurant location is not set. Please contact support.'
       });
     }
 
-    // Check if restaurant is within any active zone
-    const activeZones = await Zone.find({
-      isActive: true,
-      $or: [{ platform: 'mofood' }, { platform: { $exists: false } }]
-    }).lean();
+    // Check if restaurant/store is within any active zone for this platform
+    const activeZoneQuery = restaurantPlatform === 'mogrocery'
+      ? { isActive: true, platform: 'mogrocery' }
+      : {
+        isActive: true,
+        $or: [{ platform: 'mofood' }, { platform: { $exists: false } }]
+      };
+
+    const activeZones = await Zone.find(activeZoneQuery).lean();
     let restaurantInZone = false;
     let restaurantZone = null;
 
@@ -297,12 +352,15 @@ export const createOrder = async (req, res) => {
       logger.warn('⚠️ Restaurant location is not within any active zone:', {
         restaurantId: restaurant._id?.toString() || restaurant.restaurantId,
         restaurantName: restaurant.name,
+        platform: restaurantPlatform,
         restaurantLat,
         restaurantLng
       });
       return res.status(403).json({
         success: false,
-        message: 'This restaurant is not available in your area. Only restaurants within active delivery zones can receive orders.'
+        message: restaurantPlatform === 'mogrocery'
+          ? 'This store is not available in your area. Only stores within active delivery zones can receive orders.'
+          : 'This restaurant is not available in your area. Only restaurants within active delivery zones can receive orders.'
       });
     }
 
@@ -313,7 +371,7 @@ export const createOrder = async (req, res) => {
       zoneName: restaurantZone?.name || restaurantZone?.zoneName
     });
 
-    // CRITICAL: Validate user's zone matches restaurant's zone (strict zone matching)
+    // CRITICAL: Validate user's zone matches restaurant/store zone (strict zone matching)
     const { zoneId: userZoneId } = req.body; // User's zone ID from frontend
 
     if (userZoneId) {
@@ -328,7 +386,9 @@ export const createOrder = async (req, res) => {
         });
         return res.status(403).json({
           success: false,
-          message: 'This restaurant is not available in your zone. Please select a restaurant from your current delivery zone.'
+          message: restaurantPlatform === 'mogrocery'
+            ? 'This store is not available in your zone. Please select a store from your current delivery zone.'
+            : 'This restaurant is not available in your zone. Please select a restaurant from your current delivery zone.'
         });
       }
 
@@ -353,10 +413,8 @@ export const createOrder = async (req, res) => {
       incomingRestaurantName: restaurantName
     });
 
-    // Generate order ID before creating order
-    const timestamp = Date.now();
-    const random = Math.floor(Math.random() * 1000);
-    const generatedOrderId = `ORD-${timestamp}-${random}`;
+    // Generate collision-safe order ID before creating order
+    const generatedOrderId = await generateUniqueOrderId();
 
     // Ensure couponCode is included in pricing
     if (!pricing.couponCode && pricing.appliedCoupon?.code) {
@@ -366,6 +424,7 @@ export const createOrder = async (req, res) => {
     // Create order in database with pending status
     const order = new Order({
       orderId: generatedOrderId,
+      orderNumber: generatedOrderId,
       userId,
       restaurantId: assignedRestaurantId,
       restaurantName: assignedRestaurantName,
@@ -471,8 +530,7 @@ export const createOrder = async (req, res) => {
       logger.error('❌ Error calculating ETA:', etaError);
       // Continue with order creation even if ETA calculation fails
     }
-
-    await order.save();
+    await saveOrderWithIdRetry(order);
 
     // Log order creation for debugging
     logger.info('Order created successfully:', {
@@ -577,7 +635,7 @@ export const createOrder = async (req, res) => {
           timestamp: new Date()
         };
         startOrderModificationWindow(order);
-        await order.save();
+        await saveOrderWithIdRetry(order);
 
         // Notify restaurant about new wallet payment order
         try {
@@ -659,7 +717,7 @@ export const createOrder = async (req, res) => {
         timestamp: new Date()
       };
       startOrderModificationWindow(order);
-      await order.save();
+      await saveOrderWithIdRetry(order);
 
       // Notify restaurant about new COD order via Socket.IO (non-blocking)
       try {
@@ -713,7 +771,7 @@ export const createOrder = async (req, res) => {
 
         // Update order with Razorpay order ID
         order.payment.razorpayOrderId = razorpayOrder.id;
-        await order.save();
+        await saveOrderWithIdRetry(order);
       } catch (razorpayError) {
         logger.error(`Error creating Razorpay order: ${razorpayError.message}`);
         // Continue with order creation even if Razorpay fails
@@ -762,6 +820,35 @@ export const createOrder = async (req, res) => {
       error: error.message,
       stack: error.stack
     });
+
+    if (error?.name === 'ValidationError') {
+      const firstValidationError = Object.values(error.errors || {})[0];
+      const validationMessage = firstValidationError?.message || error.message || 'Invalid order payload';
+      return res.status(400).json({
+        success: false,
+        message: validationMessage,
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+
+    if (error?.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid ${error.path || 'field'} value`,
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+
+    if (error?.code === 11000) {
+      const duplicateFields = Object.keys(error?.keyPattern || {});
+      const duplicateField = duplicateFields.length > 0 ? duplicateFields[0] : 'unique field';
+      return res.status(409).json({
+        success: false,
+        message: `Duplicate ${duplicateField} detected. Please try again.`, 
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Failed to create order',
@@ -874,7 +961,7 @@ export const verifyOrderPayment = async (req, res) => {
     order.status = 'confirmed';
     order.tracking.confirmed = { status: true, timestamp: new Date() };
     startOrderModificationWindow(order);
-    await order.save();
+    await saveOrderWithIdRetry(order);
 
     // Calculate order settlement and hold escrow
     try {
@@ -1089,6 +1176,7 @@ export const getOrderDetails = async (req, res) => {
         _id: id,
         userId
       })
+        .populate('restaurantId', 'name slug profileImage location estimatedDeliveryTime distance phone ownerPhone platform')
         .populate('deliveryPartnerId', 'name email phone')
         .populate('userId', 'name fullName phone email')
         .lean();
@@ -1100,6 +1188,7 @@ export const getOrderDetails = async (req, res) => {
         orderId: id,
         userId
       })
+        .populate('restaurantId', 'name slug profileImage location estimatedDeliveryTime distance phone ownerPhone platform')
         .populate('deliveryPartnerId', 'name email phone')
         .populate('userId', 'name fullName phone email')
         .lean();
@@ -1402,4 +1491,6 @@ export const calculateOrder = async (req, res) => {
     });
   }
 };
+
+
 

@@ -33,6 +33,7 @@ import AddonsList from "../pages/addons/AddonsList";
 import GroceryProductsList from "../pages/grocery/GroceryProductsList";
 import GroceryAddonsList from "../pages/grocery/GroceryAddonsList";
 import GroceryStoresList from "../pages/grocery/GroceryStoresList";
+import AddGroceryStore from "../pages/grocery/AddGroceryStore";
 import GroceryCategories from "../pages/grocery/GroceryCategories";
 import GrocerySubcategories from "../pages/grocery/GrocerySubcategories";
 import GroceryCatalogProducts from "../pages/grocery/GroceryCatalogProducts";
@@ -179,12 +180,14 @@ export default function AdminRouter() {
         {/* Restaurants/Stores */}
         <Route path="restaurants" element={<PlatformAwareRoute mofoodComponent={RestaurantsList} mogroceryComponent={GroceryStoresList} />} />
         <Route path="grocery-stores" element={<GroceryStoresList />} />
+        <Route path="grocery-stores/add" element={<AddGroceryStore />} />
         <Route path="restaurants/add" element={<AddRestaurant />} />
         <Route path="restaurants/joining-request" element={<JoiningRequest />} />
         <Route path="restaurants/commission" element={<RestaurantCommission />} />
         <Route path="restaurants/complaints" element={<RestaurantComplaints />} />
         <Route path="restaurants/bulk-import" element={<RestaurantsBulkImport />} />
         <Route path="restaurants/bulk-export" element={<RestaurantsBulkExport />} />
+
 
         {/* FOOD MANAGEMENT */}
         {/* Categories */}
