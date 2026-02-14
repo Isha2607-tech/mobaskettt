@@ -2242,10 +2242,19 @@ export default function DeliveryHome() {
             // Update selectedRestaurant with correct data from backend
             let restaurantInfo = null;
             if (order) {
-              // Extract restaurant location (GeoJSON format: [longitude, latitude])
+              // Extract restaurant location with robust fallbacks
+              // Priority: GeoJSON coordinates -> latitude/longitude fields
               const restaurantCoords = order.restaurantId?.location?.coordinates || []
-              const restaurantLat = restaurantCoords[1] // Latitude is second element
-              const restaurantLng = restaurantCoords[0] // Longitude is first element
+              const restaurantLatFromCoords = restaurantCoords[1] // Latitude is second element in GeoJSON
+              const restaurantLngFromCoords = restaurantCoords[0] // Longitude is first element in GeoJSON
+              const restaurantLatFromFields = order.restaurantId?.location?.latitude
+              const restaurantLngFromFields = order.restaurantId?.location?.longitude
+              const restaurantLat = Number.isFinite(Number(restaurantLatFromCoords))
+                ? Number(restaurantLatFromCoords)
+                : (Number.isFinite(Number(restaurantLatFromFields)) ? Number(restaurantLatFromFields) : null)
+              const restaurantLng = Number.isFinite(Number(restaurantLngFromCoords))
+                ? Number(restaurantLngFromCoords)
+                : (Number.isFinite(Number(restaurantLngFromFields)) ? Number(restaurantLngFromFields) : null)
               
               // Format restaurant address - check multiple possible locations
               let restaurantAddress = 'Restaurant Address'
@@ -7209,7 +7218,8 @@ export default function DeliveryHome() {
                        orderStatus === 'picked_up' ||
                        deliveryPhase === 'en_route_to_delivery' ||
                        deliveryPhase === 'picked_up' ||
-                       deliveryStateStatus === 'accepted';
+                       deliveryStateStatus === 'order_confirmed' ||
+                       deliveryStateStatus === 'en_route_to_delivery';
     
     // Check if we have customer location
     const hasCustomerLocation = selectedRestaurant?.customerLat && selectedRestaurant?.customerLng;
@@ -7765,11 +7775,20 @@ export default function DeliveryHome() {
       }).filter(coord => coord !== null);
 
       if (path.length > 0) {
-        // Don't create main route polyline - only live tracking polyline will be shown
-        // Remove old custom polyline if exists (cleanup)
-        if (routePolylineRef.current) {
-          routePolylineRef.current.setMap(null);
-          routePolylineRef.current = null;
+        // Fallback route line: render when live tracking/directions path is unavailable
+        if (!routePolylineRef.current) {
+          routePolylineRef.current = new window.google.maps.Polyline({
+            path,
+            geodesic: true,
+            strokeColor: '#1E88E5',
+            strokeOpacity: 0.95,
+            strokeWeight: 5,
+            zIndex: 998,
+            map
+          });
+        } else {
+          routePolylineRef.current.setPath(path);
+          routePolylineRef.current.setMap(map);
         }
 
         // Fit map bounds to show entire route - but preserve zoom if user has zoomed in
