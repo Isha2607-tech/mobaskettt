@@ -40,6 +40,7 @@ const DeliveryTrackingMap = ({
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [currentLocation, setCurrentLocation] = useState(null);
   const [deliveryBoyLocation, setDeliveryBoyLocation] = useState(null);
+  const [hasLiveSocketLocation, setHasLiveSocketLocation] = useState(false);
   const routePolylineRef = useRef(null);
   const isCustomerLegRef = useRef(false);
   const routePolylinePointsRef = useRef(null); // Store decoded polyline points for route-based animation
@@ -371,6 +372,18 @@ const DeliveryTrackingMap = ({
       !!deliveryBoyLocation &&
       typeof deliveryBoyLocation.lat === 'number' &&
       typeof deliveryBoyLocation.lng === 'number';
+    const hasRestaurantCoords =
+      !!restaurantCoords &&
+      typeof restaurantCoords.lat === 'number' &&
+      typeof restaurantCoords.lng === 'number';
+    const hasCustomerCoords =
+      !!customerCoords &&
+      typeof customerCoords.lat === 'number' &&
+      typeof customerCoords.lng === 'number';
+
+    if (!hasCustomerCoords) {
+      return { start: null, end: null };
+    }
 
     const isCustomerLeg =
       currentPhase === 'en_route_to_delivery' ||
@@ -378,15 +391,24 @@ const DeliveryTrackingMap = ({
       status === 'en_route_to_delivery' ||
       orderStatus === 'out_for_delivery';
 
+    // If we already have live rider location, show rider -> customer route
+    // so the user always sees where the driver is relative to their location.
+    if (hasRiderLocation) {
+      return {
+        start: { lat: deliveryBoyLocation.lat, lng: deliveryBoyLocation.lng },
+        end: customerCoords
+      };
+    }
+
     // After pickup/delivery leg, ONLY show rider -> customer.
     // Do not fallback to store route in this phase.
     if (isCustomerLeg) {
-      if (hasRiderLocation) {
-        return {
-          start: { lat: deliveryBoyLocation.lat, lng: deliveryBoyLocation.lng },
-          end: customerCoords
-        };
-      }
+      return { start: null, end: null };
+    }
+
+    // Once a delivery partner is assigned, never fallback to customer<->store route
+    // if rider location is missing. Wait for real rider coordinates instead.
+    if (hasDeliveryPartner && !hasRiderLocation) {
       return { start: null, end: null };
     }
 
@@ -395,29 +417,15 @@ const DeliveryTrackingMap = ({
       !order ||
       (!hasRiderLocation && status === 'pending' && currentPhase === 'assigned' && orderStatus !== 'out_for_delivery')
     ) {
-      return { start: customerCoords, end: restaurantCoords };
+      if (hasRestaurantCoords) {
+        return { start: customerCoords, end: restaurantCoords };
+      }
+      return { start: null, end: null };
     }
 
-    // Rider accepted but not picked up yet: rider -> store.
-    if (
-      hasRiderLocation &&
-      (
-        currentPhase === 'en_route_to_pickup' ||
-        currentPhase === 'at_pickup' ||
-        status === 'accepted' ||
-        status === 'reached_pickup' ||
-        (orderStatus !== 'out_for_delivery' && orderStatus !== 'delivered')
-      )
-    ) {
-      return {
-        start: { lat: deliveryBoyLocation.lat, lng: deliveryBoyLocation.lng },
-        end: restaurantCoords
-      };
-    }
-
-    // Fallback
-    return { start: customerCoords, end: restaurantCoords };
-  }, [order, deliveryBoyLocation, restaurantCoords, customerCoords]);
+    // Fallback: no route (prevents incorrect line from default/invalid store coords)
+    return { start: null, end: null };
+  }, [order, deliveryBoyLocation, restaurantCoords, customerCoords, hasDeliveryPartner]);
 
   // Move bike smoothly with rotation
   const moveBikeSmoothly = useCallback((lat, lng, heading) => {
@@ -730,6 +738,7 @@ const DeliveryTrackingMap = ({
       if (data && typeof data.lat === 'number' && typeof data.lng === 'number') {
         const location = { lat: data.lat, lng: data.lng, heading: data.heading || data.bearing || 0 };
         console.log('✅✅✅ Updating bike to REAL delivery boy location:', location);
+        setHasLiveSocketLocation(true);
         setCurrentLocation(location);
         setDeliveryBoyLocation(location);
 
@@ -759,6 +768,7 @@ const DeliveryTrackingMap = ({
       if (data && typeof data.lat === 'number' && typeof data.lng === 'number') {
         const location = { lat: data.lat, lng: data.lng, heading: data.heading || data.bearing || 0 };
         console.log('✅✅✅ Updating bike to REAL current delivery boy location:', location);
+        setHasLiveSocketLocation(true);
         setCurrentLocation(location);
         setDeliveryBoyLocation(location);
         
@@ -847,7 +857,7 @@ const DeliveryTrackingMap = ({
 
   // Initialize Google Map (only once - prevent re-initialization)
   useEffect(() => {
-    if (!mapRef.current || !restaurantCoords || !customerCoords || mapInitializedRef.current) return;
+    if (!mapRef.current || !customerCoords || mapInitializedRef.current) return;
 
     const loadGoogleMapsIfNeeded = async () => {
       // Wait for Google Maps to load from main.jsx first
@@ -919,9 +929,22 @@ const DeliveryTrackingMap = ({
           return;
         }
 
-        // Calculate center point
-        const centerLng = (restaurantCoords.lng + customerCoords.lng) / 2;
-        const centerLat = (restaurantCoords.lat + customerCoords.lat) / 2;
+        // Calculate center from available points (customer is required, restaurant/rider optional)
+        const centerCandidates = [
+          customerCoords,
+          restaurantCoords,
+          deliveryBoyLocation,
+          currentLocation
+        ].filter(
+          (point) =>
+            point &&
+            typeof point.lat === 'number' &&
+            typeof point.lng === 'number'
+        );
+        const centerLng =
+          centerCandidates.reduce((sum, point) => sum + point.lng, 0) / centerCandidates.length;
+        const centerLat =
+          centerCandidates.reduce((sum, point) => sum + point.lat, 0) / centerCandidates.length;
 
         // Get MapTypeId safely
         const mapTypeId = window.google.maps.MapTypeId?.ROADMAP || 'roadmap';
@@ -1044,8 +1067,8 @@ const DeliveryTrackingMap = ({
         // Ensure viewport never changes automatically - map stays stable
         directionsRendererRef.current.setOptions({ preserveViewport: true });
 
-        // Add restaurant marker with home icon (only once)
-        if (!mapInstance.current._restaurantMarker) {
+        // Add restaurant marker with home icon (only once, when coordinates exist)
+        if (!mapInstance.current._restaurantMarker && restaurantCoords && typeof restaurantCoords.lat === 'number' && typeof restaurantCoords.lng === 'number') {
           const restaurantHomeIconUrl = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
             <svg xmlns="http://www.w3.org/2000/svg" width="40" height="50" viewBox="0 0 40 50">
               <!-- Pin shape -->
@@ -1230,26 +1253,9 @@ const DeliveryTrackingMap = ({
       return; // Skip if updated less than 10 seconds ago
     }
     
-    // Draw route whenever base coordinates are available.
+    // Draw route when route endpoints are valid for the current phase.
     const routePhase = order?.deliveryState?.currentPhase;
     const routeStatus = order?.deliveryState?.status;
-    const hasBaseRouteCoordinates =
-      typeof restaurantCoords?.lat === 'number' &&
-      typeof restaurantCoords?.lng === 'number' &&
-      typeof customerCoords?.lat === 'number' &&
-      typeof customerCoords?.lng === 'number';
-
-    if (!hasBaseRouteCoordinates) {
-      // Clear any existing route if delivery partner is not assigned
-      if (routePolylineRef.current) {
-        routePolylineRef.current.setMap(null);
-        routePolylineRef.current = null;
-      }
-      if (directionsRendererRef.current) {
-        directionsRendererRef.current.setDirections({ routes: [] });
-      }
-      return;
-    }
     
     const isCustomerLeg =
       routePhase === 'en_route_to_delivery' ||
@@ -1519,40 +1525,46 @@ const DeliveryTrackingMap = ({
     }
   }, [isMapLoaded, userLiveCoords, userLocationAccuracy]);
 
-  // Emit live rider-to-customer distance for OrderTracking UI (same behavior across MoFood/MoGrocery)
+  // Emit live rider-to-user distance for OrderTracking UI.
+  // Prefer device live location when available; fallback to order address.
   useEffect(() => {
     if (!window?.dispatchEvent) return;
+    if (!hasLiveSocketLocation) return;
 
     const riderLat = deliveryBoyLocation?.lat ?? currentLocation?.lat;
     const riderLng = deliveryBoyLocation?.lng ?? currentLocation?.lng;
-    const customerLat = customerCoords?.lat;
-    const customerLng = customerCoords?.lng;
+    const targetLat = userLiveCoords?.lat ?? customerCoords?.lat;
+    const targetLng = userLiveCoords?.lng ?? customerCoords?.lng;
 
     if (
       typeof riderLat !== 'number' || Number.isNaN(riderLat) ||
       typeof riderLng !== 'number' || Number.isNaN(riderLng) ||
-      typeof customerLat !== 'number' || Number.isNaN(customerLat) ||
-      typeof customerLng !== 'number' || Number.isNaN(customerLng)
+      typeof targetLat !== 'number' || Number.isNaN(targetLat) ||
+      typeof targetLng !== 'number' || Number.isNaN(targetLng)
     ) {
       return;
     }
 
-    const distanceMeters = calculateHaversineDistance(riderLat, riderLng, customerLat, customerLng);
+    const distanceMeters = calculateHaversineDistance(riderLat, riderLng, targetLat, targetLng);
     const distanceKm = distanceMeters / 1000;
 
     window.dispatchEvent(new CustomEvent('driverDistanceUpdate', {
       detail: {
         orderId,
         distanceMeters,
-        distanceKm
+        distanceKm,
+        source: userLiveCoords?.lat != null && userLiveCoords?.lng != null ? 'live-user' : 'order-address'
       }
     }));
   }, [
     orderId,
+    hasLiveSocketLocation,
     deliveryBoyLocation?.lat,
     deliveryBoyLocation?.lng,
     currentLocation?.lat,
     currentLocation?.lng,
+    userLiveCoords?.lat,
+    userLiveCoords?.lng,
     customerCoords?.lat,
     customerCoords?.lng
   ]);

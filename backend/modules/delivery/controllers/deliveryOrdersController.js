@@ -848,16 +848,22 @@ export const confirmReachedPickup = asyncHandler(async (req, res) => {
     // - status is 'accepted' OR  
     // - currentPhase is 'accepted' (alternative phase name)
     // - order status is 'preparing' or 'ready' (restaurant preparing/ready)
-    const isValidState = order.deliveryState.currentPhase === 'en_route_to_pickup' || 
-                         order.deliveryState.currentPhase === 'at_pickup' || // Already at pickup - idempotent
-                         order.deliveryState.status === 'accepted' ||
-                         order.deliveryState.status === 'reached_pickup' || // Already reached - idempotent
-                         order.deliveryState.currentPhase === 'accepted' ||
-                         order.status === 'preparing' || // Order is preparing, can reach pickup
-                         order.status === 'ready'; // Order is ready, can reach pickup
+    const currentPhase = order.deliveryState?.currentPhase || '';
+    const deliveryStateStatus = order.deliveryState?.status || '';
+    const orderStatus = order.status || '';
+    const isValidState = currentPhase === 'en_route_to_pickup' ||
+                         currentPhase === 'at_pickup' || // Already at pickup - idempotent
+                         currentPhase === 'accepted' ||
+                         currentPhase === 'assigned' ||
+                         deliveryStateStatus === 'accepted' ||
+                         deliveryStateStatus === 'reached_pickup' || // Already reached - idempotent
+                         deliveryStateStatus === 'pending' ||
+                         orderStatus === 'confirmed' ||
+                         orderStatus === 'preparing' ||
+                         orderStatus === 'ready';
 
     // If already at pickup, just return success (idempotent operation)
-    if (order.deliveryState.currentPhase === 'at_pickup' || order.deliveryState.status === 'reached_pickup') {
+    if (currentPhase === 'at_pickup' || deliveryStateStatus === 'reached_pickup') {
       console.log(`ℹ️ Order ${order.orderId} already at pickup. Returning success (idempotent).`);
       return successResponse(res, 200, 'Reached pickup already confirmed', {
         order,
@@ -866,7 +872,7 @@ export const confirmReachedPickup = asyncHandler(async (req, res) => {
     }
 
     if (!isValidState) {
-      return errorResponse(res, 400, `Order is not in valid state for reached pickup. Current phase: ${order.deliveryState?.currentPhase || 'unknown'}, Status: ${order.deliveryState?.status || 'unknown'}, Order status: ${order.status || 'unknown'}`);
+      return errorResponse(res, 400, `Order is not in valid state for reached pickup. Current phase: ${currentPhase || 'unknown'}, Status: ${deliveryStateStatus || 'unknown'}, Order status: ${orderStatus || 'unknown'}`);
     }
 
     // Update order state
@@ -1089,15 +1095,21 @@ export const confirmOrderId = asyncHandler(async (req, res) => {
     // - status is 'reached_pickup' OR
     // - order status is 'preparing' or 'ready' (restaurant preparing/ready) OR
     // - currentPhase is 'en_route_to_pickup' or status is 'accepted' (Reached Pickup not yet persisted / edge case)
-    const isValidState = order.deliveryState.currentPhase === 'at_pickup' ||
-                         order.deliveryState.status === 'reached_pickup' ||
-                         order.status === 'preparing' ||
-                         order.status === 'ready' ||
-                         order.deliveryState.currentPhase === 'en_route_to_pickup' ||
-                         order.deliveryState.status === 'accepted';
+    const currentPhase = order.deliveryState?.currentPhase || '';
+    const deliveryStateStatus = order.deliveryState?.status || '';
+    const orderStatus = order.status || '';
+    const isValidState = currentPhase === 'at_pickup' ||
+                         currentPhase === 'en_route_to_pickup' ||
+                         currentPhase === 'assigned' ||
+                         deliveryStateStatus === 'reached_pickup' ||
+                         deliveryStateStatus === 'accepted' ||
+                         deliveryStateStatus === 'pending' ||
+                         orderStatus === 'confirmed' ||
+                         orderStatus === 'preparing' ||
+                         orderStatus === 'ready';
 
     if (!isValidState) {
-      return errorResponse(res, 400, `Order is not at pickup. Current phase: ${order.deliveryState?.currentPhase || 'unknown'}, Status: ${order.deliveryState?.status || 'unknown'}, Order status: ${order.status || 'unknown'}`);
+      return errorResponse(res, 400, `Order is not at pickup. Current phase: ${currentPhase || 'unknown'}, Status: ${deliveryStateStatus || 'unknown'}, Order status: ${orderStatus || 'unknown'}`);
     }
 
     // Get customer location

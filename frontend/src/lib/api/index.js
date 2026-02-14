@@ -739,8 +739,15 @@ export const deliveryAPI = {
     }
     return apiClient.patch(API_ENDPOINTS.DELIVERY.ORDER_ACCEPT.replace(':orderId', orderId), payload);
   },
-  confirmReachedPickup: (orderId) => {
-    return apiClient.patch(API_ENDPOINTS.DELIVERY.ORDER_REACHED_PICKUP.replace(':orderId', orderId));
+  confirmReachedPickup: (orderId, currentLocation = {}) => {
+    const payload = {};
+    if (currentLocation.lat !== undefined && currentLocation.lat !== null) {
+      payload.currentLat = currentLocation.lat;
+    }
+    if (currentLocation.lng !== undefined && currentLocation.lng !== null) {
+      payload.currentLng = currentLocation.lng;
+    }
+    return apiClient.patch(API_ENDPOINTS.DELIVERY.ORDER_REACHED_PICKUP.replace(':orderId', orderId), payload);
   },
   confirmOrderId: (orderId, confirmedOrderId, currentLocation = {}, additionalData = {}) => {
     return apiClient.patch(API_ENDPOINTS.DELIVERY.ORDER_CONFIRM_ID.replace(':orderId', orderId), {

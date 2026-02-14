@@ -76,6 +76,21 @@ const TrackingPage = () => {
   const etaMax = order?.eta?.max || Number(order?.estimatedDeliveryTime || 30);
   const etaText = `${etaMin}-${etaMax} mins`;
   const storeName = order?.restaurantId?.name || order?.restaurantName || 'Store';
+  const restaurantPlatform = String(order?.restaurantId?.platform || order?.platform || '').toLowerCase();
+  const storeLabel = String(order?.restaurantName || order?.restaurantId?.name || '').toLowerCase();
+  const orderNote = String(order?.note || '').toLowerCase();
+  const approvalStatus = String(order?.adminApproval?.status || '').toLowerCase();
+  const orderStatus = String(order?.status || '').toLowerCase();
+  const isMoGroceryOrder =
+    restaurantPlatform === 'mogrocery' ||
+    storeLabel.includes('mogrocery') ||
+    orderNote.includes('[mogrocery]');
+  const isAwaitingGroceryAdminAcceptance =
+    isMoGroceryOrder &&
+    (approvalStatus ? approvalStatus !== 'approved' : (orderStatus === 'pending' || orderStatus === 'confirmed'));
+  const preparationText = isAwaitingGroceryAdminAcceptance
+    ? 'Yet to accept by grocery admin'
+    : 'Preparing your order';
   const contactName = order?.deliveryPartnerId?.name || order?.userId?.name || order?.userId?.fullName || 'Contact';
   const contactPhone = order?.deliveryPartnerId?.phone || order?.userId?.phone || 'N/A';
   const deliveryAddress = order?.address?.fullAddress || order?.address?.formattedAddress || order?.address?.address || 'Delivery location';
@@ -161,7 +176,7 @@ const TrackingPage = () => {
               <div className="w-12 h-12 rounded-full bg-red-900/30 flex items-center justify-center">
                 <UtensilsCrossed className="w-6 h-6 text-red-400" />
               </div>
-              <p className="font-semibold text-white">Preparing your order</p>
+              <p className="font-semibold text-white">{preparationText}</p>
             </div>
           </div>
 

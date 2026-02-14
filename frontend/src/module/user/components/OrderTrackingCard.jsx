@@ -188,11 +188,25 @@ export default function OrderTrackingCard() {
   }
 
   const restaurantName = activeOrder.restaurant || activeOrder.restaurantName || activeOrder.restaurantName || 'Restaurant';
-  const statusText = orderStatus === 'preparing' || orderStatus === 'confirmed' || orderStatus === 'pending'
-    ? 'Preparing your order' 
-    : orderStatus === 'out_for_delivery' || orderStatus === 'outfordelivery' || orderStatus === 'on_way'
-    ? 'On the way'
-    : 'Preparing your order';
+  const restaurantPlatform = String(activeOrder?.restaurantId?.platform || activeOrder?.platform || '').toLowerCase();
+  const restaurantLabel = String(activeOrder?.restaurantName || activeOrder?.restaurant || '').toLowerCase();
+  const orderNote = String(activeOrder?.note || '').toLowerCase();
+  const approvalStatus = String(activeOrder?.adminApproval?.status || '').toLowerCase();
+  const isMoGroceryOrder =
+    restaurantPlatform === 'mogrocery' ||
+    restaurantLabel.includes('mogrocery') ||
+    orderNote.includes('[mogrocery]');
+  const isAwaitingGroceryAdminAcceptance =
+    isMoGroceryOrder &&
+    (approvalStatus ? approvalStatus !== 'approved' : (orderStatus === 'pending' || orderStatus === 'confirmed'));
+
+  const statusText = isAwaitingGroceryAdminAcceptance
+    ? 'Yet to accept by grocery admin'
+    : orderStatus === 'preparing' || orderStatus === 'confirmed' || orderStatus === 'pending'
+      ? 'Preparing your order'
+      : orderStatus === 'out_for_delivery' || orderStatus === 'outfordelivery' || orderStatus === 'on_way'
+        ? 'On the way'
+        : 'Preparing your order';
 
   console.log('✅ OrderTrackingCard - Rendering card:', {
     restaurantName,

@@ -636,6 +636,7 @@ export default function DeliveryHome() {
   const [routePolyline, setRoutePolyline] = useState([])
    const [showRoutePath, setShowRoutePath] = useState(false) // Toggle to show/hide route path - disabled by default
    const [directionsResponse, setDirectionsResponse] = useState(null) // Directions API response for road-based routing
+  const selectedRestaurantRef = useRef(null)
   const [reachedPickupButtonProgress, setreachedPickupButtonProgress] = useState(0)
   const [reachedPickupIsAnimatingToComplete, setreachedPickupIsAnimatingToComplete] = useState(false)
   const reachedPickupButtonRef = useRef(null)
@@ -726,6 +727,44 @@ export default function DeliveryHome() {
   useEffect(() => {
     isOnlineRef.current = isOnline
   }, [isOnline])
+
+  // Keep selected order ref in sync for geolocation callbacks
+  useEffect(() => {
+    selectedRestaurantRef.current = selectedRestaurant
+  }, [selectedRestaurant])
+
+  const toCoordNumber = useCallback((coord) => {
+    if (coord == null) return null
+    if (typeof coord === 'function') {
+      const value = coord()
+      return Number.isFinite(value) ? value : null
+    }
+    const value = Number(coord)
+    return Number.isFinite(value) ? value : null
+  }, [])
+
+  const isDirectionsRouteToLocation = useCallback((directionsResult, targetLat, targetLng, tolerance = 0.0005) => {
+    if (!directionsResult?.routes?.length) return false
+    const endLocation = directionsResult.routes?.[0]?.legs?.[0]?.end_location
+    const endLat = toCoordNumber(endLocation?.lat)
+    const endLng = toCoordNumber(endLocation?.lng)
+    const normalizedTargetLat = Number(targetLat)
+    const normalizedTargetLng = Number(targetLng)
+
+    if (
+      endLat == null ||
+      endLng == null ||
+      !Number.isFinite(normalizedTargetLat) ||
+      !Number.isFinite(normalizedTargetLng)
+    ) {
+      return false
+    }
+
+    return (
+      Math.abs(endLat - normalizedTargetLat) < tolerance &&
+      Math.abs(endLng - normalizedTargetLng) < tolerance
+    )
+  }, [toCoordNumber])
 
   // Sync online status with localStorage changes (from FeedNavbar or other tabs)
   useEffect(() => {
@@ -1958,7 +1997,44 @@ export default function DeliveryHome() {
           
           // Update live tracking polyline for any active route (pickup or delivery)
           const currentDirectionsResponse = directionsResponseRef.current;
-          if (currentDirectionsResponse && currentDirectionsResponse.routes && currentDirectionsResponse.routes.length > 0) {
+          const activeOrder = selectedRestaurantRef.current;
+          const orderStatus = activeOrder?.orderStatus || activeOrder?.status || '';
+          const deliveryPhase = activeOrder?.deliveryPhase || activeOrder?.deliveryState?.currentPhase || '';
+          const deliveryStateStatus = activeOrder?.deliveryState?.status || '';
+          const isPickedUpPhase =
+            orderStatus === 'out_for_delivery' ||
+            orderStatus === 'picked_up' ||
+            deliveryPhase === 'en_route_to_delivery' ||
+            deliveryPhase === 'picked_up' ||
+            deliveryStateStatus === 'order_confirmed' ||
+            deliveryStateStatus === 'en_route_to_delivery';
+
+          const hasCustomerLocation =
+            activeOrder?.customerLat != null &&
+            activeOrder?.customerLng != null &&
+            Number.isFinite(Number(activeOrder.customerLat)) &&
+            Number.isFinite(Number(activeOrder.customerLng)) &&
+            !(Number(activeOrder.customerLat) === 0 && Number(activeOrder.customerLng) === 0);
+
+          const isRouteToCustomer =
+            hasCustomerLocation &&
+            isDirectionsRouteToLocation(
+              currentDirectionsResponse,
+              activeOrder?.customerLat,
+              activeOrder?.customerLng
+            );
+
+          if (isPickedUpPhase && hasCustomerLocation && !isRouteToCustomer) {
+            if (liveTrackingPolylineRef.current) {
+              liveTrackingPolylineRef.current.setMap(null);
+              liveTrackingPolylineRef.current = null;
+            }
+            if (liveTrackingPolylineShadowRef.current) {
+              liveTrackingPolylineShadowRef.current.setMap(null);
+              liveTrackingPolylineShadowRef.current = null;
+            }
+            directionsResponseRef.current = null;
+          } else if (currentDirectionsResponse && currentDirectionsResponse.routes && currentDirectionsResponse.routes.length > 0) {
             updateLiveTrackingPolyline(currentDirectionsResponse, smoothedLocation);
           }
           
@@ -2093,7 +2169,7 @@ export default function DeliveryHome() {
           watchPositionIdRef.current = null
         }
       }
-  }, [isOnline]) // Re-run when online status changes - this controls start/stop of tracking
+  }, [isOnline, isDirectionsRouteToLocation]) // Re-run when online status changes - this controls start/stop of tracking
 
   // Handle new order popup accept button swipe
   const handleNewOrderAcceptTouchStart = (e) => {
@@ -3102,7 +3178,14 @@ export default function DeliveryHome() {
             // Call backend API to confirm reached pickup and save status in database
             console.log('📦 Confirming reached pickup for order:', orderId)
             console.log('📦 API endpoint: /delivery/orders/:orderId/reached-pickup')
-            const response = await deliveryAPI.confirmReachedPickup(orderId)
+            const riderPos = (riderLocation && riderLocation.length === 2)
+              ? riderLocation
+              : (lastLocationRef.current && lastLocationRef.current.length === 2 ? lastLocationRef.current : null)
+
+            const response = await deliveryAPI.confirmReachedPickup(orderId, riderPos ? {
+              lat: riderPos[0],
+              lng: riderPos[1]
+            } : {})
             
             console.log('📦 Reached pickup API response:', response.data)
             
@@ -6500,11 +6583,36 @@ export default function DeliveryHome() {
 
     const currentDirectionsResponse = directionsResponseRef.current;
     const currentRiderLocation = riderLocation || lastLocationRef.current;
+    const orderStatus = selectedRestaurant?.orderStatus || selectedRestaurant?.status || '';
+    const deliveryPhase = selectedRestaurant?.deliveryPhase || selectedRestaurant?.deliveryState?.currentPhase || '';
+    const deliveryStateStatus = selectedRestaurant?.deliveryState?.status || '';
+    const isPickedUpPhase =
+      orderStatus === 'out_for_delivery' ||
+      orderStatus === 'picked_up' ||
+      deliveryPhase === 'en_route_to_delivery' ||
+      deliveryPhase === 'picked_up' ||
+      deliveryStateStatus === 'order_confirmed' ||
+      deliveryStateStatus === 'en_route_to_delivery';
+    const hasCustomerLocation =
+      selectedRestaurant?.customerLat != null &&
+      selectedRestaurant?.customerLng != null &&
+      Number.isFinite(Number(selectedRestaurant.customerLat)) &&
+      Number.isFinite(Number(selectedRestaurant.customerLng)) &&
+      !(Number(selectedRestaurant.customerLat) === 0 && Number(selectedRestaurant.customerLng) === 0);
+    const shouldUseCurrentDirections =
+      !isPickedUpPhase ||
+      !hasCustomerLocation ||
+      isDirectionsRouteToLocation(
+        currentDirectionsResponse,
+        selectedRestaurant?.customerLat,
+        selectedRestaurant?.customerLng
+      );
 
     // If we have a directions response and rider location, but no polyline, create it
     if (currentDirectionsResponse && 
         currentDirectionsResponse.routes && 
         currentDirectionsResponse.routes.length > 0 &&
+        shouldUseCurrentDirections &&
         currentRiderLocation && 
         currentRiderLocation.length === 2 &&
         !liveTrackingPolylineRef.current) {
@@ -6521,8 +6629,15 @@ export default function DeliveryHome() {
       if (liveTrackingPolylineShadowRef.current) {
         liveTrackingPolylineShadowRef.current.setMap(window.deliveryMapInstance);
       }
+    } else if (!shouldUseCurrentDirections && liveTrackingPolylineRef.current) {
+      liveTrackingPolylineRef.current.setMap(null);
+      liveTrackingPolylineRef.current = null;
+      if (liveTrackingPolylineShadowRef.current) {
+        liveTrackingPolylineShadowRef.current.setMap(null);
+        liveTrackingPolylineShadowRef.current = null;
+      }
     }
-  }, [selectedRestaurant, riderLocation, updateLiveTrackingPolyline]);
+  }, [selectedRestaurant, riderLocation, updateLiveTrackingPolyline, isDirectionsRouteToLocation]);
 
   // Clear any default/mock routes on mount if there's no active order
   useEffect(() => {
@@ -6702,6 +6817,23 @@ export default function DeliveryHome() {
 
     // Always use custom polyline (DirectionsRenderer is never active - it adds dots)
     if (routePolylineRef.current) {
+      const orderStatus = selectedRestaurant?.orderStatus || selectedRestaurant?.status || ''
+      const deliveryPhase = selectedRestaurant?.deliveryPhase || selectedRestaurant?.deliveryState?.currentPhase || ''
+      const deliveryStateStatus = selectedRestaurant?.deliveryState?.status || ''
+      const isPickedUpPhase =
+        orderStatus === 'out_for_delivery' ||
+        orderStatus === 'picked_up' ||
+        deliveryPhase === 'en_route_to_delivery' ||
+        deliveryPhase === 'picked_up' ||
+        deliveryStateStatus === 'order_confirmed' ||
+        deliveryStateStatus === 'en_route_to_delivery'
+
+      // After pickup, hide legacy/store route polyline.
+      if (isPickedUpPhase) {
+        routePolylineRef.current.setMap(null);
+        return;
+      }
+
       if (showRoutePath && routeHistoryRef.current.length >= 2) {
         routePolylineRef.current.setMap(window.deliveryMapInstance);
       } else if (routePolyline && routePolyline.length > 0) {
@@ -7233,30 +7365,73 @@ export default function DeliveryHome() {
     const riderPos = (riderLocation && riderLocation.length === 2)
       ? riderLocation
       : (lastLocationRef.current && lastLocationRef.current.length === 2 ? lastLocationRef.current : null);
+
+    const buildDeliveryOnlyFallbackRoute = () => {
+      const fallbackCoords =
+        selectedRestaurant?.deliveryState?.routeToDelivery?.coordinates ||
+        selectedRestaurant?.routeToDelivery?.coordinates ||
+        [];
+
+      if (!Array.isArray(fallbackCoords) || fallbackCoords.length < 2 || !riderPos || riderPos.length !== 2) {
+        return null;
+      }
+
+      const normalizedPoints = fallbackCoords
+        .map((coord) => {
+          if (!Array.isArray(coord) || coord.length < 2) return null;
+          const lat = Number(coord[0]);
+          const lng = Number(coord[1]);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+          return { lat, lng };
+        })
+        .filter(Boolean);
+
+      if (normalizedPoints.length < 2) {
+        return null;
+      }
+
+      const riderPoint = { lat: Number(riderPos[0]), lng: Number(riderPos[1]) };
+      if (!Number.isFinite(riderPoint.lat) || !Number.isFinite(riderPoint.lng)) {
+        return null;
+      }
+
+      const customerPoint = {
+        lat: Number(selectedRestaurant?.customerLat),
+        lng: Number(selectedRestaurant?.customerLng)
+      };
+
+      const { segmentIndex, nearestPoint } = findNearestPointOnPolyline(normalizedPoints, riderPoint);
+      const trimmedPoints = trimPolylineBehindRider(normalizedPoints, nearestPoint, segmentIndex);
+
+      const deliveryOnlyPoints = [
+        riderPoint,
+        ...trimmedPoints
+      ];
+
+      if (Number.isFinite(customerPoint.lat) && Number.isFinite(customerPoint.lng)) {
+        const lastPoint = deliveryOnlyPoints[deliveryOnlyPoints.length - 1];
+        const sameAsCustomer =
+          lastPoint &&
+          Math.abs(lastPoint.lat - customerPoint.lat) < 0.00005 &&
+          Math.abs(lastPoint.lng - customerPoint.lng) < 0.00005;
+
+        if (!sameAsCustomer) {
+          deliveryOnlyPoints.push(customerPoint);
+        }
+      }
+
+      return deliveryOnlyPoints.map((point) => [point.lat, point.lng]);
+    };
     
     // Only switch route if order is picked up and we have customer location
     if (isPickedUp && hasCustomerLocation && riderPos && riderPos.length === 2) {
       // Check if we already have a route to customer (avoid recalculating unnecessarily)
       const currentDirections = directionsResponseRef.current;
-      const toCoordNumber = (coord) => {
-        if (coord == null) return null;
-        if (typeof coord === 'function') {
-          const value = coord();
-          return Number.isFinite(value) ? value : null;
-        }
-        const value = Number(coord);
-        return Number.isFinite(value) ? value : null;
-      };
-
-      const currentEndLocation = currentDirections?.routes?.[0]?.legs?.[0]?.end_location;
-      const currentEndLat = toCoordNumber(currentEndLocation?.lat);
-      const currentEndLng = toCoordNumber(currentEndLocation?.lng);
-
-      const isCurrentRouteToCustomer =
-        currentEndLat != null &&
-        currentEndLng != null &&
-        Math.abs(currentEndLat - selectedRestaurant.customerLat) < 0.0005 &&
-        Math.abs(currentEndLng - selectedRestaurant.customerLng) < 0.0005;
+      const isCurrentRouteToCustomer = isDirectionsRouteToLocation(
+        currentDirections,
+        selectedRestaurant.customerLat,
+        selectedRestaurant.customerLng
+      );
 
       const needsCustomerRoute = !currentDirections || 
                                  !currentDirections.routes || 
@@ -7327,27 +7502,21 @@ export default function DeliveryHome() {
             }
           } else {
             // Fallback: use backend-provided routeToDelivery polyline if Directions API is unavailable
-            const fallbackCoords =
-              selectedRestaurant?.deliveryState?.routeToDelivery?.coordinates ||
-              selectedRestaurant?.routeToDelivery?.coordinates ||
-              [];
-            if (Array.isArray(fallbackCoords) && fallbackCoords.length > 1) {
-              setRoutePolyline(fallbackCoords);
-              updateRoutePolyline(fallbackCoords);
-              console.log('✅ Using fallback routeToDelivery polyline after pickup');
+            const fallbackDeliveryRoute = buildDeliveryOnlyFallbackRoute();
+            if (Array.isArray(fallbackDeliveryRoute) && fallbackDeliveryRoute.length > 1) {
+              setRoutePolyline(fallbackDeliveryRoute);
+              updateRoutePolyline(fallbackDeliveryRoute);
+              console.log('✅ Using rider-to-customer fallback polyline after pickup');
             }
           }
         }).catch(error => {
           console.warn('⚠️ Error calculating route to customer after pickup:', error);
           // Fallback on route calculation error
-          const fallbackCoords =
-            selectedRestaurant?.deliveryState?.routeToDelivery?.coordinates ||
-            selectedRestaurant?.routeToDelivery?.coordinates ||
-            [];
-          if (Array.isArray(fallbackCoords) && fallbackCoords.length > 1) {
-            setRoutePolyline(fallbackCoords);
-            updateRoutePolyline(fallbackCoords);
-            console.log('✅ Using fallback routeToDelivery polyline after pickup error');
+          const fallbackDeliveryRoute = buildDeliveryOnlyFallbackRoute();
+          if (Array.isArray(fallbackDeliveryRoute) && fallbackDeliveryRoute.length > 1) {
+            setRoutePolyline(fallbackDeliveryRoute);
+            updateRoutePolyline(fallbackDeliveryRoute);
+            console.log('✅ Using rider-to-customer fallback polyline after pickup error');
           }
         });
       }
@@ -7364,7 +7533,8 @@ export default function DeliveryHome() {
     selectedRestaurant?.routeToDelivery?.coordinates,
     riderLocation,
     calculateRouteWithDirectionsAPI,
-    updateLiveTrackingPolyline
+    updateLiveTrackingPolyline,
+    isDirectionsRouteToLocation
   ]);
 
   // When out_for_delivery but customerLat/customerLng missing, fetch order details and set them

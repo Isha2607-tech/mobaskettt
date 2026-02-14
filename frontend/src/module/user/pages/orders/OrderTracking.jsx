@@ -74,7 +74,7 @@ const AnimatedCheckmark = ({ delay = 0 }) => (
 const DeliveryMap = ({ orderId, order, isVisible }) => {
   const { location: userLocation } = useUserLocation() // Get user's live location
   
-  // Get coordinates from order or use defaults (Indore)
+  // Extract coordinates from order payload
   const getRestaurantCoords = () => {
     console.log('🔍 Getting restaurant coordinates from order:', {
       hasOrder: !!order,
@@ -118,9 +118,8 @@ const DeliveryMap = ({ orderId, order, isVisible }) => {
       return result;
     }
     
-    console.warn('⚠️ Restaurant coordinates not found, using default Indore coordinates');
-    // Default Indore coordinates
-    return { lat: 22.7196, lng: 75.8577 };
+    console.warn('⚠️ Restaurant coordinates not found for this order');
+    return null;
   };
 
   const getCustomerCoords = () => {
@@ -152,8 +151,8 @@ const DeliveryMap = ({ orderId, order, isVisible }) => {
         lng: order.address.lng
       };
     }
-    // Default Indore coordinates
-    return { lat: 22.7196, lng: 75.8577 };
+    console.warn('⚠️ Customer coordinates not found for this order');
+    return null;
   };
 
   // Get user's live location coordinates
@@ -252,6 +251,28 @@ export default function OrderTracking() {
   const [isEditingOrder, setIsEditingOrder] = useState(false)
 
   const defaultAddress = getDefaultAddress()
+  const isMoGroceryOrder = (rawOrder = null) => {
+    const restaurantPlatform = String(rawOrder?.restaurantId?.platform || rawOrder?.platform || "").toLowerCase()
+    const restaurantLabel = String(rawOrder?.restaurantName || rawOrder?.restaurant || rawOrder?.restaurantId?.name || "").toLowerCase()
+    const orderNote = String(rawOrder?.note || "").toLowerCase()
+
+    return (
+      restaurantPlatform === "mogrocery" ||
+      restaurantLabel.includes("mogrocery") ||
+      orderNote.includes("[mogrocery]")
+    )
+  }
+
+  const isAwaitingGroceryAdminAcceptance = (rawOrder = null) => {
+    if (!isMoGroceryOrder(rawOrder)) return false
+
+    const approvalStatus = String(rawOrder?.adminApproval?.status || "").toLowerCase()
+    const normalizedStatus = String(rawOrder?.status || "").toLowerCase()
+
+    if (approvalStatus) return approvalStatus !== "approved"
+    return normalizedStatus === "pending" || normalizedStatus === "confirmed"
+  }
+
   const deriveUiOrderStatus = (rawStatus, rawOrder = null) => {
     const normalized = String(rawStatus || rawOrder?.status || "").toLowerCase()
     const deliveryStatus = String(rawOrder?.deliveryState?.status || "").toLowerCase()
@@ -293,6 +314,9 @@ export default function OrderTracking() {
       deliveryPhase === "en_route_to_pickup" ||
       deliveryPhase === "at_pickup"
     ) {
+      if (isAwaitingGroceryAdminAcceptance(rawOrder)) {
+        return "placed"
+      }
       return "preparing"
     }
 
@@ -592,6 +616,8 @@ export default function OrderTracking() {
             })) || [],
             total: apiOrder.pricing?.total || 0,
             status: apiOrder.status || 'pending',
+            adminApproval: apiOrder.adminApproval || null,
+            note: apiOrder.note || "",
             deliveryPartner: apiOrder.deliveryPartnerId ? {
               name: apiOrder.deliveryPartnerId.name || 'Delivery Partner',
               phone: apiOrder.deliveryPartnerId.phone || null,
@@ -941,6 +967,8 @@ export default function OrderTracking() {
           })) || [],
           total: apiOrder.pricing?.total || 0,
           status: apiOrder.status || 'pending',
+          adminApproval: apiOrder.adminApproval || null,
+          note: apiOrder.note || "",
           deliveryPartner: apiOrder.deliveryPartnerId ? {
             name: apiOrder.deliveryPartnerId.name || 'Delivery Partner',
             phone: apiOrder.deliveryPartnerId.phone || null,
@@ -995,16 +1023,25 @@ export default function OrderTracking() {
     order?.deliveryState?.status === "reached_pickup" ||
     order?.deliveryState?.currentPhase === "en_route_to_pickup" ||
     order?.deliveryState?.currentPhase === "at_pickup"
+  const isPendingGroceryAdminAcceptance = isAwaitingGroceryAdminAcceptance(order)
 
   const statusConfig = {
     placed: {
-      title: "Order placed",
-      subtitle: "Food preparation will begin shortly",
+      title: isPendingGroceryAdminAcceptance ? "Yet to accept" : "Order placed",
+      subtitle: isPendingGroceryAdminAcceptance ? "Awaiting grocery admin acceptance" : "Food preparation will begin shortly",
       color: "bg-green-700"
     },
     preparing: {
-      title: isRiderHeadingToPickup ? "Delivery partner is heading to pickup" : "Preparing your order",
-      subtitle: isRiderHeadingToPickup ? "Restaurant is handing over your order" : `Arriving in ${estimatedTime} mins`,
+      title: isPendingGroceryAdminAcceptance
+        ? "Yet to accept"
+        : isRiderHeadingToPickup
+          ? "Delivery partner is heading to pickup"
+          : "Preparing your order",
+      subtitle: isPendingGroceryAdminAcceptance
+        ? "Awaiting grocery admin acceptance"
+        : isRiderHeadingToPickup
+          ? "Restaurant is handing over your order"
+          : `Arriving in ${estimatedTime} mins`,
       color: "bg-green-700"
     },
     pickup: {
@@ -1188,7 +1225,9 @@ export default function OrderTracking() {
                       className="w-full h-full object-cover"
                     />
                   </div>
-                  <p className="font-semibold text-gray-900">Food is Cooking</p>
+                  <p className="font-semibold text-gray-900">
+                    {isPendingGroceryAdminAcceptance ? "Yet to accept by grocery admin" : "Food is Cooking"}
+                  </p>
                 </div>
               </motion.div>
             )
