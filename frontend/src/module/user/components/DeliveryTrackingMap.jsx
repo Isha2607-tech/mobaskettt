@@ -41,6 +41,7 @@ const DeliveryTrackingMap = ({
   const [currentLocation, setCurrentLocation] = useState(null);
   const [deliveryBoyLocation, setDeliveryBoyLocation] = useState(null);
   const routePolylineRef = useRef(null);
+  const isCustomerLegRef = useRef(false);
   const routePolylinePointsRef = useRef(null); // Store decoded polyline points for route-based animation
   const animationControllerRef = useRef(null); // Route-based animation controller
   const lastRouteUpdateRef = useRef(null);
@@ -108,7 +109,14 @@ const DeliveryTrackingMap = ({
       console.log('✅ Using cached route');
       // Use cached result
       if (cached.result && cached.result.routes && cached.result.routes[0]) {
-        directionsRendererRef.current.setOptions({ preserveViewport: true });
+        directionsRendererRef.current.setOptions({
+          preserveViewport: true,
+          polylineOptions: {
+            strokeColor: isCustomerLegRef.current ? '#2563eb' : '#10b981',
+            strokeWeight: 5,
+            strokeOpacity: 0.95
+          }
+        });
         directionsRendererRef.current.setDirections(cached.result);
         
         const polylinePoints = extractPolylineFromDirections(cached.result);
@@ -123,7 +131,7 @@ const DeliveryTrackingMap = ({
           }
         }
         
-        if (cached.result.routes && cached.result.routes[0] && cached.result.routes[0].overview_path) {
+        if (cached.result.routes && cached.result.routes[0] && cached.result.routes[0].overview_path && !isCustomerLegRef.current) {
           if (routePolylineRef.current) {
             routePolylineRef.current.setMap(null);
           }
@@ -148,6 +156,9 @@ const DeliveryTrackingMap = ({
             map: mapInstance.current,
             zIndex: 1
           });
+        } else if (routePolylineRef.current) {
+          routePolylineRef.current.setMap(null);
+          routePolylineRef.current = null;
         }
       }
       return;
@@ -193,7 +204,14 @@ const DeliveryTrackingMap = ({
           }
           
           // Ensure viewport doesn't change when route is set
-          directionsRendererRef.current.setOptions({ preserveViewport: true });
+          directionsRendererRef.current.setOptions({
+            preserveViewport: true,
+            polylineOptions: {
+              strokeColor: isCustomerLegRef.current ? '#2563eb' : '#10b981',
+              strokeWeight: 5,
+              strokeOpacity: 0.95
+            }
+          });
           directionsRendererRef.current.setDirections(result);
           
           // Extract polyline points for route-based animation (Rapido style)
@@ -213,7 +231,7 @@ const DeliveryTrackingMap = ({
           }
           
           // Create dashed polyline overlay for better visibility
-          if (result.routes && result.routes[0] && result.routes[0].overview_path) {
+          if (result.routes && result.routes[0] && result.routes[0].overview_path && !isCustomerLegRef.current) {
             // Remove existing custom polyline if any
             if (routePolylineRef.current) {
               routePolylineRef.current.setMap(null);
@@ -240,6 +258,9 @@ const DeliveryTrackingMap = ({
               map: mapInstance.current,
               zIndex: 1
             });
+          } else if (routePolylineRef.current) {
+            routePolylineRef.current.setMap(null);
+            routePolylineRef.current = null;
           }
           
         } else {
@@ -287,40 +308,60 @@ const DeliveryTrackingMap = ({
 
   // Determine which route to show based on order phase
   const getRouteToShow = useCallback(() => {
-    if (!order || !deliveryBoyLocation) {
-      // No delivery boy location yet, show restaurant to customer
-      return { start: restaurantCoords, end: customerCoords };
+    const currentPhase = order?.deliveryState?.currentPhase || 'assigned';
+    const status = order?.deliveryState?.status || 'pending';
+    const orderStatus = order?.status || '';
+
+    const hasRiderLocation =
+      !!deliveryBoyLocation &&
+      typeof deliveryBoyLocation.lat === 'number' &&
+      typeof deliveryBoyLocation.lng === 'number';
+
+    const isCustomerLeg =
+      currentPhase === 'en_route_to_delivery' ||
+      status === 'order_confirmed' ||
+      status === 'en_route_to_delivery' ||
+      orderStatus === 'out_for_delivery';
+
+    // After pickup/delivery leg, ONLY show rider -> customer.
+    // Do not fallback to store route in this phase.
+    if (isCustomerLeg) {
+      if (hasRiderLocation) {
+        return {
+          start: { lat: deliveryBoyLocation.lat, lng: deliveryBoyLocation.lng },
+          end: customerCoords
+        };
+      }
+      return { start: null, end: null };
     }
 
-    const currentPhase = order.deliveryState?.currentPhase || 'assigned';
-    const status = order.deliveryState?.status || 'pending';
+    // Initial stage: before rider accepts, show customer <-> store route.
+    if (
+      !order ||
+      (!hasRiderLocation && status === 'pending' && currentPhase === 'assigned' && orderStatus !== 'out_for_delivery')
+    ) {
+      return { start: customerCoords, end: restaurantCoords };
+    }
 
-    // Phase 1: Delivery boy going to restaurant (en_route_to_pickup)
-    if (currentPhase === 'en_route_to_pickup' || status === 'accepted') {
-      return { 
-        start: { lat: deliveryBoyLocation.lat, lng: deliveryBoyLocation.lng }, 
-        end: restaurantCoords 
+    // Rider accepted but not picked up yet: rider -> store.
+    if (
+      hasRiderLocation &&
+      (
+        currentPhase === 'en_route_to_pickup' ||
+        currentPhase === 'at_pickup' ||
+        status === 'accepted' ||
+        status === 'reached_pickup' ||
+        (orderStatus !== 'out_for_delivery' && orderStatus !== 'delivered')
+      )
+    ) {
+      return {
+        start: { lat: deliveryBoyLocation.lat, lng: deliveryBoyLocation.lng },
+        end: restaurantCoords
       };
     }
 
-    // Phase 2: Delivery boy at restaurant (at_pickup) - show route to customer
-    if (currentPhase === 'at_pickup' || status === 'reached_pickup' || status === 'order_confirmed') {
-      return { 
-        start: restaurantCoords, 
-        end: customerCoords 
-      };
-    }
-
-    // Phase 3: Delivery boy going to customer (en_route_to_delivery)
-    if (currentPhase === 'en_route_to_delivery' || status === 'en_route_to_delivery' || order.status === 'out_for_delivery') {
-      return { 
-        start: { lat: deliveryBoyLocation.lat, lng: deliveryBoyLocation.lng }, 
-        end: customerCoords 
-      };
-    }
-
-    // Default: Show restaurant to customer
-    return { start: restaurantCoords, end: customerCoords };
+    // Fallback
+    return { start: customerCoords, end: restaurantCoords };
   }, [order, deliveryBoyLocation, restaurantCoords, customerCoords]);
 
   // Move bike smoothly with rotation
@@ -952,15 +993,15 @@ const DeliveryTrackingMap = ({
           });
         }
 
-        // Add customer marker with click/cursor icon (only once)
+        // Add customer marker with clean user pin icon (MoFood-style)
         if (!mapInstance.current._customerMarker) {
-          const customerClickIconUrl = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-            <svg xmlns="http://www.w3.org/2000/svg" width="40" height="50" viewBox="0 0 40 50">
+          const customerUserPinIconUrl = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+            <svg xmlns="http://www.w3.org/2000/svg" width="36" height="46" viewBox="0 0 36 46">
               <!-- Pin shape -->
-              <path d="M20 0 C9 0 0 9 0 20 C0 35 20 50 20 50 C20 50 40 35 40 20 C40 9 31 0 20 0 Z" fill="#4285F4" stroke="#ffffff" stroke-width="2"/>
-              <!-- Cursor/Click icon (pointer) -->
-              <path d="M14 8 L14 18 L18 18 L22 22 L22 10 L18 6 Z" fill="white" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M18 18 L18 14 L22 10" fill="none" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M18 0 C8.06 0 0 8.06 0 18 C0 30.5 18 46 18 46 C18 46 36 30.5 36 18 C36 8.06 27.94 0 18 0 Z" fill="#2563eb" stroke="#ffffff" stroke-width="2"/>
+              <!-- User icon -->
+              <circle cx="18" cy="14" r="4.2" fill="white"/>
+              <path d="M10.5 24 C11.8 20.6 14.6 18.8 18 18.8 C21.4 18.8 24.2 20.6 25.5 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
             </svg>
           `);
           
@@ -968,9 +1009,9 @@ const DeliveryTrackingMap = ({
             position: { lat: customerCoords.lat, lng: customerCoords.lng },
             map: mapInstance.current,
             icon: {
-              url: customerClickIconUrl,
-              scaledSize: new window.google.maps.Size(40, 50),
-              anchor: new window.google.maps.Point(20, 50),
+              url: customerUserPinIconUrl,
+              scaledSize: new window.google.maps.Size(36, 46),
+              anchor: new window.google.maps.Point(18, 46),
               origin: new window.google.maps.Point(0, 0)
             },
             zIndex: window.google.maps.Marker.MAX_ZINDEX + 1
@@ -1113,17 +1154,16 @@ const DeliveryTrackingMap = ({
       return; // Skip if updated less than 10 seconds ago
     }
     
-    // Only draw route if delivery partner is assigned
+    // Draw route whenever base coordinates are available.
     const routePhase = order?.deliveryState?.currentPhase;
     const routeStatus = order?.deliveryState?.status;
-    const hasDeliveryPartnerForRoute = routeStatus === 'accepted' ||
-                                      routePhase === 'en_route_to_pickup' ||
-                                      routePhase === 'at_pickup' ||
-                                      routePhase === 'en_route_to_delivery' ||
-                                      (routeStatus && routeStatus !== 'pending');
-    
-    // Only draw route if delivery partner is assigned
-    if (!hasDeliveryPartnerForRoute) {
+    const hasBaseRouteCoordinates =
+      typeof restaurantCoords?.lat === 'number' &&
+      typeof restaurantCoords?.lng === 'number' &&
+      typeof customerCoords?.lat === 'number' &&
+      typeof customerCoords?.lng === 'number';
+
+    if (!hasBaseRouteCoordinates) {
       // Clear any existing route if delivery partner is not assigned
       if (routePolylineRef.current) {
         routePolylineRef.current.setMap(null);
@@ -1135,7 +1175,24 @@ const DeliveryTrackingMap = ({
       return;
     }
     
+    const isCustomerLeg =
+      routePhase === 'en_route_to_delivery' ||
+      routeStatus === 'order_confirmed' ||
+      routeStatus === 'en_route_to_delivery' ||
+      order?.status === 'out_for_delivery';
+    isCustomerLegRef.current = isCustomerLeg;
+
     const route = getRouteToShow();
+    if (!route.start || !route.end) {
+      if (routePolylineRef.current) {
+        routePolylineRef.current.setMap(null);
+        routePolylineRef.current = null;
+      }
+      if (directionsRendererRef.current) {
+        directionsRendererRef.current.setDirections({ routes: [] });
+      }
+      return;
+    }
     if (route.start && route.end) {
       lastRouteUpdateRef.current = now;
       drawRoute(route.start, route.end);

@@ -160,6 +160,26 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
   return R * c
 }
 
+const MAX_REASONABLE_BOUNDS_DIAGONAL_METERS = 60000 // 60 km
+const MAX_REASONABLE_MARKER_JUMP_METERS = 2500 // 2.5 km
+
+function isBoundsReasonable(bounds) {
+  try {
+    if (!bounds || typeof bounds.getNorthEast !== "function" || typeof bounds.getSouthWest !== "function") {
+      return false
+    }
+    const ne = bounds.getNorthEast()
+    const sw = bounds.getSouthWest()
+    if (!ne || !sw) return false
+
+    const diagonal = haversineDistance(ne.lat(), ne.lng(), sw.lat(), sw.lng())
+    if (!Number.isFinite(diagonal) || diagonal <= 0) return false
+    return diagonal <= MAX_REASONABLE_BOUNDS_DIAGONAL_METERS
+  } catch {
+    return false
+  }
+}
+
 /**
  * Filter GPS location based on accuracy, distance jump, and speed
  * @param {Object} position - GPS position object
@@ -2693,7 +2713,11 @@ export default function DeliveryHome() {
                     const bounds = directionsResult.routes[0].bounds;
                     if (bounds) {
                       const currentZoom = window.deliveryMapInstance.getZoom();
+                      if (isBoundsReasonable(bounds)) {
                       window.deliveryMapInstance.fitBounds(bounds, { padding: 100 });
+                    } else {
+                      console.warn("Skipping unsafe fitBounds on delivery map", bounds);
+                    }
                       // Restore zoom if user had zoomed in more than fitBounds would set
                       setTimeout(() => {
                         const newZoom = window.deliveryMapInstance.getZoom();
@@ -3722,7 +3746,11 @@ export default function DeliveryHome() {
                       const bounds = directionsResult.routes?.[0]?.bounds
                       if (bounds) {
                         const currentZoomBeforeFit = window.deliveryMapInstance.getZoom();
-                        window.deliveryMapInstance.fitBounds(bounds, { padding: 100 });
+                        if (isBoundsReasonable(bounds)) {
+                      window.deliveryMapInstance.fitBounds(bounds, { padding: 100 });
+                    } else {
+                      console.warn("Skipping unsafe fitBounds on delivery map", bounds);
+                    }
                         // Preserve zoom if user had zoomed in
                         setTimeout(() => {
                           const newZoom = window.deliveryMapInstance.getZoom();
@@ -5932,7 +5960,11 @@ export default function DeliveryHome() {
           // Fit bounds to show entire route
           const bounds = routeResult.routes[0].bounds;
           if (bounds) {
-            map.fitBounds(bounds, { padding: 50 });
+            if (isBoundsReasonable(bounds)) {
+          map.fitBounds(bounds, { padding: 50 });
+        } else {
+          console.warn("Skipping unsafe fitBounds on map", bounds);
+        }
           }
 
           // Add custom Destination Marker (Restaurant or Customer)
@@ -6276,7 +6308,11 @@ export default function DeliveryHome() {
       const bounds = directionsResponse.routes[0].bounds;
       if (bounds) {
         const currentZoomBeforeFit = window.deliveryMapInstance.getZoom();
-        window.deliveryMapInstance.fitBounds(bounds, { padding: 100 });
+        if (isBoundsReasonable(bounds)) {
+                      window.deliveryMapInstance.fitBounds(bounds, { padding: 100 });
+                    } else {
+                      console.warn("Skipping unsafe fitBounds on delivery map", bounds);
+                    }
         // Preserve zoom if user had zoomed in more than fitBounds would set
         setTimeout(() => {
           const newZoom = window.deliveryMapInstance.getZoom();
@@ -7255,7 +7291,11 @@ export default function DeliveryHome() {
               const bounds = directionsResult.routes[0].bounds;
               if (bounds) {
                 const currentZoomBeforeFit = window.deliveryMapInstance.getZoom();
-                window.deliveryMapInstance.fitBounds(bounds, { padding: 100 });
+                if (isBoundsReasonable(bounds)) {
+                      window.deliveryMapInstance.fitBounds(bounds, { padding: 100 });
+                    } else {
+                      console.warn("Skipping unsafe fitBounds on delivery map", bounds);
+                    }
                 // Preserve zoom if user had zoomed in
                 setTimeout(() => {
                   const newZoom = window.deliveryMapInstance.getZoom();
@@ -7543,6 +7583,39 @@ export default function DeliveryHome() {
       return;
     }
 
+    if (
+      typeof latitude !== "number" ||
+      typeof longitude !== "number" ||
+      Number.isNaN(latitude) ||
+      Number.isNaN(longitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      console.warn("Ignoring invalid bike coordinates:", { latitude, longitude });
+      return;
+    }
+
+    const previousMarkerPosition = bikeMarkerRef.current?.getPosition?.();
+    if (previousMarkerPosition) {
+      const jumpDistance = haversineDistance(
+        previousMarkerPosition.lat(),
+        previousMarkerPosition.lng(),
+        latitude,
+        longitude
+      );
+
+      if (jumpDistance > MAX_REASONABLE_MARKER_JUMP_METERS) {
+        console.warn("Ignoring outlier bike jump to keep map in scope:", {
+          jumpDistanceMeters: Math.round(jumpDistance),
+          previous: { lat: previousMarkerPosition.lat(), lng: previousMarkerPosition.lng() },
+          next: { lat: latitude, lng: longitude }
+        });
+        return;
+      }
+    }
+
     const position = new window.google.maps.LatLng(latitude, longitude);
     const map = window.deliveryMapInstance;
 
@@ -7705,7 +7778,11 @@ export default function DeliveryHome() {
           path.forEach(point => bounds.extend(point));
           // Add padding to bounds for better visibility
           const currentZoomBeforeFit = map.getZoom();
+          if (isBoundsReasonable(bounds)) {
           map.fitBounds(bounds, { padding: 50 });
+        } else {
+          console.warn("Skipping unsafe fitBounds on map", bounds);
+        }
           // Preserve zoom if user had zoomed in more than fitBounds would set
           setTimeout(() => {
             const newZoom = map.getZoom();
@@ -10699,3 +10776,8 @@ export default function DeliveryHome() {
     </div>
   )
 }
+
+
+
+
+

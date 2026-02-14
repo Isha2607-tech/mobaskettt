@@ -1,5 +1,5 @@
 import { useParams, Link, useSearchParams } from "react-router-dom"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
 import { 
@@ -124,10 +124,32 @@ const DeliveryMap = ({ orderId, order, isVisible }) => {
   };
 
   const getCustomerCoords = () => {
-    if (order?.address?.coordinates) {
+    if (
+      order?.address?.coordinates &&
+      Array.isArray(order.address.coordinates) &&
+      order.address.coordinates.length >= 2
+    ) {
       return {
         lat: order.address.coordinates[1],
         lng: order.address.coordinates[0]
+      };
+    }
+    if (
+      typeof order?.address?.latitude === "number" &&
+      typeof order?.address?.longitude === "number"
+    ) {
+      return {
+        lat: order.address.latitude,
+        lng: order.address.longitude
+      };
+    }
+    if (
+      typeof order?.address?.lat === "number" &&
+      typeof order?.address?.lng === "number"
+    ) {
+      return {
+        lat: order.address.lat,
+        lng: order.address.lng
       };
     }
     // Default Indore coordinates
@@ -224,6 +246,10 @@ export default function OrderTracking() {
   const [showCancelDialog, setShowCancelDialog] = useState(false)
   const [cancellationReason, setCancellationReason] = useState("")
   const [isCancelling, setIsCancelling] = useState(false)
+  const [modificationWindowSeconds, setModificationWindowSeconds] = useState(0)
+  const [showEditDialog, setShowEditDialog] = useState(false)
+  const [editableItems, setEditableItems] = useState([])
+  const [isEditingOrder, setIsEditingOrder] = useState(false)
 
   const defaultAddress = getDefaultAddress()
   const deriveUiOrderStatus = (rawStatus) => {
@@ -240,6 +266,79 @@ export default function OrderTracking() {
       return "pickup"
     }
     return "placed"
+  }
+
+  const riderInfo = useMemo(() => {
+    const partner = order?.deliveryPartner || order?.deliveryPartnerId
+    if (!partner || typeof partner !== "object") return null
+
+    return {
+      name: partner.name || partner.fullName || "Delivery Partner",
+      phone: partner.phone || partner.mobile || null
+    }
+  }, [order?.deliveryPartner, order?.deliveryPartnerId])
+
+  const isRiderAccepted = useMemo(() => {
+    const phase = order?.deliveryState?.currentPhase
+    const deliveryStatus = order?.deliveryState?.status
+    const status = order?.status
+
+    return Boolean(
+      riderInfo &&
+      (
+        deliveryStatus === "accepted" ||
+        phase === "en_route_to_pickup" ||
+        phase === "at_pickup" ||
+        phase === "en_route_to_delivery" ||
+        status === "out_for_delivery" ||
+        status === "ready"
+      )
+    )
+  }, [order?.deliveryState?.currentPhase, order?.deliveryState?.status, order?.status, riderInfo])
+
+  const canModifyOrder = useMemo(() => {
+    const status = String(order?.status || "").toLowerCase()
+    if (status === "cancelled" || status === "delivered") return false
+    return modificationWindowSeconds > 0
+  }, [order?.status, modificationWindowSeconds])
+
+  const formatCountdown = (seconds) => {
+    const safeSeconds = Math.max(0, Number(seconds) || 0)
+    const mins = Math.floor(safeSeconds / 60)
+    const secs = safeSeconds % 60
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+  }
+
+  const syncModificationWindow = (rawOrder) => {
+    const windowData = rawOrder?.modificationWindow
+    if (!windowData) {
+      const startAtRaw =
+        rawOrder?.postOrderActions?.modificationWindowStartAt ||
+        rawOrder?.tracking?.confirmed?.timestamp ||
+        rawOrder?.createdAt ||
+        null
+      if (startAtRaw) {
+        const expiresAt = new Date(new Date(startAtRaw).getTime() + 2 * 60 * 1000)
+        const remaining = Math.ceil((expiresAt.getTime() - Date.now()) / 1000)
+        setModificationWindowSeconds(Math.max(0, remaining))
+      } else {
+        setModificationWindowSeconds(0)
+      }
+      return
+    }
+
+    if (typeof windowData.remainingSeconds === "number") {
+      setModificationWindowSeconds(Math.max(0, Math.ceil(windowData.remainingSeconds)))
+      return
+    }
+
+    if (windowData.expiresAt) {
+      const remaining = Math.ceil((new Date(windowData.expiresAt).getTime() - Date.now()) / 1000)
+      setModificationWindowSeconds(Math.max(0, remaining))
+      return
+    }
+
+    setModificationWindowSeconds(0)
   }
 
   // Poll for order updates (especially when delivery partner accepts)
@@ -315,11 +414,24 @@ export default function OrderTracking() {
               } : order.restaurantLocation,
               deliveryPartnerId: apiOrder.deliveryPartnerId?._id || apiOrder.deliveryPartnerId || apiOrder.assignmentInfo?.deliveryPartnerId || null,
               assignmentInfo: apiOrder.assignmentInfo || null,
-              deliveryState: apiOrder.deliveryState || null
+              deliveryState: apiOrder.deliveryState || null,
+              modificationWindow: apiOrder.modificationWindow || null,
+              items: Array.isArray(apiOrder.items)
+                ? apiOrder.items.map((item) => ({
+                    itemId: item.itemId?._id || item.itemId || item._id || null,
+                    name: item.name,
+                    quantity: Number(item.quantity || 0),
+                    price: Number(item.price || 0),
+                    image: item.image || "",
+                    description: item.description || "",
+                    isVeg: item.isVeg !== false
+                  }))
+                : []
             };
             
             setOrder(transformedOrder);
             setOrderStatus(deriveUiOrderStatus(apiOrder.status));
+            syncModificationWindow(apiOrder);
           }
         }
       } catch (err) {
@@ -348,6 +460,7 @@ export default function OrderTracking() {
           console.log('⚠️ Context order missing restaurantId, will fetch from API');
         }
         setOrder(contextOrder)
+        syncModificationWindow(contextOrder)
         setLoading(false)
         return
       }
@@ -438,9 +551,13 @@ export default function OrderTracking() {
               coordinates: restaurantCoords
             },
             items: apiOrder.items?.map(item => ({
+              itemId: item.itemId?._id || item.itemId || item._id || null,
               name: item.name,
               quantity: item.quantity,
-              price: item.price
+              price: item.price,
+              image: item.image || "",
+              description: item.description || "",
+              isVeg: item.isVeg !== false
             })) || [],
             total: apiOrder.pricing?.total || 0,
             status: apiOrder.status || 'pending',
@@ -451,11 +568,13 @@ export default function OrderTracking() {
             deliveryPartnerId: apiOrder.deliveryPartnerId?._id || apiOrder.deliveryPartnerId || apiOrder.assignmentInfo?.deliveryPartnerId || null,
             assignmentInfo: apiOrder.assignmentInfo || null,
             tracking: apiOrder.tracking || {},
-            deliveryState: apiOrder.deliveryState || null
+            deliveryState: apiOrder.deliveryState || null,
+            modificationWindow: apiOrder.modificationWindow || null
           }
           
           setOrder(transformedOrder)
           setOrderStatus(deriveUiOrderStatus(apiOrder.status))
+          syncModificationWindow(apiOrder)
         } else {
           throw new Error('Order not found')
         }
@@ -490,6 +609,14 @@ export default function OrderTracking() {
     }, 60000)
     return () => clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    if (modificationWindowSeconds <= 0) return
+    const timer = setInterval(() => {
+      setModificationWindowSeconds((prev) => Math.max(0, prev - 1))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [modificationWindowSeconds])
 
   useEffect(() => {
     const handleDriverDistanceUpdate = (event) => {
@@ -566,6 +693,11 @@ export default function OrderTracking() {
     // Check if order can be cancelled (only Razorpay orders that aren't delivered/cancelled)
     if (!order) return;
     
+    if (!canModifyOrder) {
+      toast.error('You can only edit/cancel within 2 minutes of order confirmation');
+      return;
+    }
+
     if (order.status === 'cancelled') {
       toast.error('Order is already cancelled');
       return;
@@ -581,6 +713,75 @@ export default function OrderTracking() {
     
     setShowCancelDialog(true);
   };
+
+  const handleEditOrder = () => {
+    if (!order) return
+
+    if (!canModifyOrder) {
+      toast.error('You can only edit/cancel within 2 minutes of order confirmation')
+      return
+    }
+
+    if (!Array.isArray(order.items) || order.items.length === 0) {
+      toast.error("No items available to edit")
+      return
+    }
+
+    const initialEditableItems = order.items.map((item, index) => ({
+      key: `${item.itemId || item.name}-${index}`,
+      itemId: item.itemId || null,
+      name: item.name,
+      quantity: Math.max(1, Number(item.quantity || 1)),
+      price: Number(item.price || 0),
+      image: item.image || "",
+      description: item.description || "",
+      isVeg: item.isVeg !== false
+    }))
+
+    setEditableItems(initialEditableItems)
+    setShowEditDialog(true)
+  }
+
+  const updateEditableQuantity = (key, nextQuantity) => {
+    setEditableItems((prev) =>
+      prev.map((item) => (item.key === key ? { ...item, quantity: Math.max(1, Number(nextQuantity || 1)) } : item))
+    )
+  }
+
+  const handleSaveEditOrder = async () => {
+    if (!orderId || !Array.isArray(editableItems) || editableItems.length === 0) return
+    if (!canModifyOrder) {
+      toast.error('Edit window expired. You can only edit/cancel within 2 minutes.')
+      setShowEditDialog(false)
+      return
+    }
+
+    try {
+      setIsEditingOrder(true)
+      const payloadItems = editableItems.map((item) => ({
+        itemId: item.itemId,
+        name: item.name,
+        price: Number(item.price || 0),
+        quantity: Math.max(1, Number(item.quantity || 1)),
+        image: item.image || "",
+        description: item.description || "",
+        isVeg: item.isVeg !== false
+      }))
+
+      const response = await orderAPI.editOrderCart(orderId, payloadItems)
+      if (response?.data?.success) {
+        toast.success("Order updated successfully")
+        setShowEditDialog(false)
+        await handleRefresh()
+      } else {
+        toast.error(response?.data?.message || "Failed to edit order")
+      }
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to edit order")
+    } finally {
+      setIsEditingOrder(false)
+    }
+  }
 
   const handleConfirmCancel = async () => {
     if (!cancellationReason.trim()) {
@@ -608,6 +809,7 @@ export default function OrderTracking() {
           // Update orderStatus to cancelled
           if (apiOrder.status === 'cancelled') {
             setOrderStatus('cancelled');
+            setModificationWindowSeconds(0)
           }
         }
       } else {
@@ -685,9 +887,13 @@ export default function OrderTracking() {
             coordinates: restaurantCoords
           },
           items: apiOrder.items?.map(item => ({
+            itemId: item.itemId?._id || item.itemId || item._id || null,
             name: item.name,
             quantity: item.quantity,
-            price: item.price
+            price: item.price,
+            image: item.image || "",
+            description: item.description || "",
+            isVeg: item.isVeg !== false
           })) || [],
           total: apiOrder.pricing?.total || 0,
           status: apiOrder.status || 'pending',
@@ -698,10 +904,12 @@ export default function OrderTracking() {
           deliveryPartnerId: apiOrder.deliveryPartnerId?._id || apiOrder.deliveryPartnerId || apiOrder.assignmentInfo?.deliveryPartnerId || null,
           assignmentInfo: apiOrder.assignmentInfo || null,
           deliveryState: apiOrder.deliveryState || null,
-          tracking: apiOrder.tracking || {}
+          tracking: apiOrder.tracking || {},
+          modificationWindow: apiOrder.modificationWindow || null
         }
         setOrder(transformedOrder)
         setOrderStatus(deriveUiOrderStatus(apiOrder.status))
+        syncModificationWindow(apiOrder)
       }
     } catch (err) {
       console.error('Error refreshing order:', err)
@@ -882,6 +1090,11 @@ export default function OrderTracking() {
               <RefreshCw className="w-4 h-4" />
             </motion.button>
           </motion.div>
+          <div className="mt-2 text-xs text-white/90 font-medium">
+            {canModifyOrder
+              ? `Edit/Cancel window: ${formatCountdown(modificationWindowSeconds)}`
+              : "Edit/Cancel window expired"}
+          </div>
         </div>
       </motion.div>
 
@@ -944,6 +1157,22 @@ export default function OrderTracking() {
           </span>
           <ChevronRight className="w-5 h-5 text-gray-400" />
         </motion.button>
+
+        {isRiderAccepted && riderInfo && (
+          <motion.div
+            className="bg-white rounded-xl shadow-sm overflow-hidden"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.68 }}
+          >
+            <SectionItem
+              icon={Phone}
+              title={riderInfo.name}
+              subtitle={riderInfo.phone || "Phone number not available"}
+              showArrow={false}
+            />
+          </motion.div>
+        )}
 
         {/* Delivery Details Banner */}
         <motion.div
@@ -1093,9 +1322,23 @@ export default function OrderTracking() {
           transition={{ delay: 0.8 }}
         >
           <SectionItem 
+            icon={Receipt}
+            title="Edit order"
+            subtitle={
+              canModifyOrder
+                ? `Available for ${formatCountdown(modificationWindowSeconds)}`
+                : "Edit window expired"
+            }
+            onClick={handleEditOrder}
+          />
+          <SectionItem 
             icon={CircleSlash}
             title="Cancel order"
-            subtitle=""
+            subtitle={
+              canModifyOrder
+                ? `Available for ${formatCountdown(modificationWindowSeconds)}`
+                : "Cancel window expired"
+            }
             onClick={handleCancelOrder}
           />
         </motion.div>
@@ -1145,6 +1388,73 @@ export default function OrderTracking() {
                 ) : (
                   'Confirm Cancellation'
                 )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="sm:max-w-xl w-[95%] max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-gray-900">
+              Edit Order
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-gray-600">
+              {canModifyOrder
+                ? `You can edit quantities for ${formatCountdown(modificationWindowSeconds)}`
+                : "Edit window expired"}
+            </p>
+            <div className="space-y-3 max-h-[45vh] overflow-y-auto pr-1">
+              {editableItems.map((item) => (
+                <div key={item.key} className="flex items-center justify-between border rounded-lg p-3">
+                  <div className="min-w-0 pr-3">
+                    <p className="font-medium text-sm text-gray-900 truncate">{item.name}</p>
+                    <p className="text-xs text-gray-500">Rs {Number(item.price || 0).toFixed(2)}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!canModifyOrder || isEditingOrder || item.quantity <= 1}
+                      onClick={() => updateEditableQuantity(item.key, item.quantity - 1)}
+                    >
+                      -
+                    </Button>
+                    <span className="w-8 text-center font-semibold text-sm">{item.quantity}</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!canModifyOrder || isEditingOrder}
+                      onClick={() => updateEditableQuantity(item.key, item.quantity + 1)}
+                    >
+                      +
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowEditDialog(false)}
+                disabled={isEditingOrder}
+              >
+                Close
+              </Button>
+              <Button
+                type="button"
+                className="flex-1"
+                onClick={handleSaveEditOrder}
+                disabled={isEditingOrder || !canModifyOrder}
+              >
+                {isEditingOrder ? "Saving..." : "Save changes"}
               </Button>
             </div>
           </div>
