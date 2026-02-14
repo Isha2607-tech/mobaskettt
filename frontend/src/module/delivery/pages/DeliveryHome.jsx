@@ -666,6 +666,18 @@ export default function DeliveryHome() {
   const acceptButtonIsSwiping = useRef(false)
   const autoShowTimerRef = useRef(null)
 
+  const stopNewOrderAlertSound = useCallback((reason = "unknown") => {
+    if (!alertAudioRef.current) return
+    try {
+      alertAudioRef.current.pause()
+      alertAudioRef.current.currentTime = 0
+      alertAudioRef.current = null
+      console.log(`[NewOrder] Audio stopped (${reason})`)
+    } catch (error) {
+      console.warn("[NewOrder] Failed to stop audio:", error)
+    }
+  }, [])
+
   const {
     bookedGigs,
     currentGig,
@@ -1254,12 +1266,7 @@ export default function DeliveryHome() {
         setCountdownSeconds((prev) => {
           if (prev <= 1) {
             // Stop audio when countdown reaches 0
-            if (alertAudioRef.current) {
-              alertAudioRef.current.pause()
-              alertAudioRef.current.currentTime = 0
-              alertAudioRef.current = null
-              console.log('[NewOrder] 🔇 Audio stopped (countdown ended)')
-            }
+            stopNewOrderAlertSound("countdown ended")
             // Auto-close when countdown reaches 0
             setShowNewOrderPopup(false)
             return 0
@@ -1282,17 +1289,13 @@ export default function DeliveryHome() {
         countdownTimerRef.current = null
       }
     }
-  }, [showNewOrderPopup, countdownSeconds])
+  }, [showNewOrderPopup, countdownSeconds, stopNewOrderAlertSound])
 
   // Play audio when New Order popup appears (only for real orders from Socket.IO)
   useEffect(() => {
     if (showNewOrderPopup && (newOrder || selectedRestaurant)) {
       // Stop any existing audio first
-      if (alertAudioRef.current) {
-        alertAudioRef.current.pause()
-        alertAudioRef.current.currentTime = 0
-        alertAudioRef.current = null
-      }
+      stopNewOrderAlertSound("restarting popup sound")
 
       // Play alert sound when popup appears
       const playAudio = async () => {
@@ -1351,14 +1354,9 @@ export default function DeliveryHome() {
       }
     } else {
       // Stop audio when popup closes
-      if (alertAudioRef.current) {
-        console.log('[NewOrder] 🔇 Stopping audio (popup closed)')
-        alertAudioRef.current.pause()
-        alertAudioRef.current.currentTime = 0
-        alertAudioRef.current = null
-      }
+      stopNewOrderAlertSound("popup closed")
     }
-  }, [showNewOrderPopup, selectedRestaurant])
+  }, [showNewOrderPopup, selectedRestaurant, newOrder, stopNewOrderAlertSound])
 
   // Reset countdown when popup closes
   useEffect(() => {
@@ -1366,6 +1364,36 @@ export default function DeliveryHome() {
       setCountdownSeconds(300)
     }
   }, [showNewOrderPopup])
+
+  // Hard-stop alert sound once order is accepted by delivery partner.
+  // This guarantees buzzer doesn't continue due any race/retry path.
+  useEffect(() => {
+    const deliveryStatus = selectedRestaurant?.deliveryState?.status
+    const deliveryPhase = selectedRestaurant?.deliveryState?.currentPhase || selectedRestaurant?.deliveryPhase
+    const orderStatus = selectedRestaurant?.orderStatus || selectedRestaurant?.status
+
+    const isAcceptedByDelivery =
+      deliveryStatus === "accepted" ||
+      deliveryPhase === "en_route_to_pickup" ||
+      deliveryPhase === "at_pickup" ||
+      deliveryPhase === "en_route_to_delivery" ||
+      orderStatus === "out_for_delivery"
+
+    if (isAcceptedByDelivery) {
+      stopNewOrderAlertSound("order accepted by delivery")
+      if (showNewOrderPopup) {
+        setShowNewOrderPopup(false)
+      }
+    }
+  }, [
+    selectedRestaurant?.deliveryState?.status,
+    selectedRestaurant?.deliveryState?.currentPhase,
+    selectedRestaurant?.deliveryPhase,
+    selectedRestaurant?.orderStatus,
+    selectedRestaurant?.status,
+    showNewOrderPopup,
+    stopNewOrderAlertSound
+  ])
 
   // Simulate audio playback for Earnings Guarantee
   useEffect(() => {
@@ -1409,10 +1437,7 @@ export default function DeliveryHome() {
   }
 
   const handleRejectConfirm = () => {    
-    if (alertAudioRef.current) {
-      alertAudioRef.current.pause()
-      alertAudioRef.current.currentTime = 0
-    }
+    stopNewOrderAlertSound("order rejected")
     setShowRejectPopup(false)
     setShowNewOrderPopup(false)
     setIsNewOrderPopupMinimized(false) // Reset minimized state
@@ -2095,12 +2120,7 @@ export default function DeliveryHome() {
 
     if (deltaX > threshold) {
       // Stop audio immediately when user accepts
-      if (alertAudioRef.current) {
-        alertAudioRef.current.pause()
-        alertAudioRef.current.currentTime = 0
-        alertAudioRef.current = null
-        console.log('[NewOrder] 🔇 Audio stopped (order accepted)')
-      }
+      stopNewOrderAlertSound("order accept swipe")
 
       // Animate to completion
       setNewOrderIsAnimatingToComplete(true)
@@ -2183,12 +2203,7 @@ export default function DeliveryHome() {
 
           if (response.data?.success && response.data.data) {
             // Stop audio immediately when order is successfully accepted
-            if (alertAudioRef.current) {
-              alertAudioRef.current.pause()
-              alertAudioRef.current.currentTime = 0
-              alertAudioRef.current = null
-              console.log('[NewOrder] 🔇 Audio stopped (order accepted successfully)')
-            }
+            stopNewOrderAlertSound("order accepted successfully")
             
             const orderData = response.data.data
             const order = orderData.order || orderData // Backend returns { order, route }

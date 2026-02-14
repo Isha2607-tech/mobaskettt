@@ -694,13 +694,22 @@ const DeliveryTrackingMap = ({
 
     // Listen for order status updates (e.g., "Delivery partner on the way")
     socketRef.current.on('order_status_update', (data) => {
-      console.log('📢 Received order status update:', data);
-      
+      console.log('Received order status update:', data);
+
+      const incomingOrderId = data?.orderId ? String(data.orderId) : '';
+      const currentOrderId = String(orderId || '');
+      if (incomingOrderId && incomingOrderId !== currentOrderId) {
+        return;
+      }
+
       // Trigger custom event so OrderTracking component can handle notification
       // This avoids circular dependencies and keeps notification logic in OrderTracking
       if (window.dispatchEvent && data.message) {
         window.dispatchEvent(new CustomEvent('orderStatusNotification', {
-          detail: data
+          detail: {
+            ...data,
+            orderId: incomingOrderId || currentOrderId
+          }
         }));
       }
     });

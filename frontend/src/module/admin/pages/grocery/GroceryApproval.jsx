@@ -25,12 +25,25 @@ export default function GroceryApproval() {
   const previousPendingCountRef = useRef(null);
   const userInteractedRef = useRef(false);
   const audioRef = useRef(null);
+  const isAlarmActiveRef = useRef(false);
 
-  const playNotificationSound = () => {
+  const stopNotificationAlarm = () => {
+    if (!audioRef.current) return;
+    isAlarmActiveRef.current = false;
+    audioRef.current.pause();
+    audioRef.current.currentTime = 0;
+  };
+
+  const startNotificationAlarm = () => {
     try {
       if (!audioRef.current || !userInteractedRef.current) return;
+      if (isAlarmActiveRef.current) return;
+      isAlarmActiveRef.current = true;
+      audioRef.current.loop = true;
       audioRef.current.currentTime = 0;
-      audioRef.current.play().catch(() => {});
+      audioRef.current.play().catch(() => {
+        isAlarmActiveRef.current = false;
+      });
     } catch {
       // ignore browser autoplay/runtime audio errors
     }
@@ -43,9 +56,12 @@ export default function GroceryApproval() {
       const data = response?.data?.data?.requests || response?.data?.requests || [];
 
       const previousCount = previousPendingCountRef.current;
-      if (previousCount !== null && data.length > previousCount) {
-        playNotificationSound();
+      if ((previousCount === null && data.length > 0) || (previousCount !== null && data.length > previousCount)) {
+        startNotificationAlarm();
         toast.info("New grocery approval request received");
+      }
+      if (data.length === 0) {
+        stopNotificationAlarm();
       }
 
       previousPendingCountRef.current = data.length;
@@ -65,6 +81,9 @@ export default function GroceryApproval() {
 
     const markUserInteraction = () => {
       userInteractedRef.current = true;
+      if ((previousPendingCountRef.current || 0) > 0) {
+        startNotificationAlarm();
+      }
     };
     window.addEventListener("click", markUserInteraction, { passive: true });
     window.addEventListener("keydown", markUserInteraction, { passive: true });
@@ -82,7 +101,7 @@ export default function GroceryApproval() {
       window.removeEventListener("keydown", markUserInteraction);
       window.removeEventListener("touchstart", markUserInteraction);
       if (audioRef.current) {
-        audioRef.current.pause();
+        stopNotificationAlarm();
         audioRef.current = null;
       }
     };
@@ -104,6 +123,7 @@ export default function GroceryApproval() {
     try {
       setProcessing(true);
       await adminAPI.approveFoodItem(request._id || request.id);
+      stopNotificationAlarm();
       toast.success("Grocery order approved successfully");
       await fetchPendingApprovals();
       setShowDetailModal(false);
@@ -125,6 +145,7 @@ export default function GroceryApproval() {
     try {
       setProcessing(true);
       await adminAPI.rejectFoodItem(selectedRequest._id || selectedRequest.id, rejectReason);
+      stopNotificationAlarm();
       toast.success("Grocery order rejected");
       await fetchPendingApprovals();
       setShowRejectModal(false);

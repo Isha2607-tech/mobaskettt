@@ -226,6 +226,21 @@ export default function OrderTracking() {
   const [isCancelling, setIsCancelling] = useState(false)
 
   const defaultAddress = getDefaultAddress()
+  const deriveUiOrderStatus = (rawStatus) => {
+    const normalized = String(rawStatus || "").toLowerCase()
+    if (normalized === "cancelled") return "cancelled"
+    if (normalized === "delivered") return "delivered"
+    if (normalized === "preparing" || normalized === "accepted" || normalized === "confirmed") return "preparing"
+    if (
+      normalized === "ready" ||
+      normalized === "out_for_delivery" ||
+      normalized === "picked_up" ||
+      normalized === "on_the_way"
+    ) {
+      return "pickup"
+    }
+    return "placed"
+  }
 
   // Poll for order updates (especially when delivery partner accepts)
   // Only poll if delivery partner is not yet assigned to avoid unnecessary updates
@@ -304,6 +319,7 @@ export default function OrderTracking() {
             };
             
             setOrder(transformedOrder);
+            setOrderStatus(deriveUiOrderStatus(apiOrder.status));
           }
         }
       } catch (err) {
@@ -439,19 +455,7 @@ export default function OrderTracking() {
           }
           
           setOrder(transformedOrder)
-          
-          // Update orderStatus based on API order status
-          if (apiOrder.status === 'cancelled') {
-            setOrderStatus('cancelled');
-          } else if (apiOrder.status === 'preparing') {
-            setOrderStatus('preparing');
-          } else if (apiOrder.status === 'ready') {
-            setOrderStatus('pickup');
-          } else if (apiOrder.status === 'out_for_delivery') {
-            setOrderStatus('pickup');
-          } else if (apiOrder.status === 'delivered') {
-            setOrderStatus('delivered');
-          }
+          setOrderStatus(deriveUiOrderStatus(apiOrder.status))
         } else {
           throw new Error('Order not found')
         }
@@ -511,13 +515,25 @@ export default function OrderTracking() {
   // Listen for order status updates from socket (e.g., "Delivery partner on the way")
   useEffect(() => {
     const handleOrderStatusNotification = (event) => {
-      const { message, status, estimatedDeliveryTime } = event.detail;
+      const detail = event?.detail || {}
+      const { message, status, estimatedDeliveryTime } = detail
+      const eventOrderId = detail.orderId ? String(detail.orderId) : ""
+      const currentOrderId = String(orderId || "")
+      const currentMongoId = String(order?._id || order?.id || "")
+
+      if (eventOrderId && eventOrderId !== currentOrderId && eventOrderId !== currentMongoId) {
+        return
+      }
       
       console.log('📢 Order status notification received:', { message, status });
 
       // Update order status in UI
-      if (status === 'out_for_delivery') {
-        setOrderStatus('on_way');
+      if (status) {
+        setOrderStatus(deriveUiOrderStatus(status));
+      }
+
+      if (typeof estimatedDeliveryTime === "number" && Number.isFinite(estimatedDeliveryTime) && estimatedDeliveryTime > 0) {
+        setEstimatedTime(Math.max(1, Math.round(estimatedDeliveryTime / 60)));
       }
 
       // Show notification toast
@@ -544,7 +560,7 @@ export default function OrderTracking() {
     return () => {
       window.removeEventListener('orderStatusNotification', handleOrderStatusNotification);
     };
-  }, [])
+  }, [orderId, order?._id, order?.id])
 
   const handleCancelOrder = () => {
     // Check if order can be cancelled (only Razorpay orders that aren't delivered/cancelled)
@@ -685,19 +701,7 @@ export default function OrderTracking() {
           tracking: apiOrder.tracking || {}
         }
         setOrder(transformedOrder)
-        
-        // Update order status for UI
-        if (apiOrder.status === 'cancelled') {
-          setOrderStatus('cancelled');
-        } else if (apiOrder.status === 'preparing') {
-          setOrderStatus('preparing')
-        } else if (apiOrder.status === 'ready') {
-          setOrderStatus('pickup')
-        } else if (apiOrder.status === 'out_for_delivery') {
-          setOrderStatus('pickup')
-        } else if (apiOrder.status === 'delivered') {
-          setOrderStatus('delivered')
-        }
+        setOrderStatus(deriveUiOrderStatus(apiOrder.status))
       }
     } catch (err) {
       console.error('Error refreshing order:', err)
