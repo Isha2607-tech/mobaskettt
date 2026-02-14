@@ -82,8 +82,15 @@ export const getOrders = asyncHandler(async (req, res) => {
         'offline-payments': 'pending' // Offline payment orders
       };
       
-      const mappedStatus = statusMap[status] || status;
-      query.status = mappedStatus;
+      let mappedStatus = statusMap[status] || status;
+
+      // MoGrocery approval flow can move directly to "preparing",
+      // so Accepted tab should include those records as well.
+      if (normalizedPlatform === 'mogrocery' && status === 'accepted') {
+        mappedStatus = ['confirmed', 'preparing'];
+      }
+
+      query.status = Array.isArray(mappedStatus) ? { $in: mappedStatus } : mappedStatus;
       
       // If restaurant-cancelled, filter by cancellation reason
       if (status === 'restaurant-cancelled') {
