@@ -21,6 +21,12 @@ import {
   createPlan,
   updatePlan,
   deletePlan,
+  getPlanOffers,
+  getPlanOfferById,
+  createPlanOffer,
+  updatePlanOffer,
+  deletePlanOffer,
+  getPlanSubscriptions,
 } from '../controllers/groceryController.js';
 
 const router = express.Router();
@@ -52,6 +58,16 @@ router.get('/plans/:id', getPlanById);
 router.post('/plans', authenticateAdmin, createPlan);
 router.put('/plans/:id', authenticateAdmin, updatePlan);
 router.delete('/plans/:id', authenticateAdmin, deletePlan);
+
+// Plan Offers
+router.get('/plan-offers', getPlanOffers);
+router.get('/plan-offers/:id', getPlanOfferById);
+router.post('/plan-offers', authenticateAdmin, createPlanOffer);
+router.put('/plan-offers/:id', authenticateAdmin, updatePlanOffer);
+router.delete('/plan-offers/:id', authenticateAdmin, deletePlanOffer);
+
+// Plan Subscriptions (Admin)
+router.get('/plan-subscriptions', authenticateAdmin, getPlanSubscriptions);
 
 export default router;
 

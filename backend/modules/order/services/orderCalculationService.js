@@ -1,6 +1,10 @@
 import Restaurant from '../../restaurant/models/Restaurant.js';
 import Offer from '../../restaurant/models/Offer.js';
 import FeeSettings from '../../admin/models/FeeSettings.js';
+import Order from '../models/Order.js';
+import GroceryPlan from '../../grocery/models/GroceryPlan.js';
+import GroceryPlanOffer from '../../grocery/models/GroceryPlanOffer.js';
+import GroceryProduct from '../../grocery/models/GroceryProduct.js';
 import mongoose from 'mongoose';
 
 /**
@@ -163,6 +167,227 @@ export const calculateDistance = (coord1, coord2) => {
   return distance;
 };
 
+const toObjectIdString = (value) => {
+  if (!value) return null;
+  const normalized = typeof value === 'string' ? value : value?._id || value?.id || value;
+  if (!normalized || !mongoose.Types.ObjectId.isValid(normalized)) return null;
+  return normalized.toString();
+};
+
+const toObjectIdStringSet = (values) => {
+  if (!Array.isArray(values)) return new Set();
+  const result = new Set();
+  values.forEach((value) => {
+    const normalized = toObjectIdString(value);
+    if (normalized) result.add(normalized);
+  });
+  return result;
+};
+
+const getActivePlanContext = async (userId) => {
+  if (!userId || !mongoose.Types.ObjectId.isValid(userId)) return null;
+
+  const now = new Date();
+  const recentPlanOrders = await Order.find({
+    userId: new mongoose.Types.ObjectId(userId),
+    'payment.status': 'completed',
+    'planSubscription.planId': { $exists: true, $ne: null },
+    status: { $ne: 'cancelled' }
+  })
+    .select('planSubscription createdAt deliveredAt')
+    .sort({ createdAt: -1 })
+    .limit(20)
+    .lean();
+
+  if (!recentPlanOrders.length) return null;
+
+  const uniquePlanIds = Array.from(
+    new Set(
+      recentPlanOrders
+        .map((order) => toObjectIdString(order?.planSubscription?.planId))
+        .filter(Boolean)
+    )
+  );
+
+  if (!uniquePlanIds.length) return null;
+
+  const plans = await GroceryPlan.find({ _id: { $in: uniquePlanIds } }).lean();
+  const planById = new Map(plans.map((plan) => [plan._id.toString(), plan]));
+
+  let selected = null;
+  for (const order of recentPlanOrders) {
+    const planId = toObjectIdString(order?.planSubscription?.planId);
+    if (!planId) continue;
+    const plan = planById.get(planId);
+    if (!plan) continue;
+
+    const durationDays = Number(order?.planSubscription?.durationDays || plan.durationDays || 0);
+    if (durationDays <= 0) continue;
+
+    const startedAt = order.deliveredAt ? new Date(order.deliveredAt) : new Date(order.createdAt);
+    const expiresAt = new Date(startedAt.getTime() + durationDays * 24 * 60 * 60 * 1000);
+    if (expiresAt <= now) continue;
+
+    if (!selected || expiresAt > selected.expiresAt) {
+      selected = {
+        plan,
+        planId,
+        startedAt,
+        expiresAt
+      };
+    }
+  }
+
+  return selected;
+};
+
+const getOfferEligibleSubtotal = ({ offer, items, subtotalByProductId, productMetaById, orderSubtotal }) => {
+  const productIds = toObjectIdStringSet(offer?.productIds);
+  const categoryIds = toObjectIdStringSet(offer?.categoryIds);
+  const subcategoryIds = toObjectIdStringSet(offer?.subcategoryIds);
+
+  const hasTargeting = productIds.size > 0 || categoryIds.size > 0 || subcategoryIds.size > 0;
+  if (!hasTargeting) return Math.max(0, Number(orderSubtotal || 0));
+
+  let eligibleSubtotal = 0;
+  items.forEach((item) => {
+    const itemId = toObjectIdString(item?.itemId);
+    if (!itemId) return;
+
+    let matched = false;
+    if (productIds.has(itemId)) matched = true;
+
+    const meta = productMetaById.get(itemId);
+    if (!matched && meta?.category && categoryIds.has(meta.category)) matched = true;
+    if (!matched && Array.isArray(meta?.subcategories)) {
+      matched = meta.subcategories.some((subcatId) => subcategoryIds.has(subcatId));
+    }
+
+    if (matched) {
+      eligibleSubtotal += Number(subtotalByProductId.get(itemId) || 0);
+    }
+  });
+
+  return Math.max(0, eligibleSubtotal);
+};
+
+const getPlanBenefitAdjustment = async ({ userId, items, subtotal }) => {
+  const activePlanContext = await getActivePlanContext(userId);
+  if (!activePlanContext?.plan) return null;
+
+  const { plan, planId, expiresAt } = activePlanContext;
+  const now = new Date();
+  const planOfferIds = Array.from(toObjectIdStringSet(plan.offerIds));
+  const offerQuery = {
+    isActive: true,
+    $and: [
+      { $or: [{ validFrom: null }, { validFrom: { $lte: now } }] },
+      { $or: [{ validTill: null }, { validTill: { $gte: now } }] }
+    ]
+  };
+
+  const orFilters = [{ planIds: new mongoose.Types.ObjectId(planId) }];
+  if (planOfferIds.length) {
+    orFilters.push({ _id: { $in: planOfferIds.map((id) => new mongoose.Types.ObjectId(id)) } });
+  }
+  offerQuery.$or = orFilters;
+
+  const offers = await GroceryPlanOffer.find(offerQuery).sort({ order: 1, createdAt: -1 }).lean();
+  const itemProductIds = Array.from(
+    new Set(items.map((item) => toObjectIdString(item?.itemId)).filter(Boolean))
+  );
+
+  let productMetaById = new Map();
+  if (itemProductIds.length) {
+    const productDocs = await GroceryProduct.find({ _id: { $in: itemProductIds } })
+      .select('category subcategory subcategories')
+      .lean();
+    productMetaById = new Map(
+      productDocs.map((product) => {
+        const normalizedSubcategories = toObjectIdStringSet([
+          ...(Array.isArray(product.subcategories) ? product.subcategories : []),
+          product.subcategory
+        ]);
+        return [
+          product._id.toString(),
+          {
+            category: toObjectIdString(product.category),
+            subcategories: Array.from(normalizedSubcategories)
+          }
+        ];
+      })
+    );
+  }
+
+  const subtotalByProductId = new Map();
+  items.forEach((item) => {
+    const itemId = toObjectIdString(item?.itemId);
+    if (!itemId) return;
+    const itemSubtotal = Number(item?.price || 0) * Number(item?.quantity || 1);
+    subtotalByProductId.set(itemId, (subtotalByProductId.get(itemId) || 0) + itemSubtotal);
+  });
+
+  let bestDiscount = 0;
+  let bestOffer = null;
+  let freeDelivery = false;
+  const appliedOfferIds = [];
+
+  offers.forEach((offer) => {
+    const eligibleSubtotal = getOfferEligibleSubtotal({
+      offer,
+      items,
+      subtotalByProductId,
+      productMetaById,
+      orderSubtotal: subtotal
+    });
+    if (eligibleSubtotal <= 0) return;
+
+    appliedOfferIds.push(offer._id.toString());
+
+    if (offer.freeDelivery) {
+      freeDelivery = true;
+    }
+
+    const discountValue = Number(offer.discountValue || 0);
+    let offerDiscount = 0;
+    if (offer.discountType === 'percentage') {
+      offerDiscount = Math.round((eligibleSubtotal * discountValue) / 100);
+    } else if (offer.discountType === 'flat') {
+      offerDiscount = Math.min(Math.round(discountValue), Math.round(eligibleSubtotal));
+    }
+
+    if (offerDiscount > bestDiscount) {
+      bestDiscount = offerDiscount;
+      bestOffer = offer;
+    }
+  });
+
+  // Fallback free delivery from textual plan benefits.
+  if (!freeDelivery) {
+    const benefitText = Array.isArray(plan.benefits) ? plan.benefits.join(' ').toLowerCase() : '';
+    if (benefitText.includes('free delivery')) {
+      freeDelivery = true;
+    }
+  }
+
+  return {
+    planId,
+    planName: plan.name || '',
+    expiresAt,
+    freeDelivery,
+    discount: Math.max(0, Math.round(bestDiscount)),
+    bestDiscountOffer: bestOffer
+      ? {
+          id: bestOffer._id.toString(),
+          name: bestOffer.name || '',
+          discountType: bestOffer.discountType || 'none',
+          discountValue: Number(bestOffer.discountValue || 0)
+        }
+      : null,
+    appliedOfferIds
+  };
+};
+
 /**
  * Main function to calculate order pricing
  */
@@ -171,7 +396,8 @@ export const calculateOrderPricing = async ({
   restaurantId,
   deliveryAddress = null,
   couponCode = null,
-  deliveryFleet = 'standard'
+  deliveryFleet = 'standard',
+  userId = null
 }) => {
   try {
     // Calculate subtotal from items
@@ -276,6 +502,17 @@ export const calculateOrderPricing = async ({
       }
     }
     
+    const planBenefits = restaurant?.platform === 'mogrocery'
+      ? await getPlanBenefitAdjustment({
+          userId,
+          items,
+          subtotal
+        })
+      : null;
+
+    const planDiscount = Number(planBenefits?.discount || 0);
+    const totalDiscount = Math.min(Math.round(subtotal), Math.max(0, Math.round(discount + planDiscount)));
+
     // Calculate delivery fee
     const deliveryFee = await calculateDeliveryFee(
       subtotal,
@@ -283,29 +520,41 @@ export const calculateOrderPricing = async ({
       deliveryAddress
     );
     
-    // Apply free delivery from coupon
-    const finalDeliveryFee = appliedCoupon?.freeDelivery ? 0 : deliveryFee;
+    // Apply free delivery from coupon or active plan.
+    const isFreeDeliveryApplied = Boolean(appliedCoupon?.freeDelivery || planBenefits?.freeDelivery);
+    const finalDeliveryFee = isFreeDeliveryApplied ? 0 : deliveryFee;
     
     // Calculate platform fee
     const platformFee = await calculatePlatformFee();
     
     // Calculate GST on subtotal after discount
-    const gst = await calculateGST(subtotal, discount);
+    const gst = await calculateGST(subtotal, totalDiscount);
     
     // Calculate total
-    const total = subtotal - discount + finalDeliveryFee + platformFee + gst;
+    const total = subtotal - totalDiscount + finalDeliveryFee + platformFee + gst;
     
     // Calculate savings (discount + any delivery savings)
-    const savings = discount + (deliveryFee > finalDeliveryFee ? deliveryFee - finalDeliveryFee : 0);
+    const savings = totalDiscount + (deliveryFee > finalDeliveryFee ? deliveryFee - finalDeliveryFee : 0);
     
     return {
       subtotal: Math.round(subtotal),
-      discount: Math.round(discount),
+      discount: Math.round(totalDiscount),
       deliveryFee: Math.round(finalDeliveryFee),
       platformFee: Math.round(platformFee),
       tax: gst, // Already rounded in calculateGST
       total: Math.round(total),
       savings: Math.round(savings),
+      appliedPlanBenefits: planBenefits
+        ? {
+            planId: planBenefits.planId,
+            planName: planBenefits.planName,
+            expiresAt: planBenefits.expiresAt,
+            freeDelivery: Boolean(planBenefits.freeDelivery),
+            discount: Number(planBenefits.discount || 0),
+            bestDiscountOffer: planBenefits.bestDiscountOffer,
+            appliedOfferIds: planBenefits.appliedOfferIds
+          }
+        : null,
       appliedCoupon: appliedCoupon ? {
         code: appliedCoupon.code,
         discount: discount,
@@ -313,7 +562,9 @@ export const calculateOrderPricing = async ({
       } : null,
       breakdown: {
         itemTotal: Math.round(subtotal),
-        discountAmount: Math.round(discount),
+        discountAmount: Math.round(totalDiscount),
+        couponDiscountAmount: Math.round(discount),
+        planDiscountAmount: Math.round(planDiscount),
         deliveryFee: Math.round(finalDeliveryFee),
         platformFee: Math.round(platformFee),
         gst: gst,

@@ -152,14 +152,15 @@ export const createOrder = async (req, res) => {
       address,
       restaurantId,
       restaurantName,
-      pricing,
+      pricing: incomingPricing,
       deliveryFleet,
       note,
       sendCutlery,
       paymentMethod: bodyPaymentMethod,
       deliveryOption,
       scheduledFor: scheduledForRaw,
-      deliveryTimeSlot
+      deliveryTimeSlot,
+      planSubscription
     } = req.body;
     // Support both camelCase and snake_case from client
     const paymentMethod = bodyPaymentMethod ?? req.body.payment_method;
@@ -194,6 +195,16 @@ export const createOrder = async (req, res) => {
       }
     }
     const isFutureScheduledOrder = Boolean(isScheduleRequested && scheduledForDate);
+    const normalizedPlanSubscription = (() => {
+      if (!planSubscription || typeof planSubscription !== 'object') return null;
+      const rawPlanId = planSubscription.planId;
+      if (!rawPlanId || !mongoose.Types.ObjectId.isValid(rawPlanId)) return null;
+      return {
+        planId: new mongoose.Types.ObjectId(rawPlanId),
+        planName: (planSubscription.planName || '').toString().trim(),
+        durationDays: Number(planSubscription.durationDays || 0)
+      };
+    })();
 
     // Validate required fields
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -207,13 +218,6 @@ export const createOrder = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Delivery address is required'
-      });
-    }
-
-    if (!pricing || !pricing.total) {
-      return res.status(400).json({
-        success: false,
-        message: 'Order total is required'
       });
     }
 
@@ -428,6 +432,17 @@ export const createOrder = async (req, res) => {
     assignedRestaurantId = restaurant._id?.toString() || restaurant.restaurantId;
     assignedRestaurantName = restaurant.name;
 
+    // Always trust server-side pricing so plan benefits (free delivery/discount) are guaranteed.
+    const couponCode = req.body?.couponCode || incomingPricing?.couponCode || incomingPricing?.appliedCoupon?.code || null;
+    const pricing = await calculateOrderPricing({
+      items,
+      restaurantId: assignedRestaurantId,
+      deliveryAddress: address,
+      couponCode,
+      deliveryFleet: deliveryFleet || 'standard',
+      userId
+    });
+
     // Log restaurant assignment for debugging
     logger.info('✅ Restaurant assigned to order:', {
       assignedRestaurantId: assignedRestaurantId,
@@ -442,9 +457,7 @@ export const createOrder = async (req, res) => {
     const generatedOrderId = await generateUniqueOrderId();
 
     // Ensure couponCode is included in pricing
-    if (!pricing.couponCode && pricing.appliedCoupon?.code) {
-      pricing.couponCode = pricing.appliedCoupon.code;
-    }
+    const persistedCouponCode = pricing?.couponCode || pricing?.appliedCoupon?.code || couponCode || null;
 
     // Create order in database
     const order = new Order({
@@ -457,10 +470,11 @@ export const createOrder = async (req, res) => {
       address,
       pricing: {
         ...pricing,
-        couponCode: pricing.couponCode || null
+        couponCode: persistedCouponCode
       },
       deliveryFleet: deliveryFleet || 'standard',
       note: note || '',
+      planSubscription: normalizedPlanSubscription || undefined,
       sendCutlery: sendCutlery !== false,
       status: isFutureScheduledOrder ? 'scheduled' : 'pending',
       scheduledDelivery: {
@@ -1516,6 +1530,7 @@ export const editOrderCart = async (req, res) => {
 export const calculateOrder = async (req, res) => {
   try {
     const { items, restaurantId, deliveryAddress, couponCode, deliveryFleet } = req.body;
+    const userId = req.user?.id || req.user?._id || null;
 
     // Validate required fields
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -1531,7 +1546,8 @@ export const calculateOrder = async (req, res) => {
       restaurantId,
       deliveryAddress,
       couponCode,
-      deliveryFleet: deliveryFleet || 'standard'
+      deliveryFleet: deliveryFleet || 'standard',
+      userId
     });
 
     res.json({

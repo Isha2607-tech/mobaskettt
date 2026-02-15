@@ -42,6 +42,32 @@ export const authenticate = async (req, res, next) => {
 };
 
 /**
+ * Optional authentication middleware
+ * Attaches user when a valid bearer token is present, otherwise continues silently.
+ */
+export const optionalAuthenticate = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return next();
+    }
+
+    const token = authHeader.substring(7);
+    const decoded = jwtService.verifyAccessToken(token);
+    const user = await User.findById(decoded.userId).select('-password');
+
+    if (user && user.isActive) {
+      req.user = user;
+      req.token = decoded;
+    }
+  } catch (_error) {
+    // Intentionally ignore token errors for optional auth.
+  }
+
+  return next();
+};
+
+/**
  * Role-based Authorization Middleware
  * @param {...string} roles - Allowed roles
  */
@@ -59,5 +85,5 @@ export const authorize = (...roles) => {
   };
 };
 
-export default { authenticate, authorize };
+export default { authenticate, optionalAuthenticate, authorize };
 

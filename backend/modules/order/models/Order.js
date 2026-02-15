@@ -201,6 +201,21 @@ const orderSchema = new mongoose.Schema({
   note: {
     type: String
   },
+  planSubscription: {
+    planId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'GroceryPlan',
+      default: null
+    },
+    planName: {
+      type: String,
+      default: ''
+    },
+    durationDays: {
+      type: Number,
+      default: 0
+    }
+  },
   sendCutlery: {
     type: Boolean,
     default: true
@@ -362,6 +377,7 @@ const orderSchema = new mongoose.Schema({
 
 // Indexes for better query performance
 orderSchema.index({ userId: 1, createdAt: -1 });
+orderSchema.index({ 'planSubscription.planId': 1, createdAt: -1 });
 orderSchema.index({ restaurantId: 1, status: 1 });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ status: 1, 'scheduledDelivery.scheduledFor': 1 });

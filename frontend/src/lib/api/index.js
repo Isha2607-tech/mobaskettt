@@ -1360,6 +1360,35 @@ export const adminAPI = {
     return apiClient.put(`/grocery/plans/${id}`, { isActive });
   },
 
+  getGroceryPlanOffers: (params = {}) => {
+    return apiClient.get('/grocery/plan-offers', {
+      params: {
+        ...params,
+        activeOnly: 'false',
+      },
+    });
+  },
+
+  getGroceryPlanOfferById: (id) => {
+    return apiClient.get(`/grocery/plan-offers/${id}`);
+  },
+
+  createGroceryPlanOffer: (payload) => {
+    return apiClient.post('/grocery/plan-offers', payload);
+  },
+
+  updateGroceryPlanOffer: (id, payload) => {
+    return apiClient.put(`/grocery/plan-offers/${id}`, payload);
+  },
+
+  deleteGroceryPlanOffer: (id) => {
+    return apiClient.delete(`/grocery/plan-offers/${id}`);
+  },
+
+  getGroceryPlanSubscriptions: (params = {}) => {
+    return apiClient.get('/grocery/plan-subscriptions', { params });
+  },
+
   // Fee Settings Management (Delivery & Platform Fee)
   getFeeSettings: () => {
     return apiClient.get(API_ENDPOINTS.ADMIN.FEE_SETTINGS);

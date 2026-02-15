@@ -107,6 +107,10 @@ const groceryPlanSchema = new mongoose.Schema(
       type: [groceryPlanProductSchema],
       default: [],
     },
+    offerIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'GroceryPlanOffer' }],
+      default: [],
+    },
     order: {
       type: Number,
       default: 0,

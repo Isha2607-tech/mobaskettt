@@ -3,6 +3,8 @@ import GroceryCategory from '../models/GroceryCategory.js';
 import GrocerySubcategory from '../models/GrocerySubcategory.js';
 import GroceryProduct from '../models/GroceryProduct.js';
 import GroceryPlan from '../models/GroceryPlan.js';
+import GroceryPlanOffer from '../models/GroceryPlanOffer.js';
+import Order from '../../order/models/Order.js';
 
 const slugify = (value = '') =>
   value
@@ -40,6 +42,17 @@ const normalizePlanProducts = (products) => {
       qty: (item?.qty || '').toString().trim(),
     }))
     .filter((item) => item.name && item.qty);
+};
+
+const normalizeObjectIdArray = (values) => {
+  if (!Array.isArray(values)) return [];
+  const unique = new Set();
+  values.forEach((value) => {
+    if (isValidObjectId(value)) {
+      unique.add(value.toString());
+    }
+  });
+  return Array.from(unique);
 };
 
 export const getCategories = async (req, res) => {
@@ -598,7 +611,10 @@ export const getPlans = async (req, res) => {
       filter.isActive = true;
     }
 
-    const plans = await GroceryPlan.find(filter).sort({ order: 1, createdAt: -1 }).lean();
+    const plans = await GroceryPlan.find(filter)
+      .populate('offerIds', 'name discountType discountValue freeDelivery isActive')
+      .sort({ order: 1, createdAt: -1 })
+      .lean();
     return res.status(200).json({
       success: true,
       count: plans.length,
@@ -620,7 +636,9 @@ export const getPlanById = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid plan id' });
     }
 
-    const plan = await GroceryPlan.findById(id).lean();
+    const plan = await GroceryPlan.findById(id)
+      .populate('offerIds', 'name discountType discountValue freeDelivery isActive')
+      .lean();
     if (!plan) {
       return res.status(404).json({ success: false, message: 'Plan not found' });
     }
@@ -651,6 +669,7 @@ export const createPlan = async (req, res) => {
       products = [],
       vegProducts = [],
       nonVegProducts = [],
+      offerIds = [],
       order = 0,
       isActive = true,
     } = req.body;
@@ -673,6 +692,7 @@ export const createPlan = async (req, res) => {
     const normalizedNonVegProducts = normalizePlanProducts(nonVegProducts);
     const mergedProducts =
       normalizedProducts.length > 0 ? normalizedProducts : [...normalizedVegProducts, ...normalizedNonVegProducts];
+    const normalizedOfferIds = normalizeObjectIdArray(offerIds);
 
     const plan = await GroceryPlan.create({
       key: normalizedKey,
@@ -692,6 +712,7 @@ export const createPlan = async (req, res) => {
       products: mergedProducts,
       vegProducts: normalizedVegProducts,
       nonVegProducts: normalizedNonVegProducts,
+      offerIds: normalizedOfferIds,
       order: Number(order) || 0,
       isActive: Boolean(isActive),
     });
@@ -731,6 +752,7 @@ export const updatePlan = async (req, res) => {
     if (update.products !== undefined) update.products = normalizePlanProducts(update.products);
     if (update.vegProducts !== undefined) update.vegProducts = normalizePlanProducts(update.vegProducts);
     if (update.nonVegProducts !== undefined) update.nonVegProducts = normalizePlanProducts(update.nonVegProducts);
+    if (update.offerIds !== undefined) update.offerIds = normalizeObjectIdArray(update.offerIds);
 
     if (update.vegProducts !== undefined || update.nonVegProducts !== undefined) {
       const nextVegProducts = update.vegProducts ?? normalizePlanProducts(existing.vegProducts);
@@ -763,5 +785,247 @@ export const deletePlan = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Plan deleted successfully' });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Failed to delete plan', error: error.message });
+  }
+};
+
+export const getPlanOffers = async (req, res) => {
+  try {
+    const { activeOnly = 'true', planId } = req.query;
+    const filter = {};
+    const now = new Date();
+
+    if (activeOnly !== 'false') {
+      filter.isActive = true;
+      filter.$and = [
+        { $or: [{ validFrom: null }, { validFrom: { $lte: now } }] },
+        { $or: [{ validTill: null }, { validTill: { $gte: now } }] },
+      ];
+    }
+
+    if (planId && isValidObjectId(planId)) {
+      const planObjectId = new mongoose.Types.ObjectId(planId);
+      const planDoc = await GroceryPlan.findById(planId).select('offerIds').lean();
+      const linkedOfferIds = normalizeObjectIdArray(planDoc?.offerIds || []);
+
+      if (linkedOfferIds.length > 0) {
+        filter.$or = [
+          { planIds: planObjectId },
+          { _id: { $in: linkedOfferIds } },
+        ];
+      } else {
+        filter.planIds = planObjectId;
+      }
+    }
+
+    const offers = await GroceryPlanOffer.find(filter)
+      .populate('planIds', 'name')
+      .populate('productIds', 'name')
+      .populate('categoryIds', 'name')
+      .populate('subcategoryIds', 'name')
+      .sort({ order: 1, createdAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      count: offers.length,
+      data: offers,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch plan offers',
+      error: error.message,
+    });
+  }
+};
+
+export const getPlanOfferById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid offer id' });
+    }
+
+    const offer = await GroceryPlanOffer.findById(id)
+      .populate('planIds', 'name')
+      .populate('productIds', 'name')
+      .populate('categoryIds', 'name')
+      .populate('subcategoryIds', 'name')
+      .lean();
+    if (!offer) {
+      return res.status(404).json({ success: false, message: 'Offer not found' });
+    }
+
+    return res.status(200).json({ success: true, data: offer });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch offer', error: error.message });
+  }
+};
+
+export const createPlanOffer = async (req, res) => {
+  try {
+    const {
+      key,
+      name,
+      description = '',
+      discountType = 'none',
+      discountValue = 0,
+      freeDelivery = false,
+      planIds = [],
+      productIds = [],
+      categoryIds = [],
+      subcategoryIds = [],
+      validFrom = null,
+      validTill = null,
+      order = 0,
+      isActive = true,
+    } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ success: false, message: 'name is required' });
+    }
+
+    const normalizedKey = slugify(key || name);
+    const exists = await GroceryPlanOffer.findOne({ key: normalizedKey }).lean();
+    if (exists) {
+      return res.status(409).json({ success: false, message: 'Offer key already exists' });
+    }
+
+    const offer = await GroceryPlanOffer.create({
+      key: normalizedKey,
+      name: name.trim(),
+      description: description.toString().trim(),
+      discountType,
+      discountValue: Number(discountValue) || 0,
+      freeDelivery: Boolean(freeDelivery),
+      planIds: normalizeObjectIdArray(planIds),
+      productIds: normalizeObjectIdArray(productIds),
+      categoryIds: normalizeObjectIdArray(categoryIds),
+      subcategoryIds: normalizeObjectIdArray(subcategoryIds),
+      validFrom: validFrom ? new Date(validFrom) : null,
+      validTill: validTill ? new Date(validTill) : null,
+      order: Number(order) || 0,
+      isActive: Boolean(isActive),
+    });
+
+    return res.status(201).json({ success: true, data: offer });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to create offer', error: error.message });
+  }
+};
+
+export const updatePlanOffer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid offer id' });
+    }
+
+    const existing = await GroceryPlanOffer.findById(id).lean();
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Offer not found' });
+    }
+
+    const update = { ...req.body };
+    if (update.key || update.name) {
+      update.key = slugify(update.key || update.name || existing.name);
+      const duplicate = await GroceryPlanOffer.findOne({ key: update.key, _id: { $ne: id } }).lean();
+      if (duplicate) {
+        return res.status(409).json({ success: false, message: 'Offer key already exists' });
+      }
+    }
+
+    if (update.discountValue !== undefined) update.discountValue = Number(update.discountValue) || 0;
+    if (update.order !== undefined) update.order = Number(update.order) || 0;
+    if (update.planIds !== undefined) update.planIds = normalizeObjectIdArray(update.planIds);
+    if (update.productIds !== undefined) update.productIds = normalizeObjectIdArray(update.productIds);
+    if (update.categoryIds !== undefined) update.categoryIds = normalizeObjectIdArray(update.categoryIds);
+    if (update.subcategoryIds !== undefined) update.subcategoryIds = normalizeObjectIdArray(update.subcategoryIds);
+    if (update.validFrom !== undefined) update.validFrom = update.validFrom ? new Date(update.validFrom) : null;
+    if (update.validTill !== undefined) update.validTill = update.validTill ? new Date(update.validTill) : null;
+
+    const offer = await GroceryPlanOffer.findByIdAndUpdate(id, update, { new: true, runValidators: true });
+    return res.status(200).json({ success: true, data: offer });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to update offer', error: error.message });
+  }
+};
+
+export const deletePlanOffer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid offer id' });
+    }
+
+    const offer = await GroceryPlanOffer.findByIdAndDelete(id);
+    if (!offer) {
+      return res.status(404).json({ success: false, message: 'Offer not found' });
+    }
+
+    return res.status(200).json({ success: true, message: 'Offer deleted successfully' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to delete offer', error: error.message });
+  }
+};
+
+export const getPlanSubscriptions = async (req, res) => {
+  try {
+    const { page = 1, limit = 50 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const query = {
+      $or: [
+        { 'planSubscription.planId': { $exists: true, $ne: null } },
+        { note: { $regex: /\[MoGold Plan\]/i } },
+      ],
+    };
+
+    const [orders, total] = await Promise.all([
+      Order.find(query)
+        .populate('userId', 'name phone email')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .lean(),
+      Order.countDocuments(query),
+    ]);
+
+    const data = orders.map((order) => ({
+      id: order._id?.toString(),
+      orderId: order.orderId,
+      planId: order.planSubscription?.planId || null,
+      planName: order.planSubscription?.planName || '',
+      durationDays: Number(order.planSubscription?.durationDays || 0),
+      amount: Number(order.pricing?.total || 0),
+      status: order.status,
+      paymentStatus: order.payment?.status || 'pending',
+      paymentMethod: order.payment?.method || '',
+      user: {
+        id: order.userId?._id?.toString() || null,
+        name: order.userId?.name || '',
+        phone: order.userId?.phone || '',
+        email: order.userId?.email || '',
+      },
+      createdAt: order.createdAt,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      count: data.length,
+      data,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        pages: Math.ceil(total / Number(limit)),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch plan subscriptions',
+      error: error.message,
+    });
   }
 };

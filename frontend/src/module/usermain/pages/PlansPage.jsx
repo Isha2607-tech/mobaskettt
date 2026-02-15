@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ChevronRight,
   MapPin,
@@ -18,6 +18,12 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
+import { orderAPI, restaurantAPI } from "@/lib/api";
+import { initRazorpayPayment } from "@/lib/utils/razorpay";
+import { useProfile } from "../../user/context/ProfileContext";
+import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
+import { useZone } from "../../user/hooks/useZone";
+import { toast } from "sonner";
 
 const PlansPage = () => {
   const navigate = useNavigate();
@@ -26,6 +32,12 @@ const PlansPage = () => {
   const [error, setError] = useState("");
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [selectedMealType, setSelectedMealType] = useState("veg");
+  const [isSubscribing, setIsSubscribing] = useState(false);
+  const [planOffers, setPlanOffers] = useState([]);
+  const [offersLoading, setOffersLoading] = useState(false);
+  const { getDefaultAddress, userProfile } = useProfile();
+  const { location: liveLocation } = useUserLocation();
+  const { zoneId } = useZone(liveLocation, "mogrocery");
 
   useEffect(() => {
     const fetchPlans = async () => {
@@ -79,6 +91,51 @@ const PlansPage = () => {
     setSelectedMealType("veg");
   };
 
+  const selectedPlanOfferIdsKey = useMemo(() => {
+    const ids = Array.isArray(selectedPlan?.offerIds)
+      ? selectedPlan.offerIds
+          .map((offer) => offer?._id || offer?.id || offer)
+          .filter(Boolean)
+      : [];
+    return ids.join(",");
+  }, [selectedPlan?.offerIds]);
+  const selectedPlanLinkedOffers = useMemo(
+    () => (Array.isArray(selectedPlan?.offerIds) ? selectedPlan.offerIds.filter(Boolean) : []),
+    [selectedPlan?.offerIds]
+  );
+
+  useEffect(() => {
+    const fetchPlanOffers = async () => {
+      if (!selectedPlan?.id) {
+        setPlanOffers([]);
+        return;
+      }
+      try {
+        setOffersLoading(true);
+        const response = await api.get("/grocery/plan-offers", {
+          params: { planId: selectedPlan.id, activeOnly: "true" },
+        });
+        const payload = Array.isArray(response?.data?.data) ? response.data.data : [];
+        const linkedFromPlan = selectedPlanLinkedOffers;
+        const merged = [...payload];
+        linkedFromPlan.forEach((offer) => {
+          const offerId = offer?._id || offer?.id;
+          if (!offerId) return;
+          const alreadyExists = merged.some((item) => (item?._id || item?.id) === offerId);
+          if (!alreadyExists) merged.push(offer);
+        });
+        setPlanOffers(merged);
+      } catch {
+        const fallback = selectedPlanLinkedOffers;
+        setPlanOffers(fallback);
+      } finally {
+        setOffersLoading(false);
+      }
+    };
+
+    fetchPlanOffers();
+  }, [selectedPlan?.id, selectedPlanLinkedOffers, selectedPlanOfferIdsKey]);
+
   const selectedPlanProducts = (() => {
     if (!selectedPlan) return [];
 
@@ -94,16 +151,179 @@ const PlansPage = () => {
     return selectedMealType === "nonVeg" ? nonVegProducts : vegProducts;
   })();
 
+  const getNamedItems = (items) => {
+    if (!Array.isArray(items)) return [];
+    return items
+      .map((item) => {
+        if (!item) return null;
+        if (typeof item === "string") return item;
+        if (typeof item === "object") return item.name || item.title || null;
+        return null;
+      })
+      .filter(Boolean);
+  };
+
+  const selectedAddress = (() => {
+    const defaultAddress = getDefaultAddress?.();
+    if (defaultAddress) return defaultAddress;
+
+    if (liveLocation?.latitude && liveLocation?.longitude) {
+      return {
+        label: "Home",
+        street: liveLocation.street || liveLocation.address || "",
+        additionalDetails: liveLocation.area || "",
+        city: liveLocation.city || "",
+        state: liveLocation.state || "",
+        zipCode: liveLocation.postalCode || liveLocation.zipCode || "",
+        formattedAddress: liveLocation.formattedAddress || liveLocation.address || "",
+        location: {
+          coordinates: [liveLocation.longitude, liveLocation.latitude],
+        },
+      };
+    }
+    return null;
+  })();
+
+  const resolveGroceryRestaurant = async () => {
+    const restaurantsResponse = await restaurantAPI.getRestaurants({ limit: 200 });
+    const restaurants = restaurantsResponse?.data?.data?.restaurants || [];
+    const groceryStores = restaurants.filter((r) => r?.platform === "mogrocery" && r?.isActive);
+
+    if (!groceryStores.length) {
+      throw new Error("No active grocery store found.");
+    }
+
+    const groceryLikeStore =
+      groceryStores.find((r) => /grocery|mart|basket/i.test(r?.name || "")) || groceryStores[0];
+
+    const restaurantId = groceryLikeStore?._id || groceryLikeStore?.restaurantId;
+    if (!restaurantId) {
+      throw new Error("Unable to resolve grocery store for plan purchase.");
+    }
+
+    return {
+      restaurantId,
+      restaurantName: groceryLikeStore?.name || "MoGrocery",
+    };
+  };
+
+  const handleSubscribePlan = async () => {
+    if (!selectedPlan || isSubscribing) return;
+    if (!selectedAddress) {
+      toast.error("Please add/select a delivery address first.");
+      navigate("/profile/addresses");
+      return;
+    }
+
+    setIsSubscribing(true);
+    try {
+      const { restaurantId, restaurantName } = await resolveGroceryRestaurant();
+
+      const items = [
+        {
+          itemId: `plan-${selectedPlan.id}`,
+          name: selectedPlan.name,
+          price: Number(selectedPlan.price || 0),
+          quantity: 1,
+          image: "",
+          description: selectedPlan.description || "MoGold plan subscription",
+          isVeg: selectedMealType !== "nonVeg",
+        },
+      ];
+
+      const pricingResponse = await orderAPI.calculateOrder({
+        items,
+        restaurantId,
+        deliveryAddress: selectedAddress,
+        deliveryFleet: "standard",
+      });
+      const calculatedPricing = pricingResponse?.data?.data?.pricing;
+      if (!calculatedPricing?.total) {
+        throw new Error("Failed to calculate plan price.");
+      }
+
+      const orderPayload = {
+        items,
+        address: selectedAddress,
+        restaurantId,
+        restaurantName,
+        pricing: calculatedPricing,
+        deliveryFleet: "standard",
+        note: `[MoGold Plan] ${selectedPlan.name} (${selectedPlan.durationText || ""})`,
+        sendCutlery: false,
+        paymentMethod: "razorpay",
+        zoneId: zoneId || undefined,
+        planSubscription: {
+          planId: selectedPlan.id,
+          planName: selectedPlan.name,
+          durationDays: Number(selectedPlan.durationDays || 0),
+        },
+      };
+
+      const orderResponse = await orderAPI.createOrder(orderPayload);
+      const { order, razorpay } = orderResponse?.data?.data || {};
+      const orderIdentifier = order?.orderId || order?.id;
+
+      if (!razorpay?.orderId || !razorpay?.key) {
+        throw new Error("Payment initialization failed.");
+      }
+
+      await new Promise((resolve, reject) => {
+        initRazorpayPayment({
+          key: razorpay.key,
+          amount: razorpay.amount,
+          currency: razorpay.currency,
+          order_id: razorpay.orderId,
+          name: "MoGold Plans",
+          description: `Payment for ${selectedPlan.name}`,
+          prefill: {
+            name: userProfile?.name || "",
+            email: userProfile?.email || "",
+            contact: (userProfile?.phone || "").replace(/\D/g, "").slice(-10),
+          },
+          notes: {
+            orderId: order?.orderId || order?.id || "",
+            planId: selectedPlan?.id || "",
+            planName: selectedPlan?.name || "",
+          },
+          handler: async (response) => {
+            try {
+              await orderAPI.verifyPayment({
+                orderId: order?.id,
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+              });
+              toast.success("Plan purchased successfully.");
+              setSelectedPlan(null);
+              navigate(`/orders/${orderIdentifier}?confirmed=true`);
+              resolve();
+            } catch (verifyError) {
+              reject(new Error(verifyError?.response?.data?.message || "Payment verification failed."));
+            }
+          },
+          onError: (paymentError) =>
+            reject(new Error(paymentError?.description || paymentError?.message || "Payment failed.")),
+          onClose: () => reject(new Error("Payment cancelled.")),
+        }).catch(reject);
+      });
+    } catch (purchaseError) {
+      toast.error(purchaseError?.response?.data?.message || purchaseError?.message || "Failed to start payment.");
+    } finally {
+      setIsSubscribing(false);
+    }
+  };
+
   return (
     <div className="bg-gray-50 min-h-screen font-sans w-full relative pb-20 overflow-x-hidden">
       <div className="bg-[#FACC15] pb-10 rounded-b-[2.5rem] shadow-sm">
         <div className="p-4 pt-6 flex justify-between items-start md:max-w-7xl md:mx-auto">
           <div>
             <h1 className="text-xl font-black text-slate-900 leading-none tracking-tight">
-              MoBasket
+              MoGold
             </h1>
             <p className="text-xs font-bold text-slate-800 mt-0.5 opacity-80">
-              Delivery in 15-20 mins
+              Membership plans
             </p>
           </div>
           <div className="bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-sm">
@@ -158,7 +378,9 @@ const PlansPage = () => {
                         {plan.items}
                       </span>
                     </div>
-                    <p className="text-xs text-gray-400 font-medium">Free delivery on all orders</p>
+                    <p className="text-xs text-gray-400 font-medium">
+                      {plan.benefits?.[0] || plan.description || "Plan benefits available"}
+                    </p>
                   </div>
                 </div>
                 <div className="text-right flex items-center gap-2">
@@ -288,25 +510,143 @@ const PlansPage = () => {
                     </button>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    {selectedPlanProducts.map((prod, idx) => (
-                      <div key={idx} className="bg-slate-50 p-3 rounded-xl flex items-center gap-3 border border-slate-100">
-                        <div className="bg-white p-2 rounded-lg shadow-sm border border-slate-100">
-                          <Package size={16} className="text-slate-400" />
+                    {selectedPlanProducts.length > 0 ? (
+                      selectedPlanProducts.map((prod, idx) => (
+                        <div key={idx} className="bg-slate-50 p-3 rounded-xl flex items-center gap-3 border border-slate-100">
+                          <div className="bg-white p-2 rounded-lg shadow-sm border border-slate-100">
+                            <Package size={16} className="text-slate-400" />
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-900 text-sm leading-tight">{prod.name}</p>
+                            <p className="text-xs text-slate-500 font-medium mt-0.5">{prod.qty}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-bold text-slate-900 text-sm leading-tight">{prod.name}</p>
-                          <p className="text-xs text-slate-500 font-medium mt-0.5">{prod.qty}</p>
-                        </div>
-                      </div>
-                    ))}
+                      ))
+                    ) : (
+                      <p className="text-sm text-slate-500 col-span-2">No products configured for this meal type.</p>
+                    )}
                   </div>
                 </div>
 
                 <div className="mt-8 pt-4 border-t border-slate-100">
-                  <button className="w-full bg-[#fec007] hover:bg-[#eeb100] active:scale-[0.98] transition-all text-black font-black text-lg py-4 rounded-2xl shadow-lg shadow-yellow-200">
-                    Subscribe for {selectedPlan.priceDisplay}
+                  <button
+                    onClick={handleSubscribePlan}
+                    disabled={isSubscribing}
+                    className="w-full bg-[#fec007] hover:bg-[#eeb100] disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.98] transition-all text-black font-black text-lg py-4 rounded-2xl shadow-lg shadow-yellow-200"
+                  >
+                    {isSubscribing ? "Opening Razorpay..." : `Subscribe for ${selectedPlan.priceDisplay}`}
                   </button>
                   <p className="text-center text-xs text-slate-400 font-medium mt-2">Cancel anytime - No hidden charges</p>
+                </div>
+
+                <div className="mb-8">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Zap size={18} className="text-amber-500" />
+                    <h3 className="font-bold text-slate-900 text-lg">Plan Offers</h3>
+                  </div>
+                  {offersLoading ? (
+                    <p className="text-sm text-slate-500">Loading offers...</p>
+                  ) : planOffers.length === 0 ? (
+                    <p className="text-sm text-slate-500">No additional offers for this plan.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {planOffers.map((offer) => (
+                        <div key={offer._id} className="rounded-xl border border-amber-100 bg-amber-50 p-3">
+                          <p className="font-semibold text-slate-900">{offer.name}</p>
+                          <p className="text-xs text-slate-600 mt-0.5">{offer.description || "Exclusive offer for this plan"}</p>
+
+                          <div className="flex gap-2 mt-2 flex-wrap">
+                            {offer.discountType !== "none" && Number(offer.discountValue || 0) > 0 && (
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-white border border-amber-200 text-amber-700">
+                                {offer.discountType === "percentage" ? `${offer.discountValue}% off` : `Rs ${offer.discountValue} off`}
+                              </span>
+                            )}
+                            {offer.freeDelivery && (
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-white border border-amber-200 text-amber-700">
+                                Free delivery
+                              </span>
+                            )}
+                            {offer.validFrom && (
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-white border border-amber-200 text-amber-700">
+                                Starts: {new Date(offer.validFrom).toLocaleDateString("en-IN")}
+                              </span>
+                            )}
+                            {offer.validTill && (
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-white border border-amber-200 text-amber-700">
+                                Ends: {new Date(offer.validTill).toLocaleDateString("en-IN")}
+                              </span>
+                            )}
+                          </div>
+
+                          {(() => {
+                            const linkedProducts = getNamedItems(offer.productIds);
+                            const linkedCategories = getNamedItems(offer.categoryIds);
+                            const linkedSubcategories = getNamedItems(offer.subcategoryIds);
+                            const linkedPlans = getNamedItems(offer.planIds);
+                            const hasDetails =
+                              linkedProducts.length > 0 ||
+                              linkedCategories.length > 0 ||
+                              linkedSubcategories.length > 0 ||
+                              linkedPlans.length > 0;
+                            if (!hasDetails) return null;
+
+                            return (
+                              <div className="mt-3 space-y-2">
+                                {linkedProducts.length > 0 && (
+                                  <div>
+                                    <p className="text-[11px] font-semibold text-slate-700 mb-1">Products</p>
+                                    <div className="flex flex-wrap gap-1">
+                                      {linkedProducts.map((name, idx) => (
+                                        <span key={`p-${idx}`} className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-amber-200 text-slate-700">
+                                          {name}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {linkedCategories.length > 0 && (
+                                  <div>
+                                    <p className="text-[11px] font-semibold text-slate-700 mb-1">Categories</p>
+                                    <div className="flex flex-wrap gap-1">
+                                      {linkedCategories.map((name, idx) => (
+                                        <span key={`c-${idx}`} className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-amber-200 text-slate-700">
+                                          {name}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {linkedSubcategories.length > 0 && (
+                                  <div>
+                                    <p className="text-[11px] font-semibold text-slate-700 mb-1">Subcategories</p>
+                                    <div className="flex flex-wrap gap-1">
+                                      {linkedSubcategories.map((name, idx) => (
+                                        <span key={`s-${idx}`} className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-amber-200 text-slate-700">
+                                          {name}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {linkedPlans.length > 0 && (
+                                  <div>
+                                    <p className="text-[11px] font-semibold text-slate-700 mb-1">Applicable Plans</p>
+                                    <div className="flex flex-wrap gap-1">
+                                      {linkedPlans.map((name, idx) => (
+                                        <span key={`l-${idx}`} className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-amber-200 text-slate-700">
+                                          {name}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
