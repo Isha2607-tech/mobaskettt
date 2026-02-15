@@ -326,11 +326,6 @@ const PlansPage = () => {
               Membership plans
             </p>
           </div>
-          <div className="bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-sm">
-            <MapPin size={14} className="text-slate-900" />
-            <span className="text-xs font-extrabold text-slate-900">Add Address</span>
-            <ChevronDown size={14} className="text-slate-900" />
-          </div>
         </div>
       </div>
 

@@ -107,6 +107,7 @@ const GroceryPage = () => {
   const [showSnow, setShowSnow] = useState(false);
   const [homepageCategories, setHomepageCategories] = useState([]);
   const [bestSellerItems, setBestSellerItems] = useState([]);
+  const [allProducts, setAllProducts] = useState([]);
   const [groceryStores, setGroceryStores] = useState([]);
 
   const getStoreCoordinates = (store) => {
@@ -157,6 +158,7 @@ const GroceryPage = () => {
   // Search & Voice Logic
   const [searchQuery, setSearchQuery] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const hasActiveSearch = searchQuery.trim().length > 0;
 
   const startListening = () => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -247,6 +249,20 @@ const GroceryPage = () => {
     };
 
     fetchBestSellers();
+  }, []);
+
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const response = await api.get("/grocery/products");
+        const products = Array.isArray(response?.data?.data) ? response.data.data : [];
+        setAllProducts(products);
+      } catch {
+        setAllProducts([]);
+      }
+    };
+
+    fetchProducts();
   }, []);
 
   useEffect(() => {
@@ -353,7 +369,9 @@ const GroceryPage = () => {
   const homepageCategorySections = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
     const categoryFiltered =
-      activeTab === "All"
+      query
+        ? homepageCategories
+        : activeTab === "All"
         ? homepageCategories
         : homepageCategories.filter((category) => category?.name === activeTab);
 
@@ -375,6 +393,33 @@ const GroceryPage = () => {
         return (category?.name || "").toLowerCase().includes(query) || category.subcategories.length > 0;
       });
   }, [activeTab, homepageCategories, searchQuery]);
+
+  const visibleSearchProducts = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return [];
+
+    return allProducts.filter((product) => {
+      const name = String(product?.name || "").toLowerCase();
+      const description = String(product?.description || "").toLowerCase();
+      const categoryName = String(product?.category?.name || "").toLowerCase();
+      const unit = String(product?.unit || "").toLowerCase();
+      const subcategoryNames = [
+        ...(Array.isArray(product?.subcategories) ? product.subcategories : []),
+        product?.subcategory,
+      ]
+        .map((subcat) => String(subcat?.name || "").toLowerCase())
+        .filter(Boolean)
+        .join(" ");
+
+      return (
+        name.includes(query) ||
+        description.includes(query) ||
+        categoryName.includes(query) ||
+        unit.includes(query) ||
+        subcategoryNames.includes(query)
+      );
+    });
+  }, [allProducts, searchQuery]);
 
   const visibleBestSellers = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
@@ -402,6 +447,15 @@ const GroceryPage = () => {
         subcategories: Array.isArray(item.subcategories) ? item.subcategories : [],
       }));
   }, [bestSellerItems, bestsellers, searchQuery]);
+
+  const hasAnySearchMatch = useMemo(() => {
+    if (!hasActiveSearch) return true;
+    return (
+      homepageCategorySections.length > 0 ||
+      visibleSearchProducts.length > 0 ||
+      visibleBestSellers.length > 0
+    );
+  }, [hasActiveSearch, homepageCategorySections.length, visibleBestSellers.length, visibleSearchProducts.length]);
 
   const nearestStoreDistanceKm = useMemo(() => {
     const userLat = Number(userLocation?.latitude);
@@ -588,32 +642,34 @@ const GroceryPage = () => {
               </div>
 
               {/* Desktop Nav Icons */}
-              <div className="hidden md:flex items-center gap-4 mx-4 max-w-[48vw] overflow-x-auto no-scrollbar">
-                {topNavCategories.map((cat) => (
-                  <div
-                    key={cat.id}
-                    className={`flex flex-col items-center gap-1 cursor-pointer group px-2 py-1 rounded-xl transition-colors ${cat.name === activeTab ? "bg-white/55" : "hover:bg-white/35"
-                      }`}
-                    onClick={() => setActiveTab(cat.name)}
-                  >
-                    <div className="relative transition-transform group-hover:scale-110">
-                      {cat.name === activeTab && (
-                        <div className="absolute -top-1 -right-1 w-2 h-2 bg-[#EF4F5F] rounded-full border border-[#fc9b03] z-10"></div>
-                      )}
-                      <img
-                        src={cat.img}
-                        alt={cat.name}
-                        className="w-8 h-8 object-contain drop-shadow-sm rounded-full"
-                      />
-                    </div>
-                    <span
-                      className={`text-[11px] font-bold max-w-[68px] text-center line-clamp-1 ${activeTab === cat.name ? "text-[#3e3212]" : "text-[#3e3212]/70"}`}
+              {!hasActiveSearch && (
+                <div className="hidden md:flex items-center gap-4 mx-4 max-w-[48vw] overflow-x-auto no-scrollbar">
+                  {topNavCategories.map((cat) => (
+                    <div
+                      key={cat.id}
+                      className={`flex flex-col items-center gap-1 cursor-pointer group px-2 py-1 rounded-xl transition-colors ${cat.name === activeTab ? "bg-white/55" : "hover:bg-white/35"
+                        }`}
+                      onClick={() => setActiveTab(cat.name)}
                     >
-                      {cat.name}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                      <div className="relative transition-transform group-hover:scale-110">
+                        {cat.name === activeTab && (
+                          <div className="absolute -top-1 -right-1 w-2 h-2 bg-[#EF4F5F] rounded-full border border-[#fc9b03] z-10"></div>
+                        )}
+                        <img
+                          src={cat.img}
+                          alt={cat.name}
+                          className="w-8 h-8 object-contain drop-shadow-sm rounded-full"
+                        />
+                      </div>
+                      <span
+                        className={`text-[11px] font-bold max-w-[68px] text-center line-clamp-1 ${activeTab === cat.name ? "text-[#3e3212]" : "text-[#3e3212]/70"}`}
+                      >
+                        {cat.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Profile & Cart Icons */}
               <div className="flex gap-2 mt-1">
@@ -665,37 +721,40 @@ const GroceryPage = () => {
           </div>
 
           {/* Nav Tabs (Mobile Only) - OUTSIDE YELLOW BOX */}
-          <div className="px-2 pb-2 mt-2 md:hidden">
-            <div className="flex items-end gap-3 overflow-x-auto scrollbar-hide no-scrollbar px-2 w-full">
-              {topNavCategories.map((cat) => (
-                <div
-                  key={cat.id}
-                  className={`flex flex-col items-center gap-1.5 cursor-pointer min-w-[68px] px-1 py-1 rounded-xl transition-colors ${activeTab === cat.name ? "bg-white/55" : "hover:bg-white/35"
-                    }`}
-                  onClick={() => setActiveTab(cat.name)}
-                >
-                  <div className="relative">
-                    <img
-                      src={cat.img}
-                      alt={cat.name}
-                      className="w-10 h-10 object-contain drop-shadow-md rounded-full"
-                    />
-                  </div>
-                  <span
-                    className={`text-[11px] font-bold tracking-tight text-center line-clamp-2 min-h-[30px] ${activeTab === cat.name ? "text-[#1a1a1a]" : "text-[#1a1a1a]/80"}`}
+          {!hasActiveSearch && (
+            <div className="px-2 pb-2 mt-2 md:hidden">
+              <div className="flex items-end gap-3 overflow-x-auto scrollbar-hide no-scrollbar px-2 w-full">
+                {topNavCategories.map((cat) => (
+                  <div
+                    key={cat.id}
+                    className={`flex flex-col items-center gap-1.5 cursor-pointer min-w-[68px] px-1 py-1 rounded-xl transition-colors ${activeTab === cat.name ? "bg-white/55" : "hover:bg-white/35"
+                      }`}
+                    onClick={() => setActiveTab(cat.name)}
                   >
-                    {cat.name}
-                  </span>
-                  {activeTab === cat.name && <div className="w-6 h-0.5 bg-[#1a1a1a] rounded-full"></div>}
-                </div>
-              ))}
+                    <div className="relative">
+                      <img
+                        src={cat.img}
+                        alt={cat.name}
+                        className="w-10 h-10 object-contain drop-shadow-md rounded-full"
+                      />
+                    </div>
+                    <span
+                      className={`text-[11px] font-bold tracking-tight text-center line-clamp-2 min-h-[30px] ${activeTab === cat.name ? "text-[#1a1a1a]" : "text-[#1a1a1a]/80"}`}
+                    >
+                      {cat.name}
+                    </span>
+                    {activeTab === cat.name && <div className="w-6 h-0.5 bg-[#1a1a1a] rounded-full"></div>}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
       {/* --- 2. DYNAMIC BANNER CAROUSEL --- */}
-      <div className="relative z-0 -mt-1 animate-fade-in-up px-4 pt-2 pb-1 md:max-w-6xl mx-auto">
+      {!hasActiveSearch && (
+        <div className="relative z-0 -mt-1 animate-fade-in-up px-4 pt-2 pb-1 md:max-w-6xl mx-auto">
         {/* Carousel Container */}
         <div className="relative w-full aspect-[1.8/1] md:aspect-[3/1] bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg border border-white/30 overflow-hidden">
           {bannerImages.map((bannerImg, index) => (
@@ -723,10 +782,12 @@ const GroceryPage = () => {
             ))}
           </div>
         </div>
-      </div>
+        </div>
+      )}
 
       {/* --- 4. BESTSELLERS (Transparent) --- */}
-      <div className="px-4 pt-4 pb-2 relative z-10 md:max-w-6xl md:mx-auto">
+      {!hasActiveSearch && (
+        <div className="px-4 pt-4 pb-2 relative z-10 md:max-w-6xl md:mx-auto">
         <h3 className="text-lg font-[800] text-[#3e2723] mb-4">Bestsellers</h3>
 
         <div className="flex flex-nowrap gap-4 overflow-x-auto scrollbar-hide no-scrollbar pb-4 px-2 snap-x snap-mandatory touch-pan-x">
@@ -754,7 +815,81 @@ const GroceryPage = () => {
             </div>
           ))}
         </div>
-      </div>
+        </div>
+      )}
+
+      {hasActiveSearch && (
+        <div className="px-4 pt-4 pb-2 relative z-10 md:max-w-6xl md:mx-auto">
+          <h3 className="text-lg font-[800] text-[#3e2723]">
+            Search results for "{searchQuery.trim()}"
+          </h3>
+        </div>
+      )}
+
+      {hasActiveSearch && visibleBestSellers.length > 0 && (
+        <div className="px-4 pt-2 pb-2 relative z-10 md:max-w-6xl md:mx-auto">
+          <h4 className="text-base font-[800] text-[#3e2723] mb-3">Related Bestsellers</h4>
+          <div className="flex flex-nowrap gap-3 overflow-x-auto scrollbar-hide no-scrollbar pb-2">
+            {visibleBestSellers.map((item, idx) => (
+              <button
+                type="button"
+                key={`search-bestseller-${item.id}-${idx}`}
+                className="min-w-[140px] max-w-[140px] bg-[#eff3f6] rounded-2xl p-2 border border-white/60 shadow-sm text-left"
+                onClick={() => handleBestSellerClick(item)}
+              >
+                <div className="w-full h-24 bg-white rounded-xl overflow-hidden flex items-center justify-center mb-2">
+                  <img src={item.image} alt={item.name} className="w-full h-full object-contain" />
+                </div>
+                <p className="text-xs font-bold text-slate-900 line-clamp-2">{item.name}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {hasActiveSearch && visibleSearchProducts.length > 0 && (
+        <div className="px-4 pt-2 pb-2 relative z-10 md:max-w-6xl md:mx-auto">
+          <h4 className="text-base font-[800] text-[#3e2723] mb-3">Products</h4>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {visibleSearchProducts.map((product) => {
+              const primarySubcategory =
+                (Array.isArray(product?.subcategories) && product.subcategories[0]?._id) ||
+                product?.subcategory?._id ||
+                null;
+
+              return (
+                <button
+                  type="button"
+                  key={`search-product-${product._id}`}
+                  className="rounded-2xl border border-slate-200 p-3 bg-white shadow-sm text-left"
+                  onClick={() =>
+                    primarySubcategory
+                      ? navigate(`/grocery/subcategory/${primarySubcategory}`)
+                      : navigate("/categories")
+                  }
+                >
+                  <div className="w-full aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 flex items-center justify-center">
+                    <img
+                      src={Array.isArray(product?.images) && product.images[0] ? product.images[0] : "https://via.placeholder.com/200"}
+                      alt={product?.name || "Product"}
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  <p className="text-sm font-semibold text-slate-900 line-clamp-2">{product?.name}</p>
+                  <p className="text-xs text-slate-500 mt-1 line-clamp-1">{product?.unit || "Unit not specified"}</p>
+                  <p className="text-sm font-bold text-slate-900 mt-1">Rs {Number(product?.sellingPrice || 0)}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {hasActiveSearch && !hasAnySearchMatch && (
+        <div className="px-4 pt-4 pb-24 relative z-10 md:max-w-6xl md:mx-auto">
+          <p className="text-sm text-slate-500">No matching results found.</p>
+        </div>
+      )}
 
       {homepageCategorySections.map((category, sectionIndex) => (
         <div
