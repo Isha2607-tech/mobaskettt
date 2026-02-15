@@ -3929,68 +3929,6 @@ export default function DeliveryHome() {
     orderIdConfirmIsSwiping.current = false
   }
 
-  // Handle Start Navigation Button - Opens Google Maps app in navigation mode
-  const handleStartNavigation = () => {
-    // Get customer location from selectedRestaurant
-    const customerLat = selectedRestaurant?.customerLat;
-    const customerLng = selectedRestaurant?.customerLng;
-    
-    if (!customerLat || !customerLng) {
-      console.error('❌ Customer location not available');
-      toast.error('Customer location not found');
-      return;
-    }
-
-    console.log('🗺️ Opening Google Maps navigation to customer:', { lat: customerLat, lng: customerLng });
-
-    // Get current rider location for origin (optional, Google Maps will use current location if not provided)
-    const originLat = riderLocation?.[0];
-    const originLng = riderLocation?.[1];
-
-    // Detect platform (Android or iOS)
-    const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-    const isAndroid = /android/i.test(userAgent);
-    const isIOS = /iPad|iPhone|iPod/.test(userAgent) && !window.MSStream;
-
-    let mapsUrl = '';
-
-    if (isAndroid) {
-      // Android: Use google.navigation: scheme (opens directly in navigation mode)
-      // Fallback to web URL if app not installed
-      mapsUrl = `google.navigation:q=${customerLat},${customerLng}&mode=b`;
-      
-      // Try to open Google Maps app first
-      window.location.href = mapsUrl;
-      
-      // Fallback to web URL after a short delay (in case app is not installed)
-      setTimeout(() => {
-        const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${customerLat},${customerLng}&travelmode=bicycling`;
-        window.open(webUrl, '_blank');
-      }, 500);
-    } else if (isIOS) {
-      // iOS: Use comgooglemaps:// scheme (opens Google Maps app)
-      mapsUrl = `comgooglemaps://?daddr=${customerLat},${customerLng}&directionsmode=bicycling`;
-      
-      // Try to open Google Maps app first
-      window.location.href = mapsUrl;
-      
-      // Fallback to web URL after a short delay (in case app is not installed)
-      setTimeout(() => {
-        const webUrl = `https://maps.google.com/?daddr=${customerLat},${customerLng}&directionsmode=bicycling`;
-        window.open(webUrl, '_blank');
-      }, 500);
-    } else {
-      // Web/Desktop: Use web URL
-      mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${customerLat},${customerLng}&travelmode=bicycling`;
-      window.open(mapsUrl, '_blank');
-    }
-
-    // Show success message
-    toast.success('Opening Google Maps navigation 🗺️', {
-      duration: 2000
-    });
-  }
-
   // Handle Order Delivered button swipe
   const handleOrderDeliveredTouchStart = (e) => {
     orderDeliveredSwipeStartX.current = e.touches[0].clientX
@@ -6599,14 +6537,16 @@ export default function DeliveryHome() {
       Number.isFinite(Number(selectedRestaurant.customerLat)) &&
       Number.isFinite(Number(selectedRestaurant.customerLng)) &&
       !(Number(selectedRestaurant.customerLat) === 0 && Number(selectedRestaurant.customerLng) === 0);
+    // In delivery phase, only keep directions if they point to the customer.
+    // This prevents showing the store/pickup route after order is picked up.
     const shouldUseCurrentDirections =
       !isPickedUpPhase ||
-      !hasCustomerLocation ||
-      isDirectionsRouteToLocation(
-        currentDirectionsResponse,
-        selectedRestaurant?.customerLat,
-        selectedRestaurant?.customerLng
-      );
+      (hasCustomerLocation &&
+        isDirectionsRouteToLocation(
+          currentDirectionsResponse,
+          selectedRestaurant?.customerLat,
+          selectedRestaurant?.customerLng
+        ));
 
     // If we have a directions response and rider location, but no polyline, create it
     if (currentDirectionsResponse && 
@@ -7181,6 +7121,10 @@ export default function DeliveryHome() {
   // Monitor delivery boy's location for "Reached Pickup" detection
   // Show "Reached Pickup" popup when delivery boy is within 500 meters of restaurant location
   useEffect(() => {
+    if (!selectedRestaurant) {
+      return
+    }
+
     // Don't show if popup is already showing, or if order hasn't been accepted yet
     if (showreachedPickupPopup || 
         showNewOrderPopup || 
@@ -7188,11 +7132,7 @@ export default function DeliveryHome() {
         showReachedDropPopup || // Don't show if already reached drop
         showOrderDeliveredAnimation || // Don't show if order is delivered
         showCustomerReviewPopup || // Don't show if showing review popup
-        showPaymentPage || // Don't show if showing payment page
-        !selectedRestaurant?.lat || 
-        !selectedRestaurant?.lng || 
-        !riderLocation || 
-        riderLocation.length !== 2) {
+        showPaymentPage) { // Don't show if showing payment page
       return
     }
 
@@ -7269,6 +7209,60 @@ export default function DeliveryHome() {
     selectedRestaurant?.deliveryPhase,
     selectedRestaurant?.deliveryState?.status,
     calculateDistanceInMeters
+  ])
+
+  // Restore action popup based on current order phase after refresh/reconnect.
+  useEffect(() => {
+    if (!selectedRestaurant || showNewOrderPopup || showOrderIdConfirmationPopup || showPaymentPage || showCustomerReviewPopup) {
+      return
+    }
+
+    const orderStatus = selectedRestaurant?.orderStatus || selectedRestaurant?.status || ''
+    const deliveryPhase = selectedRestaurant?.deliveryPhase || selectedRestaurant?.deliveryState?.currentPhase || ''
+    const deliveryStateStatus = selectedRestaurant?.deliveryState?.status || ''
+
+    const isDelivered = orderStatus === 'delivered' ||
+      orderStatus === 'completed' ||
+      deliveryPhase === 'completed' ||
+      deliveryPhase === 'delivered' ||
+      deliveryStateStatus === 'delivered'
+
+    if (isDelivered) {
+      return
+    }
+
+    const isAtDelivery = deliveryPhase === 'at_delivery' ||
+      deliveryStateStatus === 'reached_drop' ||
+      deliveryStateStatus === 'at_delivery'
+
+    if (isAtDelivery) {
+      setShowreachedPickupPopup(false)
+      setShowReachedDropPopup(false)
+      setShowOrderDeliveredAnimation(true)
+      return
+    }
+
+    const isInDeliveryPhase = orderStatus === 'out_for_delivery' ||
+      deliveryPhase === 'en_route_to_delivery' ||
+      deliveryPhase === 'picked_up' ||
+      deliveryStateStatus === 'order_confirmed' ||
+      deliveryStateStatus === 'en_route_to_delivery'
+
+    if (isInDeliveryPhase) {
+      setShowreachedPickupPopup(false)
+      setShowReachedDropPopup(true)
+      return
+    }
+  }, [
+    selectedRestaurant?.orderStatus,
+    selectedRestaurant?.status,
+    selectedRestaurant?.deliveryPhase,
+    selectedRestaurant?.deliveryState?.currentPhase,
+    selectedRestaurant?.deliveryState?.status,
+    showNewOrderPopup,
+    showOrderIdConfirmationPopup,
+    showPaymentPage,
+    showCustomerReviewPopup
   ])
 
   // CRITICAL: Monitor order status and close all pickup/delivery popups when order is delivered
@@ -10422,79 +10416,6 @@ export default function DeliveryHome() {
           </div>
         </div>
       </BottomPopup>
-
-      {/* Start Navigation Button Card - Show when order is out_for_delivery */}
-      {selectedRestaurant && 
-       (selectedRestaurant.orderStatus === 'out_for_delivery' || 
-        selectedRestaurant.deliveryPhase === 'en_route_to_delivery') && 
-       !showReachedDropPopup && 
-       !showOrderDeliveredAnimation &&
-       !showCustomerReviewPopup &&
-       !showPaymentPage && (
-        <div className="fixed bottom-24 left-0 right-0 px-4 z-50">
-          <motion.div
-            initial={{ y: 100, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 100, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            className="bg-white rounded-2xl shadow-2xl p-5 border border-gray-100"
-          >
-            {/* Customer Info */}
-            <div className="mb-4">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center">
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    className="text-teal-600"
-                  >
-                    <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-base font-semibold text-gray-900">
-                    Head to Customer Location
-                  </h3>
-                  <p className="text-sm text-gray-600 mt-0.5">
-                    {selectedRestaurant?.customerName || 'Customer'}
-                  </p>
-                </div>
-              </div>
-              {selectedRestaurant?.customerAddress && (
-                <p className="text-xs text-gray-500 ml-13 truncate">
-                  {selectedRestaurant.customerAddress}
-                </p>
-              )}
-            </div>
-
-            {/* Start Navigation Button */}
-            <button
-              onClick={handleStartNavigation}
-              className="w-full bg-[#4285F4] hover:bg-[#357ae8] text-white font-bold py-4 px-6 rounded-xl shadow-lg transition-all duration-200 flex items-center justify-center gap-2 active:scale-95"
-            >
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
-              </svg>
-              <span>START NAVIGATION</span>
-            </button>
-
-            <p className="text-center text-xs text-gray-500 mt-3">
-              Opens Google Maps in Bike Mode 🏍️
-            </p>
-          </motion.div>
-        </div>
-      )}
 
       {/* Reached Drop Popup - shown instantly after Order Picked Up confirmation */}
       <BottomPopup
