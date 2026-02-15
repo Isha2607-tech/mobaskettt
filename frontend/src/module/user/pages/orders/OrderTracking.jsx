@@ -1,5 +1,5 @@
 import { useParams, Link, useSearchParams } from "react-router-dom"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
 import { 
@@ -709,6 +709,36 @@ export default function OrderTracking() {
     return () => window.removeEventListener("driverDistanceUpdate", handleDriverDistanceUpdate)
   }, [orderId, order?.id])
 
+  // Refetch order (e.g. after socket status update) so map gets latest deliveryState for blue polyline
+  const refetchOrder = useCallback(async () => {
+    if (!orderId) return;
+    try {
+      const response = await orderAPI.getOrderDetails(orderId);
+      if (response.data?.success && response.data.data?.order) {
+        const apiOrder = response.data.data.order;
+        setOrder((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            id: apiOrder.orderId || apiOrder._id,
+            status: apiOrder.status ?? prev.status,
+            deliveryState: apiOrder.deliveryState ?? prev.deliveryState,
+            deliveryPartner: apiOrder.deliveryPartnerId ? {
+              name: apiOrder.deliveryPartnerId.name || 'Delivery Partner',
+              phone: apiOrder.deliveryPartnerId.phone || null,
+              avatar: apiOrder.deliveryPartnerId.avatar || null,
+              availability: apiOrder.deliveryPartnerId.availability || null
+            } : prev.deliveryPartner,
+            deliveryPartnerId: apiOrder.deliveryPartnerId?._id || apiOrder.deliveryPartnerId || prev.deliveryPartnerId
+          };
+        });
+        setOrderStatus(deriveUiOrderStatus(apiOrder.status, apiOrder));
+      }
+    } catch (err) {
+      console.warn('Refetch order on status update failed:', err);
+    }
+  }, [orderId]);
+
   // Listen for order status updates from socket (e.g., "Delivery partner on the way")
   useEffect(() => {
     const handleOrderStatusNotification = (event) => {
@@ -723,6 +753,9 @@ export default function OrderTracking() {
       }
       
       console.log('📢 Order status notification received:', { message, status });
+
+      // Refetch order so map gets latest deliveryState.currentPhase (en_route_to_delivery) and shows blue polyline
+      refetchOrder();
 
       // Update order status in UI
       if (status) {
@@ -757,7 +790,7 @@ export default function OrderTracking() {
     return () => {
       window.removeEventListener('orderStatusNotification', handleOrderStatusNotification);
     };
-  }, [orderId, order?._id, order?.id])
+  }, [orderId, order?._id, order?.id, refetchOrder])
 
   const handleCancelOrder = () => {
     // Check if order can be cancelled (only Razorpay orders that aren't delivered/cancelled)
@@ -1282,7 +1315,7 @@ export default function OrderTracking() {
           </p>
         </motion.div>
 
-        {/* Contact & Address Section */}
+        {/* Contact & Address Section - Your (customer) details only, never delivery partner */}
         <motion.div 
           className="bg-white rounded-xl shadow-sm overflow-hidden"
           initial={{ opacity: 0, y: 20 }}
@@ -1292,15 +1325,13 @@ export default function OrderTracking() {
           <SectionItem 
             icon={Phone}
             title={
-              order?.userName ||
               order?.userId?.fullName ||
               order?.userId?.name ||
               profile?.fullName ||
               profile?.name ||
-              'Customer'
+              'Your details'
             }
             subtitle={
-              order?.userPhone ||
               order?.userId?.phone ||
               profile?.phone ||
               defaultAddress?.phone ||

@@ -149,6 +149,9 @@ const io = new Server(httpServer, {
   pingInterval: 25000
 });
 
+// Attach io to app so routes/controllers can broadcast (e.g. delivery location -> order tracking)
+app.set('io', io);
+
 // Export getIO function for use in other modules
 export function getIO() {
   return io;

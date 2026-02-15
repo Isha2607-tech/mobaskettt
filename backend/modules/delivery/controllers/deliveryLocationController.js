@@ -1,6 +1,7 @@
 import { asyncHandler } from '../../../shared/middleware/asyncHandler.js';
 import { successResponse, errorResponse } from '../../../shared/utils/response.js';
 import Delivery from '../models/Delivery.js';
+import Order from '../../order/models/Order.js';
 import Zone from '../../admin/models/Zone.js';
 import { validate } from '../../../shared/middleware/validate.js';
 import Joi from 'joi';
@@ -94,6 +95,43 @@ export const updateLocation = asyncHandler(async (req, res) => {
     }
 
     const currentLocation = updatedDelivery.availability?.currentLocation;
+
+    // Broadcast location to customer order-tracking room when location is updated (same as socket 'update-location')
+    if (typeof latitude === 'number' && typeof longitude === 'number' && req.app) {
+      const io = req.app.get('io');
+      if (io) {
+        try {
+          const activeOrder = await Order.findOne({
+            deliveryPartnerId: delivery._id,
+            status: { $in: ['accepted', 'preparing', 'ready', 'out_for_delivery'] }
+          })
+            .select('_id orderId')
+            .lean();
+          if (activeOrder) {
+            const aliases = [
+              String(activeOrder.orderId || '').trim(),
+              String(activeOrder._id || '').trim()
+            ].filter(Boolean);
+            const locationData = {
+              orderId: activeOrder.orderId,
+              lat: latitude,
+              lng: longitude,
+              heading: 0,
+              timestamp: Date.now()
+            };
+            aliases.forEach((alias) => {
+              io.to(`order:${alias}`).emit(`location-receive-${alias}`, {
+                ...locationData,
+                orderId: alias
+              });
+            });
+            logger.info(`Location broadcast to order rooms for ${activeOrder.orderId}`);
+          }
+        } catch (broadcastErr) {
+          logger.warn('Delivery location broadcast failed:', broadcastErr.message);
+        }
+      }
+    }
 
     return successResponse(res, 200, 'Status updated successfully', {
       location: currentLocation ? {
