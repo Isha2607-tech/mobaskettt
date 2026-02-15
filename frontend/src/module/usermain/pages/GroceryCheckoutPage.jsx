@@ -179,6 +179,31 @@ export default function GroceryCheckoutPage() {
           ? `Scheduled delivery: ${scheduledDate.toLocaleDateString("en-IN")} ${scheduledTime}`
           : "Deliver now";
 
+      const computeScheduledForISO = () => {
+        if (deliveryOption !== "schedule" || !scheduledTime || !(scheduledDate instanceof Date)) {
+          return null;
+        }
+
+        // Example slot: "09:00 AM - 11:00 AM" -> start time "09:00 AM"
+        const slotStart = String(scheduledTime).split("-")[0]?.trim();
+        const match = slotStart?.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+        if (!match) return null;
+
+        let hours = Number(match[1]);
+        const minutes = Number(match[2]);
+        const meridiem = match[3].toUpperCase();
+
+        if (meridiem === "PM" && hours !== 12) hours += 12;
+        if (meridiem === "AM" && hours === 12) hours = 0;
+
+        const scheduled = new Date(scheduledDate);
+        scheduled.setHours(hours, minutes, 0, 0);
+        if (Number.isNaN(scheduled.getTime())) return null;
+        return scheduled.toISOString();
+      };
+
+      const scheduledFor = computeScheduledForISO();
+
       const backendPaymentMethod = paymentMethod === "cash" ? "cash" : "razorpay";
 
       const orderPayload = {
@@ -192,6 +217,9 @@ export default function GroceryCheckoutPage() {
         sendCutlery: false,
         paymentMethod: backendPaymentMethod,
         zoneId: zoneId || undefined,
+        deliveryOption: deliveryOption === "schedule" ? "schedule" : "now",
+        scheduledFor: scheduledFor || undefined,
+        deliveryTimeSlot: deliveryOption === "schedule" ? scheduledTime : undefined,
       };
 
       const orderResponse = await orderAPI.createOrder(orderPayload);

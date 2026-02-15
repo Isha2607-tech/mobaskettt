@@ -116,6 +116,12 @@ export const getOrders = asyncHandler(async (req, res) => {
       }
 
       query.status = Array.isArray(mappedStatus) ? { $in: mappedStatus } : mappedStatus;
+
+      // Scheduled tab should show only future scheduled orders.
+      if (status === 'scheduled') {
+        query['scheduledDelivery.isScheduled'] = true;
+        query['scheduledDelivery.scheduledFor'] = { $gt: new Date() };
+      }
       
       // If restaurant-cancelled, filter by cancellation reason
       if (status === 'restaurant-cancelled') {

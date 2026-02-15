@@ -156,7 +156,10 @@ export const createOrder = async (req, res) => {
       deliveryFleet,
       note,
       sendCutlery,
-      paymentMethod: bodyPaymentMethod
+      paymentMethod: bodyPaymentMethod,
+      deliveryOption,
+      scheduledFor: scheduledForRaw,
+      deliveryTimeSlot
     } = req.body;
     // Support both camelCase and snake_case from client
     const paymentMethod = bodyPaymentMethod ?? req.body.payment_method;
@@ -169,6 +172,28 @@ export const createOrder = async (req, res) => {
       return paymentMethod || 'razorpay';
     })();
     logger.info('Order create paymentMethod:', { raw: paymentMethod, normalized: normalizedPaymentMethod, bodyKeys: Object.keys(req.body || {}).filter(k => k.toLowerCase().includes('payment')) });
+
+    const normalizedDeliveryOption = String(deliveryOption || '').toLowerCase();
+    const isScheduleRequested =
+      normalizedDeliveryOption === 'schedule' ||
+      normalizedDeliveryOption === 'scheduled' ||
+      Boolean(scheduledForRaw);
+    const scheduledForDate = isScheduleRequested && scheduledForRaw ? new Date(scheduledForRaw) : null;
+    if (isScheduleRequested) {
+      if (!scheduledForDate || Number.isNaN(scheduledForDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid scheduled delivery time'
+        });
+      }
+      if (scheduledForDate.getTime() <= Date.now()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Scheduled delivery time must be in the future'
+        });
+      }
+    }
+    const isFutureScheduledOrder = Boolean(isScheduleRequested && scheduledForDate);
 
     // Validate required fields
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -421,7 +446,7 @@ export const createOrder = async (req, res) => {
       pricing.couponCode = pricing.appliedCoupon.code;
     }
 
-    // Create order in database with pending status
+    // Create order in database
     const order = new Order({
       orderId: generatedOrderId,
       orderNumber: generatedOrderId,
@@ -437,7 +462,12 @@ export const createOrder = async (req, res) => {
       deliveryFleet: deliveryFleet || 'standard',
       note: note || '',
       sendCutlery: sendCutlery !== false,
-      status: 'pending',
+      status: isFutureScheduledOrder ? 'scheduled' : 'pending',
+      scheduledDelivery: {
+        isScheduled: isFutureScheduledOrder,
+        scheduledFor: isFutureScheduledOrder ? scheduledForDate : null,
+        timeSlot: isFutureScheduledOrder ? String(deliveryTimeSlot || '') : ''
+      },
       payment: {
         method: normalizedPaymentMethod,
         status: 'pending'
@@ -626,27 +656,33 @@ export const createOrder = async (req, res) => {
           logger.error('❌ Error creating wallet payment record:', paymentError);
         }
 
-        // Mark order as confirmed and payment as completed
+        // For scheduled orders keep status as scheduled until due time.
         order.payment.method = 'wallet';
         order.payment.status = 'completed';
-        order.status = 'confirmed';
-        order.tracking.confirmed = {
-          status: true,
-          timestamp: new Date()
-        };
-        startOrderModificationWindow(order);
+        if (!isFutureScheduledOrder) {
+          order.status = 'confirmed';
+          order.tracking.confirmed = {
+            status: true,
+            timestamp: new Date()
+          };
+          startOrderModificationWindow(order);
+        } else {
+          order.status = 'scheduled';
+        }
         await saveOrderWithIdRetry(order);
 
-        // Notify restaurant about new wallet payment order
-        try {
-          const notifyRestaurantResult = await notifyRestaurantNewOrder(order, assignedRestaurantId, 'wallet');
-          logger.info('✅ Wallet payment order notification sent to restaurant', {
-            orderId: order.orderId,
-            restaurantId: assignedRestaurantId,
-            notifyRestaurantResult
-          });
-        } catch (notifyError) {
-          logger.error('❌ Error notifying restaurant about wallet payment order:', notifyError);
+        // Notify restaurant only for non-scheduled orders.
+        if (!isFutureScheduledOrder) {
+          try {
+            const notifyRestaurantResult = await notifyRestaurantNewOrder(order, assignedRestaurantId, 'wallet');
+            logger.info('✅ Wallet payment order notification sent to restaurant', {
+              orderId: order.orderId,
+              restaurantId: assignedRestaurantId,
+              notifyRestaurantResult
+            });
+          } catch (notifyError) {
+            logger.error('❌ Error notifying restaurant about wallet payment order:', notifyError);
+          }
         }
 
         // Respond to client
@@ -658,7 +694,8 @@ export const createOrder = async (req, res) => {
               orderId: order.orderId,
               status: order.status,
               total: pricing.total,
-              modificationWindow: getOrderModificationWindow(order)
+              modificationWindow: getOrderModificationWindow(order),
+              scheduledDelivery: order.scheduledDelivery
             },
             razorpay: null,
             wallet: {
@@ -708,30 +745,36 @@ export const createOrder = async (req, res) => {
         });
       }
 
-      // Mark order as confirmed so restaurant can prepare it (ensure payment.method is cash for notification)
+      // For scheduled COD orders keep status as scheduled until due time.
       order.payment.method = 'cash';
       order.payment.status = 'pending';
-      order.status = 'confirmed';
-      order.tracking.confirmed = {
-        status: true,
-        timestamp: new Date()
-      };
-      startOrderModificationWindow(order);
+      if (!isFutureScheduledOrder) {
+        order.status = 'confirmed';
+        order.tracking.confirmed = {
+          status: true,
+          timestamp: new Date()
+        };
+        startOrderModificationWindow(order);
+      } else {
+        order.status = 'scheduled';
+      }
       await saveOrderWithIdRetry(order);
 
-      // Notify restaurant about new COD order via Socket.IO (non-blocking)
-      try {
-        const notifyRestaurantResult = await notifyRestaurantNewOrder(order, assignedRestaurantId, 'cash');
-        logger.info('✅ COD order notification sent to restaurant', {
-          orderId: order.orderId,
-          restaurantId: assignedRestaurantId,
-          notifyRestaurantResult
-        });
-      } catch (notifyError) {
-        logger.error('❌ Error notifying restaurant about COD order (order still created):', {
-          error: notifyError.message,
-          stack: notifyError.stack
-        });
+      // Notify restaurant only for non-scheduled orders.
+      if (!isFutureScheduledOrder) {
+        try {
+          const notifyRestaurantResult = await notifyRestaurantNewOrder(order, assignedRestaurantId, 'cash');
+          logger.info('✅ COD order notification sent to restaurant', {
+            orderId: order.orderId,
+            restaurantId: assignedRestaurantId,
+            notifyRestaurantResult
+          });
+        } catch (notifyError) {
+          logger.error('❌ Error notifying restaurant about COD order (order still created):', {
+            error: notifyError.message,
+            stack: notifyError.stack
+          });
+        }
       }
 
       // Respond to client (no Razorpay details for COD)
@@ -743,7 +786,8 @@ export const createOrder = async (req, res) => {
             orderId: order.orderId,
             status: order.status,
             total: pricing.total,
-            modificationWindow: getOrderModificationWindow(order)
+            modificationWindow: getOrderModificationWindow(order),
+            scheduledDelivery: order.scheduledDelivery
           },
           razorpay: null
         }
@@ -805,7 +849,8 @@ export const createOrder = async (req, res) => {
           id: order._id.toString(),
           orderId: order.orderId,
           status: order.status,
-          total: pricing.total
+          total: pricing.total,
+          scheduledDelivery: order.scheduledDelivery
         },
         razorpay: razorpayOrder ? {
           orderId: razorpayOrder.id,
@@ -953,14 +998,23 @@ export const verifyOrderPayment = async (req, res) => {
 
     await payment.save();
 
+    const isFutureScheduledOrder =
+      Boolean(order?.scheduledDelivery?.isScheduled) &&
+      Boolean(order?.scheduledDelivery?.scheduledFor) &&
+      new Date(order.scheduledDelivery.scheduledFor).getTime() > Date.now();
+
     // Update order status
     order.payment.status = 'completed';
     order.payment.razorpayPaymentId = razorpayPaymentId;
     order.payment.razorpaySignature = razorpaySignature;
     order.payment.transactionId = razorpayPaymentId;
-    order.status = 'confirmed';
-    order.tracking.confirmed = { status: true, timestamp: new Date() };
-    startOrderModificationWindow(order);
+    if (isFutureScheduledOrder) {
+      order.status = 'scheduled';
+    } else {
+      order.status = 'confirmed';
+      order.tracking.confirmed = { status: true, timestamp: new Date() };
+      startOrderModificationWindow(order);
+    }
     await saveOrderWithIdRetry(order);
 
     // Calculate order settlement and hold escrow
@@ -978,10 +1032,11 @@ export const verifyOrderPayment = async (req, res) => {
       // But log it for investigation
     }
 
-    // Notify restaurant about confirmed order (payment verified)
-    try {
-      const restaurantId = order.restaurantId?.toString() || order.restaurantId;
-      const restaurantName = order.restaurantName;
+    // Notify restaurant only when order is active (not future-scheduled).
+    if (!isFutureScheduledOrder) {
+      try {
+        const restaurantId = order.restaurantId?.toString() || order.restaurantId;
+        const restaurantName = order.restaurantName;
 
       // CRITICAL: Log detailed info before notification
       logger.info('🔔 CRITICAL: Attempting to notify restaurant about confirmed order:', {
@@ -1018,27 +1073,32 @@ export const verifyOrderPayment = async (req, res) => {
         });
       }
 
-      const notificationResult = await notifyRestaurantNewOrder(order, restaurantId);
+        const notificationResult = await notifyRestaurantNewOrder(order, restaurantId);
 
-      logger.info(`✅ Successfully notified restaurant about confirmed order:`, {
-        orderId: order.orderId,
-        restaurantId: restaurantId,
-        restaurantName: restaurantName,
-        notificationResult: notificationResult
+        logger.info(`✅ Successfully notified restaurant about confirmed order:`, {
+          orderId: order.orderId,
+          restaurantId: restaurantId,
+          restaurantName: restaurantName,
+          notificationResult: notificationResult
+        });
+      } catch (notificationError) {
+        logger.error(`❌ CRITICAL: Error notifying restaurant after payment verification:`, {
+          error: notificationError.message,
+          stack: notificationError.stack,
+          orderId: order.orderId,
+          orderMongoId: order._id?.toString(),
+          restaurantId: order.restaurantId,
+          restaurantName: order.restaurantName,
+          orderStatus: order.status
+        });
+        // Don't fail payment verification if notification fails
+        // Order is still saved and restaurant can fetch it via API
+        // But log it as critical for debugging
+      }
+    } else {
+      logger.info(`ℹ️ Scheduled prepaid order kept in scheduled state until due time: ${order.orderId}`, {
+        scheduledFor: order?.scheduledDelivery?.scheduledFor
       });
-    } catch (notificationError) {
-      logger.error(`❌ CRITICAL: Error notifying restaurant after payment verification:`, {
-        error: notificationError.message,
-        stack: notificationError.stack,
-        orderId: order.orderId,
-        orderMongoId: order._id?.toString(),
-        restaurantId: order.restaurantId,
-        restaurantName: order.restaurantName,
-        orderStatus: order.status
-      });
-      // Don't fail payment verification if notification fails
-      // Order is still saved and restaurant can fetch it via API
-      // But log it as critical for debugging
     }
 
     logger.info(`Order payment verified: ${order.orderId}`, {
@@ -1054,7 +1114,8 @@ export const verifyOrderPayment = async (req, res) => {
           id: order._id.toString(),
           orderId: order.orderId,
           status: order.status,
-          modificationWindow: getOrderModificationWindow(order)
+          modificationWindow: getOrderModificationWindow(order),
+          scheduledDelivery: order.scheduledDelivery
         },
         payment: {
           id: payment._id.toString(),

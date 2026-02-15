@@ -702,6 +702,25 @@ function initializeScheduledTasks() {
   }).catch((error) => {
     console.error('❌ Failed to initialize auto-reject service:', error);
   });
+
+  // Import scheduled order activation service
+  import('./modules/order/services/scheduledOrderService.js').then(({ processScheduledOrders }) => {
+    // Run every 30 seconds to activate orders near the exact scheduled time
+    cron.schedule('*/30 * * * * *', async () => {
+      try {
+        const result = await processScheduledOrders();
+        if (result.processed > 0 || result.skipped > 0) {
+          console.log(`[Scheduled Order Cron] ${result.message}`);
+        }
+      } catch (error) {
+        console.error('[Scheduled Order Cron] Error:', error);
+      }
+    });
+
+    console.log('✅ Scheduled order activation scheduler initialized (runs every 30 seconds)');
+  }).catch((error) => {
+    console.error('❌ Failed to initialize scheduled order service:', error);
+  });
 }
 
 // Handle unhandled promise rejections
