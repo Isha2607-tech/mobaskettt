@@ -1,4 +1,4 @@
-import { Eye, MapPin, Package, User, Phone, Mail, Calendar, Clock, Truck, CreditCard, X, Receipt } from "lucide-react"
+import { Eye, MapPin, Package, User, Phone, Mail, Calendar, Clock, Truck, CreditCard, X, Receipt, Edit3 } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -186,6 +186,24 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order }) {
                     Delivery Type
                   </p>
                   <p className="text-sm font-medium text-slate-900">{order.deliveryType}</p>
+                </div>
+              )}
+              {/* 2-minute edit/cancel window (MoFood & MoGrocery) */}
+              {(order.modificationWindow || order.postOrderActions) && order.status !== 'cancelled' && order.status !== 'delivered' && (
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                    <Edit3 className="w-4 h-4" />
+                    Customer edit/cancel window
+                  </p>
+                  {order.modificationWindow?.isOpen ? (
+                    <p className="text-sm font-medium text-emerald-600">
+                      Open — {Math.floor((order.modificationWindow.remainingSeconds || 0) / 60)}:{(order.modificationWindow.remainingSeconds % 60).toString().padStart(2, '0')} remaining
+                    </p>
+                  ) : (
+                    <p className="text-sm font-medium text-slate-500">
+                      Expired (customer can no longer edit or cancel)
+                    </p>
+                  )}
                 </div>
               )}
             </div>

@@ -7948,6 +7948,25 @@ export default function DeliveryHome() {
       return;
     }
 
+    // After pickup, hide legacy fallback polyline so only rider-to-customer route is visible.
+    const orderStatus = selectedRestaurant?.orderStatus || selectedRestaurant?.status || '';
+    const deliveryPhase = selectedRestaurant?.deliveryPhase || selectedRestaurant?.deliveryState?.currentPhase || '';
+    const deliveryStateStatus = selectedRestaurant?.deliveryState?.status || '';
+    const isPickedUpPhase =
+      orderStatus === 'out_for_delivery' ||
+      orderStatus === 'picked_up' ||
+      deliveryPhase === 'en_route_to_delivery' ||
+      deliveryPhase === 'picked_up' ||
+      deliveryStateStatus === 'order_confirmed' ||
+      deliveryStateStatus === 'en_route_to_delivery';
+
+    if (isPickedUpPhase) {
+      if (routePolylineRef.current) {
+        routePolylineRef.current.setMap(null);
+      }
+      return;
+    }
+
     // Don't show fallback polyline if DirectionsRenderer is active (it handles road-snapped routes)
     if (directionsRendererRef.current && directionsRendererRef.current.getDirections()) {
       // DirectionsRenderer is active, hide fallback polyline

@@ -5,6 +5,31 @@ import mongoose from 'mongoose';
 
 const normalizePlatform = (value) => (value === 'mogrocery' ? 'mogrocery' : 'mofood');
 
+const ORDER_MODIFICATION_WINDOW_MS = 2 * 60 * 1000;
+
+/** Get 2-minute edit/cancel window for customer (MoFood and MoGrocery) */
+const getOrderModificationWindow = (order) => {
+  const startAtRaw =
+    order?.postOrderActions?.modificationWindowStartAt ||
+    order?.tracking?.confirmed?.timestamp ||
+    order?.createdAt ||
+    null;
+  let expiresAtRaw = order?.postOrderActions?.modificationWindowExpiresAt || null;
+  if (!expiresAtRaw && startAtRaw) {
+    expiresAtRaw = new Date(new Date(startAtRaw).getTime() + ORDER_MODIFICATION_WINDOW_MS);
+  }
+  const startAt = startAtRaw ? new Date(startAtRaw) : null;
+  const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : null;
+  const remainingMs = expiresAt ? expiresAt.getTime() - Date.now() : 0;
+  const isOpen = remainingMs > 0;
+  return {
+    isOpen,
+    remainingSeconds: isOpen ? Math.ceil(remainingMs / 1000) : 0,
+    startAt,
+    expiresAt
+  };
+};
+
 const getRestaurantIdsByPlatform = async (platform) => {
   const Restaurant = (await import('../../restaurant/models/Restaurant.js')).default;
   const restaurants = await Restaurant.find({ platform })
@@ -421,7 +446,10 @@ export const getOrders = asyncHandler(async (req, res) => {
         zoneId: order.assignmentInfo?.zoneId || null,
         zoneName: order.assignmentInfo?.zoneName || null,
         // Refund status from settlement
-        refundStatus: refundStatusMap.get(order._id.toString()) || null
+        refundStatus: refundStatusMap.get(order._id.toString()) || null,
+        // 2-minute edit/cancel window for customer (MoFood and MoGrocery)
+        modificationWindow: getOrderModificationWindow(order),
+        postOrderActions: order.postOrderActions || null
       };
     });
 
