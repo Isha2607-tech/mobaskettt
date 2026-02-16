@@ -249,6 +249,8 @@ export default function OrderTracking() {
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [editableItems, setEditableItems] = useState([])
   const [isEditingOrder, setIsEditingOrder] = useState(false)
+  const [availableEditMenuItems, setAvailableEditMenuItems] = useState([])
+  const [loadingEditMenuItems, setLoadingEditMenuItems] = useState(false)
 
   const defaultAddress = getDefaultAddress()
   const isMoGroceryOrder = (rawOrder = null) => {
@@ -842,12 +844,120 @@ export default function OrderTracking() {
 
     setEditableItems(initialEditableItems)
     setShowEditDialog(true)
+    loadRestaurantItemsForEdit(order)
+  }
+
+  function resolveOrderRestaurantId(rawOrder) {
+    if (!rawOrder?.restaurantId) return null
+    if (typeof rawOrder.restaurantId === "string") return rawOrder.restaurantId
+    return (
+      rawOrder.restaurantId?._id ||
+      rawOrder.restaurantId?.restaurantId ||
+      rawOrder.restaurantId?.id ||
+      null
+    )
+  }
+
+  function extractMenuItemsForEdit(menu) {
+    const sections = Array.isArray(menu?.sections) ? menu.sections : []
+    const flattened = []
+
+    sections.forEach((section) => {
+      const sectionItems = Array.isArray(section?.items) ? section.items : []
+      sectionItems.forEach((item) => {
+        if (!item?.id || !item?.name) return
+        flattened.push({
+          key: String(item.id),
+          itemId: String(item.id),
+          name: item.name,
+          price: Number(item.price || 0),
+          image: item.image || (Array.isArray(item.images) ? item.images[0] : "") || "",
+          description: item.description || "",
+          isVeg: item.foodType === "Veg",
+        })
+      })
+
+      const subsections = Array.isArray(section?.subsections) ? section.subsections : []
+      subsections.forEach((subsection) => {
+        const subsectionItems = Array.isArray(subsection?.items) ? subsection.items : []
+        subsectionItems.forEach((item) => {
+          if (!item?.id || !item?.name) return
+          flattened.push({
+            key: String(item.id),
+            itemId: String(item.id),
+            name: item.name,
+            price: Number(item.price || 0),
+            image: item.image || (Array.isArray(item.images) ? item.images[0] : "") || "",
+            description: item.description || "",
+            isVeg: item.foodType === "Veg",
+          })
+        })
+      })
+    })
+
+    const deduped = new Map()
+    flattened.forEach((item) => {
+      if (!deduped.has(item.itemId)) {
+        deduped.set(item.itemId, item)
+      }
+    })
+
+    return Array.from(deduped.values())
+  }
+
+  async function loadRestaurantItemsForEdit(rawOrder) {
+    const restaurantId = resolveOrderRestaurantId(rawOrder)
+    if (!restaurantId) {
+      setAvailableEditMenuItems([])
+      return
+    }
+
+    try {
+      setLoadingEditMenuItems(true)
+      const response = await restaurantAPI.getMenuByRestaurantId(restaurantId)
+      const menu = response?.data?.data?.menu
+      setAvailableEditMenuItems(extractMenuItemsForEdit(menu))
+    } catch (error) {
+      console.warn("Failed to load restaurant menu for order edit:", error)
+      setAvailableEditMenuItems([])
+    } finally {
+      setLoadingEditMenuItems(false)
+    }
   }
 
   const updateEditableQuantity = (key, nextQuantity) => {
     setEditableItems((prev) =>
       prev.map((item) => (item.key === key ? { ...item, quantity: Math.max(1, Number(nextQuantity || 1)) } : item))
     )
+  }
+
+  const addMenuItemToEditableOrder = (menuItem) => {
+    if (!menuItem?.itemId) return
+
+    setEditableItems((prev) => {
+      const existing = prev.find((item) => String(item.itemId) === String(menuItem.itemId))
+      if (existing) {
+        return prev.map((item) =>
+          String(item.itemId) === String(menuItem.itemId)
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        )
+      }
+
+      return [
+        ...prev,
+        {
+          key: `added-${menuItem.itemId}`,
+          itemId: menuItem.itemId,
+          name: menuItem.name,
+          quantity: 1,
+          price: Number(menuItem.price || 0),
+          image: menuItem.image || "",
+          description: menuItem.description || "",
+          isVeg: menuItem.isVeg !== false
+        }
+      ]
+    })
   }
 
   const handleSaveEditOrder = async () => {
@@ -874,6 +984,7 @@ export default function OrderTracking() {
       if (response?.data?.success) {
         toast.success("Order updated successfully")
         setShowEditDialog(false)
+        setAvailableEditMenuItems([])
         await handleRefresh()
       } else {
         toast.error(response?.data?.message || "Failed to edit order")
@@ -1518,7 +1629,15 @@ export default function OrderTracking() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+      <Dialog
+        open={showEditDialog}
+        onOpenChange={(open) => {
+          setShowEditDialog(open)
+          if (!open) {
+            setAvailableEditMenuItems([])
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-xl w-[95%] max-w-[600px]">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold text-gray-900">
@@ -1561,6 +1680,39 @@ export default function OrderTracking() {
                   </div>
                 </div>
               ))}
+            </div>
+            <div className="space-y-2 border rounded-lg p-3">
+              <p className="text-sm font-semibold text-gray-900">
+                Add more from this restaurant
+              </p>
+              {loadingEditMenuItems ? (
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Loading items...
+                </div>
+              ) : availableEditMenuItems.length === 0 ? (
+                <p className="text-xs text-gray-500">No additional items available right now.</p>
+              ) : (
+                <div className="max-h-44 overflow-y-auto space-y-2 pr-1">
+                  {availableEditMenuItems.map((item) => (
+                    <div key={`menu-${item.itemId}`} className="flex items-center justify-between rounded-md border p-2">
+                      <div className="min-w-0 pr-2">
+                        <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
+                        <p className="text-xs text-gray-500">Rs {Number(item.price || 0).toFixed(2)}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={!canModifyOrder || isEditingOrder}
+                        onClick={() => addMenuItemToEditableOrder(item)}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="flex gap-3 pt-1">
               <Button

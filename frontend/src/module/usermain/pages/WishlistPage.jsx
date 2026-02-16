@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import Lenis from "lenis";
 import { ArrowLeft, Heart, Star, Clock, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -43,20 +42,6 @@ export default function WishlistPage() {
   };
 
   useEffect(() => {
-    // Initialize Lenis for smooth scrolling
-    const lenis = new Lenis({
-      duration: 1.2,
-      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-      smoothWheel: true,
-    });
-
-    function raf(time) {
-      lenis.raf(time);
-      requestAnimationFrame(raf);
-    }
-
-    requestAnimationFrame(raf);
-
     // Load wishlist on mount
     loadWishlist();
 
@@ -76,7 +61,6 @@ export default function WishlistPage() {
     window.addEventListener("wishlistUpdated", handleWishlistUpdate);
 
     return () => {
-      lenis.destroy();
       window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener("wishlistUpdated", handleWishlistUpdate);
     };

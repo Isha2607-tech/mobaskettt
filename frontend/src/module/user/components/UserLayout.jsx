@@ -1,5 +1,6 @@
 import { Outlet, useLocation } from "react-router-dom";
-import { useEffect, useState, createContext, useContext } from "react";
+import { useEffect, useState, createContext, useContext, useRef } from "react";
+import Lenis from "lenis";
 import { ProfileProvider } from "../context/ProfileContext";
 import LocationPrompt from "./LocationPrompt";
 import { CartProvider } from "../context/CartContext";
@@ -111,6 +112,29 @@ function LocationSelectorProvider({ children }) {
 
 export default function UserLayout() {
   const location = useLocation();
+  const rafRef = useRef(null);
+
+  useEffect(() => {
+    const lenis = new Lenis({
+      duration: 1.2,
+      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      smoothWheel: true,
+      smoothTouch: true,
+    });
+
+    const raf = (time) => {
+      lenis.raf(time);
+      rafRef.current = requestAnimationFrame(raf);
+    };
+
+    rafRef.current = requestAnimationFrame(raf);
+
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      lenis.destroy();
+      rafRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     // Reset scroll to top whenever location changes (pathname, search, or hash)

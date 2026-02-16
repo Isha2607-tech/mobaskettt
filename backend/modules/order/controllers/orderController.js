@@ -16,6 +16,7 @@ import etaCalculationService from '../services/etaCalculationService.js';
 import etaWebSocketService from '../services/etaWebSocketService.js';
 import OrderEvent from '../models/OrderEvent.js';
 import UserWallet from '../../user/models/UserWallet.js';
+import Menu from '../../restaurant/models/Menu.js';
 
 const logger = winston.createLogger({
   level: 'info',
@@ -80,6 +81,146 @@ const sanitizeEditedItems = (items) =>
     description: item.description || '',
     isVeg: item.isVeg !== false
   }));
+
+const getMenuItemFinalPrice = (menuItem = {}) => {
+  const basePrice = Number(menuItem.price || 0);
+  const originalPrice = Number(menuItem.originalPrice || basePrice);
+  const discountAmount = Number(menuItem.discountAmount || 0);
+  const discountType = menuItem.discountType;
+
+  if (discountAmount > 0 && originalPrice > 0) {
+    if (discountType === 'Percent') {
+      return Math.max(0, Number((originalPrice - (originalPrice * discountAmount / 100)).toFixed(2)));
+    }
+    if (discountType === 'Fixed') {
+      return Math.max(0, Number((originalPrice - discountAmount).toFixed(2)));
+    }
+  }
+
+  return Math.max(0, Number(basePrice.toFixed(2)));
+};
+
+const buildMenuItemsMap = (menu) => {
+  const map = new Map();
+  const sections = Array.isArray(menu?.sections) ? menu.sections : [];
+
+  sections.forEach((section) => {
+    const sectionItems = Array.isArray(section?.items) ? section.items : [];
+    sectionItems.forEach((item) => {
+      const itemId = String(item?.id || '').trim();
+      if (!itemId) return;
+
+      const isAvailable = item?.isAvailable !== false;
+      const isApproved = !item?.approvalStatus || item.approvalStatus === 'approved';
+      if (!isAvailable || !isApproved) return;
+
+      map.set(itemId, {
+        itemId,
+        name: item?.name || 'Item',
+        price: getMenuItemFinalPrice(item),
+        image: item?.image || (Array.isArray(item?.images) ? item.images[0] : '') || '',
+        description: item?.description || '',
+        isVeg: item?.foodType === 'Veg'
+      });
+    });
+
+    const subsections = Array.isArray(section?.subsections) ? section.subsections : [];
+    subsections.forEach((subsection) => {
+      const subsectionItems = Array.isArray(subsection?.items) ? subsection.items : [];
+      subsectionItems.forEach((item) => {
+        const itemId = String(item?.id || '').trim();
+        if (!itemId) return;
+
+        const isAvailable = item?.isAvailable !== false;
+        const isApproved = !item?.approvalStatus || item.approvalStatus === 'approved';
+        if (!isAvailable || !isApproved) return;
+
+        map.set(itemId, {
+          itemId,
+          name: item?.name || 'Item',
+          price: getMenuItemFinalPrice(item),
+          image: item?.image || (Array.isArray(item?.images) ? item.images[0] : '') || '',
+          description: item?.description || '',
+          isVeg: item?.foodType === 'Veg'
+        });
+      });
+    });
+  });
+
+  return map;
+};
+
+const resolveRestaurantObjectId = async (restaurantId) => {
+  if (!restaurantId) return null;
+  const normalized = String(restaurantId).trim();
+  if (!normalized) return null;
+
+  if (mongoose.Types.ObjectId.isValid(normalized) && normalized.length === 24) {
+    return normalized;
+  }
+
+  const restaurant = await Restaurant.findOne({
+    $or: [
+      { restaurantId: normalized },
+      { slug: normalized }
+    ]
+  }).select('_id').lean();
+
+  return restaurant?._id ? restaurant._id.toString() : null;
+};
+
+const buildEditedItemsForOrder = ({ order, incomingItems, menuItemsMap }) => {
+  const aggregatedQuantities = new Map();
+  incomingItems.forEach((item) => {
+    const itemId = String(item?.itemId || '').trim();
+    if (!itemId) return;
+    const quantity = Math.max(1, Number(item?.quantity || 1));
+    aggregatedQuantities.set(itemId, (aggregatedQuantities.get(itemId) || 0) + quantity);
+  });
+
+  const existingItemsMap = new Map(
+    (Array.isArray(order?.items) ? order.items : [])
+      .filter((item) => item?.itemId)
+      .map((item) => [String(item.itemId), item])
+  );
+
+  const invalidItemIds = [];
+  const nextItems = [];
+
+  aggregatedQuantities.forEach((quantity, itemId) => {
+    const existingOrderItem = existingItemsMap.get(itemId);
+    if (existingOrderItem) {
+      nextItems.push({
+        itemId,
+        name: existingOrderItem.name,
+        price: Number(existingOrderItem.price || 0),
+        quantity: Number(quantity),
+        image: existingOrderItem.image || '',
+        description: existingOrderItem.description || '',
+        isVeg: existingOrderItem.isVeg !== false
+      });
+      return;
+    }
+
+    const menuItem = menuItemsMap.get(itemId);
+    if (!menuItem) {
+      invalidItemIds.push(itemId);
+      return;
+    }
+
+    nextItems.push({
+      itemId: menuItem.itemId,
+      name: menuItem.name,
+      price: Number(menuItem.price || 0),
+      quantity: Number(quantity),
+      image: menuItem.image || '',
+      description: menuItem.description || '',
+      isVeg: menuItem.isVeg !== false
+    });
+  });
+
+  return { nextItems, invalidItemIds };
+};
 
 const calculateUpdatedTotals = (order, items) => {
   const subtotal = items.reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity)), 0);
@@ -1440,9 +1581,6 @@ export const editOrderCart = async (req, res) => {
     const hasInvalidItem = items.some((item) =>
       !item ||
       !item.itemId ||
-      !item.name ||
-      Number(item.price) < 0 ||
-      !Number.isFinite(Number(item.price)) ||
       Number(item.quantity) < 1 ||
       !Number.isFinite(Number(item.quantity))
     );
@@ -1450,7 +1588,7 @@ export const editOrderCart = async (req, res) => {
     if (hasInvalidItem) {
       return res.status(400).json({
         success: false,
-        message: 'Each item must include itemId, name, valid price, and quantity >= 1'
+        message: 'Each item must include itemId and quantity >= 1'
       });
     }
 
@@ -1484,7 +1622,51 @@ export const editOrderCart = async (req, res) => {
       });
     }
 
-    const sanitizedItems = sanitizeEditedItems(items);
+    const resolvedRestaurantObjectId = await resolveRestaurantObjectId(order.restaurantId);
+    if (!resolvedRestaurantObjectId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unable to validate restaurant for this order edit request'
+      });
+    }
+
+    const menu = await Menu.findOne({
+      restaurant: resolvedRestaurantObjectId,
+      isActive: true
+    }).lean();
+
+    if (!menu) {
+      return res.status(400).json({
+        success: false,
+        message: 'Restaurant menu is unavailable. Please try again later.'
+      });
+    }
+
+    const menuItemsMap = buildMenuItemsMap(menu);
+    const { nextItems, invalidItemIds } = buildEditedItemsForOrder({
+      order,
+      incomingItems: items,
+      menuItemsMap
+    });
+
+    if (invalidItemIds.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'You can only add items from the same restaurant for this order edit window.',
+        data: {
+          invalidItemIds
+        }
+      });
+    }
+
+    if (!nextItems.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Updated cart must contain at least one valid item from this restaurant'
+      });
+    }
+
+    const sanitizedItems = sanitizeEditedItems(nextItems);
     const totals = calculateUpdatedTotals(order, sanitizedItems);
 
     order.items = sanitizedItems;

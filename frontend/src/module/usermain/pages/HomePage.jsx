@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import Lenis from "lenis";
 import { toast } from "sonner";
 import { useLocation } from "@/module/user/hooks/useLocation";
 import {
@@ -373,19 +372,6 @@ export default function HomePage() {
 
   // Auto-slide effect
   useEffect(() => {
-    const lenis = new Lenis({
-      duration: 1.2,
-      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-      smoothWheel: true,
-    });
-
-    function raf(time) {
-      lenis.raf(time);
-      requestAnimationFrame(raf);
-    }
-
-    requestAnimationFrame(raf);
-
     // Auto-slide carousel
     const interval = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % carouselSlides.length);
@@ -393,7 +379,6 @@ export default function HomePage() {
 
     return () => {
       clearInterval(interval);
-      lenis.destroy();
     };
   }, [carouselSlides.length]);
 

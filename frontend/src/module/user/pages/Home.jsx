@@ -1,7 +1,6 @@
 import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
-import Lenis from "lenis";
 import {
   Star,
   Clock,
@@ -89,6 +88,49 @@ const placeholders = [
   'Search "momos"',
   'Search "dosa"',
 ];
+
+const collectSearchableItems = (restaurant = {}) => {
+  const names = new Set();
+
+  if (typeof restaurant.featuredDish === "string" && restaurant.featuredDish.trim()) {
+    names.add(restaurant.featuredDish.trim());
+  }
+
+  if (Array.isArray(restaurant.menuItems)) {
+    restaurant.menuItems.forEach((item) => {
+      if (typeof item?.name === "string" && item.name.trim()) {
+        names.add(item.name.trim());
+      }
+    });
+  }
+
+  const menuSections = restaurant.menu?.sections;
+  if (Array.isArray(menuSections)) {
+    menuSections.forEach((section) => {
+      if (Array.isArray(section?.items)) {
+        section.items.forEach((item) => {
+          if (typeof item?.name === "string" && item.name.trim()) {
+            names.add(item.name.trim());
+          }
+        });
+      }
+
+      if (Array.isArray(section?.subsections)) {
+        section.subsections.forEach((subsection) => {
+          if (Array.isArray(subsection?.items)) {
+            subsection.items.forEach((item) => {
+              if (typeof item?.name === "string" && item.name.trim()) {
+                names.add(item.name.trim());
+              }
+            });
+          }
+        });
+      }
+    });
+  }
+
+  return Array.from(names);
+};
 
 // Restaurant Image Carousel Component
 function RestaurantImageCarousel({
@@ -493,27 +535,6 @@ export default function Home() {
       }
     };
   }, [heroBannerImages.length]);
-
-  // Lenis smooth scrolling initialization
-  useEffect(() => {
-    const lenis = new Lenis({
-      duration: 1.2,
-      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-      smoothWheel: true,
-      smoothTouch: true,
-    });
-
-    function raf(time) {
-      lenis.raf(time);
-      requestAnimationFrame(raf);
-    }
-
-    requestAnimationFrame(raf);
-
-    return () => {
-      lenis.destroy();
-    };
-  }, []);
 
   // Helper function to reset auto-slide timer
   const resetAutoSlide = useCallback(() => {
@@ -968,6 +989,7 @@ export default function Home() {
                 location: restaurant.location, // Store location for distance recalculation
                 isActive: restaurant.isActive !== false, // Default to true if not specified
                 isAcceptingOrders: restaurant.isAcceptingOrders !== false, // Default to true if not specified
+                searchableItems: collectSearchableItems(restaurant),
               };
             },
           );
@@ -1116,7 +1138,12 @@ export default function Home() {
       filtered = filtered.filter(
         (r) =>
           r.name.toLowerCase().includes(query) ||
-          r.cuisine?.toLowerCase().includes(query)
+          r.cuisine?.toLowerCase().includes(query) ||
+          r.featuredDish?.toLowerCase().includes(query) ||
+          (Array.isArray(r.searchableItems) &&
+            r.searchableItems.some((item) =>
+              item.toLowerCase().includes(query),
+            ))
       );
     }
 
@@ -1224,7 +1251,7 @@ export default function Home() {
     }
 
     return filtered;
-  }, [restaurantsData, activeFilters, selectedCuisine, sortBy]);
+  }, [restaurantsData, heroSearch, activeFilters, selectedCuisine, sortBy]);
 
   // Featured foods removed - will be handled by restaurants data from API
   const filteredFeaturedFoods = useMemo(() => {
