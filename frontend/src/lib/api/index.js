@@ -1632,6 +1632,14 @@ export const adminAPI = {
     return apiClient.post(API_ENDPOINTS.ADMIN.FOOD_APPROVAL_REJECT.replace(':id', id), { reason });
   },
 
+  approveOrderRequest: (id) => {
+    return apiClient.post(`/admin/orders/${id}/approve`);
+  },
+
+  rejectOrderRequest: (id, reason) => {
+    return apiClient.post(`/admin/orders/${id}/reject`, { reason });
+  },
+
   // Grocery Approval Management
   getPendingGroceryApprovals: (params = {}) => {
     return apiClient.get(API_ENDPOINTS.ADMIN.GROCERY_APPROVALS, { params });

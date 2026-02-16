@@ -446,6 +446,9 @@ export const getOrders = asyncHandler(async (req, res) => {
           : 'Collected',
         orderStatus: orderStatusDisplay,
         status: order.status, // Backend status
+        adminApprovalStatus: order.adminApproval?.status || null,
+        adminApprovalReason: order.adminApproval?.reason || null,
+        adminReviewedAt: order.adminApproval?.reviewedAt || null,
         deliveryType: deliveryType,
         items: order.items || [],
         address: order.address || {},
@@ -525,6 +528,250 @@ export const getOrderById = asyncHandler(async (req, res) => {
   } catch (error) {
     console.error('Error fetching order:', error);
     return errorResponse(res, 500, 'Failed to fetch order');
+  }
+});
+
+const resolveAdminOrderById = async (id) => {
+  if (mongoose.Types.ObjectId.isValid(id) && id.length === 24) {
+    const byMongoId = await Order.findById(id);
+    if (byMongoId) return byMongoId;
+  }
+  return Order.findOne({ orderId: id });
+};
+
+const resolveRestaurantForOrder = async (order) => {
+  if (!order?.restaurantId) return null;
+
+  const Restaurant = (await import('../../restaurant/models/Restaurant.js')).default;
+  const restaurantId = String(order.restaurantId);
+
+  if (mongoose.Types.ObjectId.isValid(restaurantId) && restaurantId.length === 24) {
+    const byId = await Restaurant.findById(restaurantId).lean();
+    if (byId) return byId;
+  }
+
+  return Restaurant.findOne({
+    $or: [
+      { restaurantId },
+      { slug: restaurantId }
+    ]
+  }).lean();
+};
+
+const triggerDeliveryBroadcastForApprovedOrder = async (order, restaurantDoc) => {
+  try {
+    if (!order || order.status === 'cancelled' || order.deliveryPartnerId) return;
+
+    const coords = restaurantDoc?.location?.coordinates;
+    if (!Array.isArray(coords) || coords.length < 2) return;
+
+    const [restaurantLng, restaurantLat] = coords;
+    if ((restaurantLng === 0 && restaurantLat === 0) || !restaurantLng || !restaurantLat) return;
+
+    const freshOrder = await Order.findById(order._id);
+    if (!freshOrder || freshOrder.deliveryPartnerId || freshOrder.status === 'cancelled') return;
+
+    const { findNearestDeliveryBoys, findNearestDeliveryBoy } =
+      await import('../../order/services/deliveryAssignmentService.js');
+    const { notifyMultipleDeliveryBoys } =
+      await import('../../order/services/deliveryNotificationService.js');
+
+    const restaurantLookupId = restaurantDoc?._id?.toString() || String(order.restaurantId);
+    const priorityDeliveryBoys = await findNearestDeliveryBoys(restaurantLat, restaurantLng, restaurantLookupId, 5);
+
+    if (priorityDeliveryBoys && priorityDeliveryBoys.length > 0) {
+      const priorityIds = priorityDeliveryBoys.map((db) => db.deliveryPartnerId);
+      freshOrder.assignmentInfo = {
+        ...(freshOrder.assignmentInfo || {}),
+        priorityNotifiedAt: new Date(),
+        priorityDeliveryPartnerIds: priorityIds,
+        notificationPhase: 'priority'
+      };
+      await freshOrder.save();
+
+      const populatedOrder = await Order.findById(freshOrder._id)
+        .populate('userId', 'name phone')
+        .lean();
+
+      if (populatedOrder) {
+        await notifyMultipleDeliveryBoys(populatedOrder, priorityIds, 'priority');
+      }
+
+      setTimeout(async () => {
+        try {
+          const checkOrder = await Order.findById(order._id);
+          if (!checkOrder || checkOrder.deliveryPartnerId || checkOrder.status === 'cancelled') return;
+
+          const allDeliveryBoys = await findNearestDeliveryBoys(restaurantLat, restaurantLng, restaurantLookupId, 50);
+          const expandedDeliveryBoys = allDeliveryBoys.filter(
+            (db) => !priorityIds.includes(db.deliveryPartnerId)
+          );
+
+          if (expandedDeliveryBoys.length === 0) return;
+
+          const expandedIds = expandedDeliveryBoys.map((db) => db.deliveryPartnerId);
+          checkOrder.assignmentInfo = {
+            ...(checkOrder.assignmentInfo || {}),
+            expandedNotifiedAt: new Date(),
+            expandedDeliveryPartnerIds: expandedIds,
+            notificationPhase: 'expanded'
+          };
+          await checkOrder.save();
+
+          const expandedOrder = await Order.findById(checkOrder._id)
+            .populate('userId', 'name phone')
+            .lean();
+
+          if (expandedOrder) {
+            await notifyMultipleDeliveryBoys(expandedOrder, expandedIds, 'expanded');
+          }
+        } catch (expandedErr) {
+          console.error(`Expanded delivery broadcast failed for ${order.orderId}:`, expandedErr);
+        }
+      }, 30000);
+      return;
+    }
+
+    const anyDeliveryBoy = await findNearestDeliveryBoy(restaurantLat, restaurantLng, restaurantLookupId, 50);
+    if (!anyDeliveryBoy) return;
+
+    freshOrder.assignmentInfo = {
+      ...(freshOrder.assignmentInfo || {}),
+      priorityNotifiedAt: new Date(),
+      priorityDeliveryPartnerIds: [anyDeliveryBoy.deliveryPartnerId],
+      notificationPhase: 'immediate'
+    };
+    await freshOrder.save();
+
+    const populatedOrder = await Order.findById(freshOrder._id)
+      .populate('userId', 'name phone')
+      .lean();
+
+    if (populatedOrder) {
+      await notifyMultipleDeliveryBoys(populatedOrder, [anyDeliveryBoy.deliveryPartnerId], 'immediate');
+    }
+  } catch (error) {
+    console.error(`Failed to trigger delivery broadcast for approved order ${order?.orderId}:`, error);
+  }
+};
+
+/**
+ * Approve incoming user order request
+ * POST /api/admin/orders/:id/approve
+ */
+export const approveOrderRequest = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+    const adminId = req.user?._id || req.admin?._id;
+
+    const order = await resolveAdminOrderById(id);
+    if (!order) {
+      return errorResponse(res, 404, 'Order not found');
+    }
+
+    if (order.status === 'cancelled') {
+      return errorResponse(res, 400, 'Cannot approve a cancelled order');
+    }
+
+    if (order.adminApproval?.status === 'approved') {
+      return errorResponse(res, 400, 'Order is already approved');
+    }
+
+    const { notifyRestaurantOrderUpdate } =
+      await import('../../order/services/restaurantNotificationService.js');
+    const restaurantDoc = await resolveRestaurantForOrder(order);
+
+    order.adminApproval = {
+      status: 'approved',
+      reason: '',
+      reviewedAt: new Date(),
+      reviewedBy: adminId || null
+    };
+
+    order.status = 'preparing';
+    if (!order.tracking?.confirmed?.status) {
+      order.tracking.confirmed = { status: true, timestamp: new Date() };
+    }
+    order.tracking.preparing = { status: true, timestamp: new Date() };
+    await order.save();
+
+    try {
+      await notifyRestaurantOrderUpdate(order._id.toString(), 'preparing');
+    } catch (notifError) {
+      console.error(`Failed to emit preparing update for approved order ${order.orderId}:`, notifError);
+    }
+
+    void triggerDeliveryBroadcastForApprovedOrder(order, restaurantDoc);
+
+    return successResponse(res, 200, 'Order approved successfully', {
+      orderId: order.orderId,
+      orderMongoId: order._id,
+      approvalStatus: order.adminApproval.status,
+      approvedAt: order.adminApproval.reviewedAt,
+      orderStatus: order.status
+    });
+  } catch (error) {
+    console.error('Error approving order request:', error);
+    return errorResponse(res, 500, 'Failed to approve order');
+  }
+});
+
+/**
+ * Reject incoming user order request
+ * POST /api/admin/orders/:id/reject
+ */
+export const rejectOrderRequest = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const adminId = req.user?._id || req.admin?._id;
+
+    if (!reason || !reason.trim()) {
+      return errorResponse(res, 400, 'Rejection reason is required');
+    }
+
+    const order = await resolveAdminOrderById(id);
+    if (!order) {
+      return errorResponse(res, 404, 'Order not found');
+    }
+
+    if (order.adminApproval?.status === 'rejected' || order.status === 'cancelled') {
+      return errorResponse(res, 400, 'Order is already rejected/cancelled');
+    }
+
+    order.adminApproval = {
+      status: 'rejected',
+      reason: reason.trim(),
+      reviewedAt: new Date(),
+      reviewedBy: adminId || null
+    };
+
+    order.status = 'cancelled';
+    order.cancelledBy = 'admin';
+    order.cancellationReason = reason.trim();
+    order.cancelledAt = new Date();
+    await order.save();
+
+    if (order.payment?.method === 'razorpay' || order.payment?.method === 'wallet') {
+      try {
+        const { calculateCancellationRefund } = await import('../../order/services/cancellationRefundService.js');
+        await calculateCancellationRefund(order._id, reason.trim());
+      } catch (refundError) {
+        console.error(`Failed refund calculation after admin rejection for ${order.orderId}:`, refundError);
+      }
+    }
+
+    return successResponse(res, 200, 'Order rejected successfully', {
+      orderId: order.orderId,
+      orderMongoId: order._id,
+      approvalStatus: order.adminApproval.status,
+      rejectedAt: order.adminApproval.reviewedAt,
+      rejectionReason: order.adminApproval.reason,
+      orderStatus: order.status
+    });
+  } catch (error) {
+    console.error('Error rejecting order request:', error);
+    return errorResponse(res, 500, 'Failed to reject order');
   }
 });
 

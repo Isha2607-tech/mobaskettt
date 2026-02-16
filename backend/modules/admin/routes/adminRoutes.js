@@ -205,6 +205,8 @@ import {
 import {
   getOrders,
   getOrderById,
+  approveOrderRequest,
+  rejectOrderRequest,
   getSearchingDeliverymanOrders,
   getRefundRequests,
   processRefund,
@@ -453,6 +455,8 @@ router.delete('/safety-emergency/:id', deleteSafetyEmergency);
 
 // Order Management
 router.get('/orders', getOrders);
+router.post('/orders/:id/approve', approveOrderRequest);
+router.post('/orders/:id/reject', rejectOrderRequest);
 router.get('/orders/searching-deliveryman', getSearchingDeliverymanOrders);
 router.get('/orders/ongoing', getOngoingOrders);
 router.get('/orders/transaction-report', getTransactionReport);

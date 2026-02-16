@@ -45,7 +45,7 @@ export default function FoodApproval() {
         isAlarmActiveRef.current = false;
       });
     } catch {
-      // ignore browser autoplay/runtime audio errors
+      // Ignore runtime audio errors.
     }
   };
 
@@ -58,7 +58,7 @@ export default function FoodApproval() {
       const previousCount = previousPendingCountRef.current;
       if ((previousCount === null && data.length > 0) || (previousCount !== null && data.length > previousCount)) {
         startNotificationAlarm();
-        toast.info("New food approval request received");
+        toast.info("New food item approval request received");
       }
       if (data.length === 0) {
         stopNotificationAlarm();
@@ -67,8 +67,8 @@ export default function FoodApproval() {
       previousPendingCountRef.current = data.length;
       setRequests(data);
     } catch (error) {
-      console.error("Error fetching order approvals:", error);
-      toast.error("Failed to load pending order approvals");
+      console.error("Error fetching food item approvals:", error);
+      toast.error("Failed to load pending food item approvals");
       setRequests([]);
     } finally {
       if (showLoader) setLoading(false);
@@ -85,12 +85,12 @@ export default function FoodApproval() {
         startNotificationAlarm();
       }
     };
+
     window.addEventListener("click", markUserInteraction, { passive: true });
     window.addEventListener("keydown", markUserInteraction, { passive: true });
     window.addEventListener("touchstart", markUserInteraction, { passive: true });
 
     fetchPendingApprovals({ showLoader: true });
-
     const pollTimer = setInterval(() => {
       fetchPendingApprovals({ showLoader: false });
     }, 10000);
@@ -112,11 +112,12 @@ export default function FoodApproval() {
     if (!query) return requests;
 
     return requests.filter((request) =>
-      request.orderId?.toLowerCase().includes(query) ||
+      request.itemName?.toLowerCase().includes(query) ||
       request.restaurantName?.toLowerCase().includes(query) ||
       request.restaurantId?.toLowerCase().includes(query) ||
-      request.itemName?.toLowerCase().includes(query) ||
-      request.customerName?.toLowerCase().includes(query)
+      request.category?.toLowerCase().includes(query) ||
+      request.sectionName?.toLowerCase().includes(query) ||
+      request.type?.toLowerCase().includes(query)
     );
   }, [requests, searchQuery]);
 
@@ -125,13 +126,13 @@ export default function FoodApproval() {
       setProcessing(true);
       await adminAPI.approveFoodItem(request._id || request.id);
       stopNotificationAlarm();
-      toast.success("Order approved successfully");
+      toast.success("Food item approved");
       await fetchPendingApprovals();
       setShowDetailModal(false);
       setSelectedRequest(null);
     } catch (error) {
-      console.error("Error approving order:", error);
-      toast.error(error?.response?.data?.message || "Failed to approve order");
+      console.error("Error approving food item:", error);
+      toast.error(error?.response?.data?.message || "Failed to approve food item");
     } finally {
       setProcessing(false);
     }
@@ -145,43 +146,33 @@ export default function FoodApproval() {
 
     try {
       setProcessing(true);
-      await adminAPI.rejectFoodItem(selectedRequest._id || selectedRequest.id, rejectReason);
+      await adminAPI.rejectFoodItem(selectedRequest._id || selectedRequest.id, rejectReason.trim());
       stopNotificationAlarm();
-      toast.success("Order rejected");
+      toast.success("Food item rejected");
       await fetchPendingApprovals();
       setShowRejectModal(false);
       setShowDetailModal(false);
       setSelectedRequest(null);
       setRejectReason("");
     } catch (error) {
-      console.error("Error rejecting order:", error);
-      toast.error(error?.response?.data?.message || "Failed to reject order");
+      console.error("Error rejecting food item:", error);
+      toast.error(error?.response?.data?.message || "Failed to reject food item");
     } finally {
       setProcessing(false);
     }
-  };
-
-  const openDetails = (request) => {
-    setSelectedRequest(request);
-    setShowDetailModal(true);
-  };
-
-  const openReject = (request) => {
-    setSelectedRequest(request);
-    setShowRejectModal(true);
   };
 
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center gap-2">
         <CheckCircle2 className="w-5 h-5 text-green-500" />
-        <h1 className="text-lg sm:text-xl font-semibold text-gray-900">Order Approval</h1>
+        <h1 className="text-lg sm:text-xl font-semibold text-gray-900">Food Item Approval</h1>
       </div>
 
       <Card className="border border-gray-200 shadow-sm">
         <div className="p-4">
           <div className="flex items-center gap-2 mb-4">
-            <h2 className="text-base font-semibold text-gray-900">Pending Order Approvals</h2>
+            <h2 className="text-base font-semibold text-gray-900">Pending Food Item Approvals</h2>
             <span className="inline-flex items-center rounded-full bg-orange-100 px-3 py-1 text-xs font-medium text-orange-600">
               {filteredRequests.length}
             </span>
@@ -194,7 +185,7 @@ export default function FoodApproval() {
               </span>
               <input
                 type="text"
-                placeholder="Search by order id, restaurant, customer, item"
+                placeholder="Search by item, restaurant, category, section"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full rounded-md border border-gray-300 bg-white py-1.5 pl-9 pr-3 text-sm focus:outline-none focus:border-[#006fbd] focus:ring-1 focus:ring-[#006fbd]"
@@ -213,12 +204,12 @@ export default function FoodApproval() {
                   <thead style={{ backgroundColor: "rgba(0, 111, 189, 0.1)" }}>
                     <tr>
                       <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">S.No</th>
-                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Order</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Item</th>
                       <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Restaurant</th>
-                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Customer</th>
-                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Items</th>
-                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Total</th>
-                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Ordered Date</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Section</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Type</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Price</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Requested Date</th>
                       <th className="px-3 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Action</th>
                     </tr>
                   </thead>
@@ -226,7 +217,7 @@ export default function FoodApproval() {
                     {filteredRequests.length === 0 ? (
                       <tr>
                         <td colSpan="8" className="px-3 py-8 text-center text-sm text-gray-500">
-                          No pending order approval requests found.
+                          No pending food item approval requests found.
                         </td>
                       </tr>
                     ) : (
@@ -235,8 +226,8 @@ export default function FoodApproval() {
                           <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-700 font-semibold">{index + 1}</td>
                           <td className="px-3 py-3 whitespace-nowrap">
                             <div className="text-sm">
-                              <div className="font-semibold text-gray-900">{request.orderId || request.id || "-"}</div>
-                              <div className="text-gray-500 text-xs">{request.paymentMethod || "-"}</div>
+                              <div className="font-semibold text-gray-900">{request.itemName || "-"}</div>
+                              <div className="text-gray-500 text-xs">{request.category || "-"}</div>
                             </div>
                           </td>
                           <td className="px-3 py-3 whitespace-nowrap">
@@ -245,14 +236,11 @@ export default function FoodApproval() {
                               <div className="text-gray-500 text-xs">{request.restaurantId || "-"}</div>
                             </div>
                           </td>
-                          <td className="px-3 py-3 whitespace-nowrap">
-                            <div className="text-sm">
-                              <div className="font-semibold text-gray-900">{request.customerName || "-"}</div>
-                              <div className="text-gray-500 text-xs">{request.customerPhone || "-"}</div>
-                            </div>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-700">
+                            {[request.sectionName, request.subsectionName].filter(Boolean).join(" / ") || "-"}
                           </td>
                           <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-700 font-semibold">
-                            {request.item?.quantity || 0} item(s)
+                            {request.type === "addon" ? "Add-on" : "Food Item"}
                           </td>
                           <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-700 font-semibold">
                             Rs {request.price || "0.00"}
@@ -263,11 +251,12 @@ export default function FoodApproval() {
                           <td className="px-3 py-3 whitespace-nowrap text-right text-sm">
                             <div className="flex justify-end gap-1.5">
                               <button
-                                onClick={() => openDetails(request)}
+                                onClick={() => {
+                                  setSelectedRequest(request);
+                                  setShowDetailModal(true);
+                                }}
                                 className="inline-flex h-7 w-7 items-center justify-center rounded-md text-white transition-colors"
                                 style={{ backgroundColor: "#006fbd" }}
-                                onMouseEnter={(e) => (e.target.style.backgroundColor = "#005a9e")}
-                                onMouseLeave={(e) => (e.target.style.backgroundColor = "#006fbd")}
                                 title="View Details"
                               >
                                 <Eye className="w-4 h-4" />
@@ -281,7 +270,10 @@ export default function FoodApproval() {
                                 <CheckCircle2 className="w-4 h-4" />
                               </button>
                               <button
-                                onClick={() => openReject(request)}
+                                onClick={() => {
+                                  setSelectedRequest(request);
+                                  setShowRejectModal(true);
+                                }}
                                 disabled={processing}
                                 className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Reject"
@@ -304,63 +296,46 @@ export default function FoodApproval() {
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto p-0 bg-white">
           <DialogHeader className="p-6 pb-4 border-b border-gray-200">
-            <DialogTitle className="text-xl font-semibold text-gray-900">Order Details</DialogTitle>
+            <DialogTitle className="text-xl font-semibold text-gray-900">Food Item Details</DialogTitle>
             <DialogDescription className="text-sm text-gray-500 mt-1">
-              Review the order details before approval.
+              Review item details before approval.
             </DialogDescription>
           </DialogHeader>
 
           {selectedRequest && (
             <div className="p-6 space-y-4">
               <div className="p-3 bg-green-50 rounded-lg border border-green-100">
-                <h3 className="font-semibold text-sm text-gray-900 mb-2">Order Information</h3>
-                <p className="text-sm text-gray-700"><span className="font-medium">Order ID:</span> {selectedRequest.orderId || selectedRequest.id || "-"}</p>
-                <p className="text-sm text-gray-700"><span className="font-medium">Payment:</span> {selectedRequest.paymentMethod || "-"} ({selectedRequest.paymentStatus || "-"})</p>
-                <p className="text-sm text-gray-700"><span className="font-medium">Ordered At:</span> {selectedRequest.requestedAt ? new Date(selectedRequest.requestedAt).toLocaleString() : "-"}</p>
+                <h3 className="font-semibold text-sm text-gray-900 mb-2">Item Information</h3>
+                <p className="text-sm text-gray-700"><span className="font-medium">Name:</span> {selectedRequest.itemName || "-"}</p>
+                <p className="text-sm text-gray-700"><span className="font-medium">Type:</span> {selectedRequest.type === "addon" ? "Add-on" : "Food Item"}</p>
+                <p className="text-sm text-gray-700"><span className="font-medium">Category:</span> {selectedRequest.category || "-"}</p>
+                <p className="text-sm text-gray-700"><span className="font-medium">Food Type:</span> {selectedRequest.foodType || "-"}</p>
+                <p className="text-sm text-gray-700"><span className="font-medium">Price:</span> Rs {selectedRequest.price || "0.00"}</p>
               </div>
 
               <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
                 <h3 className="font-semibold text-sm text-gray-900 mb-2">Restaurant Information</h3>
                 <p className="text-sm text-gray-700"><span className="font-medium">Name:</span> {selectedRequest.restaurantName || "-"}</p>
                 <p className="text-sm text-gray-700"><span className="font-medium">ID:</span> {selectedRequest.restaurantId || "-"}</p>
+                <p className="text-sm text-gray-700"><span className="font-medium">Section:</span> {[selectedRequest.sectionName, selectedRequest.subsectionName].filter(Boolean).join(" / ") || "-"}</p>
+                <p className="text-sm text-gray-700"><span className="font-medium">Requested At:</span> {selectedRequest.requestedAt ? new Date(selectedRequest.requestedAt).toLocaleString() : "-"}</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              {selectedRequest.description ? (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
-                  <p className="text-sm text-gray-900">{selectedRequest.customerName || "-"}</p>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <p className="text-sm text-gray-900">{selectedRequest.description}</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                  <p className="text-sm text-gray-900">{selectedRequest.customerPhone || "-"}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Items</label>
-                  <p className="text-sm text-gray-900">{selectedRequest.item?.quantity || 0} item(s)</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Order Total</label>
-                  <p className="text-sm text-gray-900 font-semibold">Rs {selectedRequest.price || "0.00"}</p>
-                </div>
-                {selectedRequest.description ? (
-                  <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Order Note</label>
-                    <p className="text-sm text-gray-900">{selectedRequest.description}</p>
-                  </div>
-                ) : null}
-              </div>
+              ) : null}
 
-              {Array.isArray(selectedRequest.order?.items) && selectedRequest.order.items.length > 0 ? (
+              {selectedRequest.image ? (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Ordered Items</label>
-                  <div className="rounded-md border border-gray-200 divide-y divide-gray-100">
-                    {selectedRequest.order.items.map((item, index) => (
-                      <div key={`${item.itemId || item.name}-${index}`} className="px-3 py-2 flex items-center justify-between text-sm">
-                        <span className="text-gray-800">{item.quantity} x {item.name}</span>
-                        <span className="font-medium text-gray-900">Rs {item.price}</span>
-                      </div>
-                    ))}
-                  </div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Primary Image</label>
+                  <img
+                    src={selectedRequest.image}
+                    alt={selectedRequest.itemName || "Food item"}
+                    className="w-full max-h-60 object-cover rounded-lg border border-gray-200"
+                  />
                 </div>
               ) : null}
             </div>
@@ -379,7 +354,7 @@ export default function FoodApproval() {
             </button>
             <button
               type="button"
-              onClick={() => openReject(selectedRequest)}
+              onClick={() => setShowRejectModal(true)}
               className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 transition-colors"
             >
               Reject
@@ -399,28 +374,24 @@ export default function FoodApproval() {
       <Dialog open={showRejectModal} onOpenChange={setShowRejectModal}>
         <DialogContent className="max-w-md p-0 bg-white">
           <DialogHeader className="p-6 pb-4 border-b border-gray-200">
-            <DialogTitle className="text-xl font-semibold text-gray-900">Reject Order</DialogTitle>
+            <DialogTitle className="text-xl font-semibold text-gray-900">Reject Food Item</DialogTitle>
             <DialogDescription className="text-sm text-gray-500 mt-1">
-              Please provide a reason for rejecting this order.
+              Please provide a reason for rejection.
             </DialogDescription>
           </DialogHeader>
           <div className="p-6">
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="rejectReason" className="block text-sm font-medium text-gray-700 mb-2">
-                  Rejection Reason <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  id="rejectReason"
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  placeholder="Enter reason for rejection..."
-                  required
-                  rows={4}
-                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-[#006fbd] focus:border-[#006fbd]"
-                />
-              </div>
-            </div>
+            <label htmlFor="rejectReason" className="block text-sm font-medium text-gray-700 mb-2">
+              Rejection Reason <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              id="rejectReason"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Enter reason for rejection..."
+              required
+              rows={4}
+              className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-[#006fbd] focus:border-[#006fbd]"
+            />
             <DialogFooter className="mt-6 flex gap-2">
               <button
                 type="button"

@@ -1,7 +1,8 @@
-import { useMemo, useState, useEffect } from "react"
+import { useMemo, useState, useEffect, useRef } from "react"
 import { FileText, Calendar, Package } from "lucide-react"
 import { adminAPI } from "@/lib/api"
 import { toast } from "sonner"
+import alertSound from "@/assets/audio/alert.mp3"
 import OrdersTopbar from "../../components/orders/OrdersTopbar"
 import OrdersTable from "../../components/orders/OrdersTable"
 import FilterPanel from "../../components/orders/FilterPanel"
@@ -35,42 +36,122 @@ export default function OrdersPage({ statusKey = "all", platformOverride }) {
   const [processingRefund, setProcessingRefund] = useState(null)
   const [refundModalOpen, setRefundModalOpen] = useState(false)
   const [selectedOrderForRefund, setSelectedOrderForRefund] = useState(null)
+  const audioRef = useRef(null)
+  const previousIncomingCountRef = useRef(null)
+
+  const getIncomingRequestCount = (ordersList = []) => {
+    return ordersList.filter((order) =>
+      order.status === "confirmed" &&
+      (order.adminApprovalStatus === "pending" || !order.adminApprovalStatus)
+    ).length
+  }
+  
+  const fetchOrders = async ({ showLoader = true } = {}) => {
+    try {
+      if (showLoader) setIsLoading(true)
+      const params = {
+        page: 1,
+        limit: 1000,
+        status: statusKey === "all" ? undefined :
+               statusKey === "restaurant-cancelled" ? "cancelled" : statusKey,
+        cancelledBy: statusKey === "restaurant-cancelled" ? "restaurant" : undefined,
+        platform: platformOverride || undefined,
+      }
+
+      const response = await adminAPI.getOrders(params)
+
+      if (response.data?.success && response.data?.data?.orders) {
+        const fetchedOrders = response.data.data.orders
+        setOrders(fetchedOrders)
+        setTotalCount(response.data.data.pagination?.total || fetchedOrders.length)
+
+        // Play notification sound on new incoming requests in "All Orders" view.
+        if (statusKey === "all") {
+          const incomingCount = getIncomingRequestCount(fetchedOrders)
+          const previousCount = previousIncomingCountRef.current
+          if ((previousCount === null && incomingCount > 0) || (previousCount !== null && incomingCount > previousCount)) {
+            if (audioRef.current) {
+              audioRef.current.currentTime = 0
+              audioRef.current.play().catch(() => {})
+            }
+            toast.info("New incoming order request received")
+          }
+          previousIncomingCountRef.current = incomingCount
+        }
+      } else {
+        console.error("Failed to fetch orders:", response.data)
+        toast.error("Failed to fetch orders")
+        setOrders([])
+      }
+    } catch (error) {
+      console.error("Error fetching orders:", error)
+      toast.error(error.response?.data?.message || "Failed to fetch orders")
+      setOrders([])
+    } finally {
+      if (showLoader) setIsLoading(false)
+    }
+  }
   
   // Fetch orders from backend API
   useEffect(() => {
-    const fetchOrders = async () => {
-      try {
-        setIsLoading(true)
-        const params = {
-          page: 1,
-          limit: 1000, // Fetch all orders for now (can be optimized with pagination later)
-          status: statusKey === "all" ? undefined : 
-                 statusKey === "restaurant-cancelled" ? "cancelled" : statusKey,
-          cancelledBy: statusKey === "restaurant-cancelled" ? "restaurant" : undefined,
-          platform: platformOverride || undefined,
-        }
-        
-        const response = await adminAPI.getOrders(params)
-        
-        if (response.data?.success && response.data?.data?.orders) {
-          setOrders(response.data.data.orders)
-          setTotalCount(response.data.data.pagination?.total || response.data.data.orders.length)
-        } else {
-          console.error("Failed to fetch orders:", response.data)
-          toast.error("Failed to fetch orders")
-          setOrders([])
-        }
-      } catch (error) {
-        console.error("Error fetching orders:", error)
-        toast.error(error.response?.data?.message || "Failed to fetch orders")
-        setOrders([])
-      } finally {
-        setIsLoading(false)
+    fetchOrders({ showLoader: true })
+  }, [statusKey, platformOverride])
+
+  // Poll orders list and trigger sound even when tab is in background.
+  useEffect(() => {
+    audioRef.current = new Audio(alertSound)
+    audioRef.current.volume = 0.8
+
+    const pollTimer = setInterval(() => {
+      fetchOrders({ showLoader: false })
+    }, 10000)
+
+    return () => {
+      clearInterval(pollTimer)
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.currentTime = 0
+        audioRef.current = null
       }
     }
-
-    fetchOrders()
   }, [statusKey, platformOverride])
+
+  const handleApproveOrderRequest = async (order) => {
+    const orderIdToUse = order.id || order._id || order.orderId
+    if (!orderIdToUse) {
+      toast.error("Order ID not found")
+      return
+    }
+
+    try {
+      await adminAPI.approveOrderRequest(orderIdToUse)
+      toast.success(`Order ${order.orderId} approved`)
+      await fetchOrders()
+    } catch (error) {
+      console.error("Error approving order request:", error)
+      toast.error(error?.response?.data?.message || "Failed to approve order")
+    }
+  }
+
+  const handleRejectOrderRequest = async (order) => {
+    const orderIdToUse = order.id || order._id || order.orderId
+    if (!orderIdToUse) {
+      toast.error("Order ID not found")
+      return
+    }
+
+    const reason = prompt(`Reject order ${order.orderId}\n\nEnter rejection reason:`)
+    if (!reason || !reason.trim()) return
+
+    try {
+      await adminAPI.rejectOrderRequest(orderIdToUse, reason.trim())
+      toast.success(`Order ${order.orderId} rejected`)
+      await fetchOrders()
+    } catch (error) {
+      console.error("Error rejecting order request:", error)
+      toast.error(error?.response?.data?.message || "Failed to reject order")
+    }
+  }
 
   // Handle refund button click - show modal for wallet payments, confirm dialog for others
   const handleRefund = (order) => {
@@ -306,6 +387,9 @@ export default function OrdersPage({ statusKey = "all", platformOverride }) {
         onViewOrder={handleViewOrder}
         onPrintOrder={handlePrintOrder}
         onRefund={handleRefund}
+        onAcceptOrder={handleApproveOrderRequest}
+        onRejectOrder={handleRejectOrderRequest}
+        enableApprovalActions={statusKey === "all"}
       />
     </div>
   )

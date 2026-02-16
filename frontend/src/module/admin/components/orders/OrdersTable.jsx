@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react"
-import { Eye, Printer, ArrowUpDown, Loader2 } from "lucide-react"
+import { Eye, Printer, ArrowUpDown, Loader2, CheckCircle2, XCircle } from "lucide-react"
 
 const getStatusColor = (orderStatus) => {
   const colors = {
@@ -26,7 +26,16 @@ const getPaymentStatusColor = (paymentStatus) => {
   return "text-slate-600"
 }
 
-export default function OrdersTable({ orders, visibleColumns, onViewOrder, onPrintOrder, onRefund }) {
+export default function OrdersTable({
+  orders,
+  visibleColumns,
+  onViewOrder,
+  onPrintOrder,
+  onRefund,
+  onAcceptOrder,
+  onRejectOrder,
+  enableApprovalActions = false,
+}) {
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 10
   const totalPages = Math.ceil(orders.length / itemsPerPage)
@@ -315,6 +324,28 @@ export default function OrdersTable({ orders, visibleColumns, onViewOrder, onPri
                       >
                         <Printer className="w-4 h-4" />
                       </button>
+                      {enableApprovalActions &&
+                        typeof onAcceptOrder === "function" &&
+                        typeof onRejectOrder === "function" &&
+                        order.status === "confirmed" &&
+                        (order.adminApprovalStatus === "pending" || !order.adminApprovalStatus) && (
+                          <>
+                            <button
+                              onClick={() => onAcceptOrder(order)}
+                              className="p-1.5 rounded text-green-600 hover:bg-green-50 transition-colors"
+                              title="Accept Order Request"
+                            >
+                              <CheckCircle2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => onRejectOrder(order)}
+                              className="p-1.5 rounded text-red-600 hover:bg-red-50 transition-colors"
+                              title="Reject Order Request"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
                       {/* Show Refund button or Refunded status for cancelled orders with Online/Wallet payment (restaurant or user cancelled) */}
                       {(() => {
                         // Check if order is cancelled by restaurant or user
