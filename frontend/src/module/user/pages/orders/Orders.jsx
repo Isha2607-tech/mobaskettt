@@ -528,20 +528,43 @@ Order again from this restaurant in the ${companyName} app.`
           </div>
         ) : (
           filteredOrders.map((order) => {
-            // Check payment method - COD/wallet orders have 'pending' status which is normal
-            const isCodOrWallet = order.payment?.method === 'cash' || 
-                                 order.payment?.method === 'cod' || 
-                                 order.payment?.method === 'wallet' ||
-                                 order.paymentMethod === 'cash' ||
-                                 order.paymentMethod === 'cod' ||
-                                 order.paymentMethod === 'wallet'
+            // Normalize payment fields from backend variants (e.g. COD/cash_on_delivery/cash)
+            const normalizedPaymentMethod = String(
+              order.payment?.method || order.paymentMethod || ''
+            ).trim().toLowerCase()
+            const normalizedPaymentStatus = String(
+              order.payment?.status || ''
+            ).trim().toLowerCase()
+            const isCodPayment =
+              normalizedPaymentMethod === 'cash' ||
+              normalizedPaymentMethod === 'cod' ||
+              normalizedPaymentMethod === 'cash_on_delivery' ||
+              normalizedPaymentMethod === 'cash on delivery' ||
+              normalizedPaymentMethod.includes('cash') ||
+              normalizedPaymentMethod.includes('cod')
+            const isWalletPayment = normalizedPaymentMethod === 'wallet'
+            const isCodOrWallet = isCodPayment || isWalletPayment
+            const isOnlinePayment =
+              normalizedPaymentMethod === 'razorpay' ||
+              normalizedPaymentMethod === 'online' ||
+              normalizedPaymentMethod === 'upi' ||
+              normalizedPaymentMethod === 'card' ||
+              normalizedPaymentMethod === 'netbanking' ||
+              normalizedPaymentMethod === 'net banking'
             
             // Payment failed only for online payments (razorpay) that actually failed
             // Don't show payment failed for COD/wallet or cancelled orders
             const isCancelled = order.status === 'cancelled' || order.status === 'restaurant_cancelled'
-            const paymentFailed = !isCodOrWallet && 
+            const paymentFailed = isOnlinePayment &&
                                  !isCancelled && 
-                                 (order.payment?.status === 'failed')
+                                 (
+                                   normalizedPaymentStatus === 'failed' ||
+                                   normalizedPaymentStatus === 'failure' ||
+                                   normalizedPaymentStatus === 'payment_failed'
+                                 )
+            const paymentStatusForDisplay = isCodPayment
+              ? (order.status === 'delivered' ? 'completed' : 'pending')
+              : normalizedPaymentStatus
             
             const isDelivered = order.status === 'delivered'
             const isRestaurantCancelled = order.isRestaurantCancelled || order.status === 'restaurant_cancelled'
@@ -733,19 +756,19 @@ Order again from this restaurant in the ${companyName} app.`
                     {order.payment && (
                       <p className="text-xs text-gray-500 mt-1">
                         Payment: <span className="font-medium capitalize">
-                          {order.payment.method === 'cash' || order.payment.method === 'cod' ? 'Cash on Delivery' :
-                           order.payment.method === 'wallet' ? 'Wallet' :
-                           order.payment.method === 'razorpay' ? 'Online' :
-                           order.payment.method || 'N/A'}
+                          {isCodPayment ? 'Cash on Delivery' :
+                           isWalletPayment ? 'Wallet' :
+                           normalizedPaymentMethod === 'razorpay' ? 'Online' :
+                           order.payment.method || order.paymentMethod || 'N/A'}
                         </span>
-                        {order.payment.status && (
+                        {paymentStatusForDisplay && (
                           <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                            order.payment.status === 'completed' ? 'bg-green-100 text-green-700' :
-                            order.payment.status === 'failed' ? 'bg-red-100 text-red-700' :
-                            order.payment.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                            paymentStatusForDisplay === 'completed' ? 'bg-green-100 text-green-700' :
+                            paymentStatusForDisplay === 'failed' ? 'bg-red-100 text-red-700' :
+                            paymentStatusForDisplay === 'pending' ? 'bg-yellow-100 text-yellow-700' :
                             'bg-gray-100 text-gray-700'
                           }`}>
-                            {order.payment.status}
+                            {paymentStatusForDisplay}
                           </span>
                         )}
                       </p>
