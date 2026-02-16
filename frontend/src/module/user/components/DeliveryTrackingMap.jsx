@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import io from 'socket.io-client';
-import { API_BASE_URL } from '@/lib/api/config';
+import { SOCKET_BASE_URL } from '@/lib/api/config';
 import bikeLogo from '@/assets/bikelogo.png';
 import { RouteBasedAnimationController } from '@/module/user/utils/routeBasedAnimation';
 import { extractPolylineFromDirections, findNearestPointOnPolyline } from '@/module/delivery/utils/liveTrackingPolyline';
@@ -52,7 +52,7 @@ const DeliveryTrackingMap = ({
   const directionsCacheRef = useRef(new Map()); // Cache for Directions API calls
   const lastRouteRequestRef = useRef({ start: null, end: null, timestamp: 0 });
 
-  const backendUrl = API_BASE_URL.replace('/api', '');
+  const backendUrl = SOCKET_BASE_URL;
   const [GOOGLE_MAPS_API_KEY, setGOOGLE_MAPS_API_KEY] = useState("");
   
   // Load Google Maps API key from backend

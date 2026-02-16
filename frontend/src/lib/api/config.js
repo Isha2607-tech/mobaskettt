@@ -45,6 +45,18 @@ if (rawApiBaseUrl && typeof rawApiBaseUrl === 'string') {
 
 export const API_BASE_URL = rawApiBaseUrl;
 
+let rawSocketBaseUrl =
+  import.meta.env.VITE_SOCKET_BASE_URL ||
+  API_BASE_URL.replace(/\/api\/?$/, '');
+
+if (rawSocketBaseUrl && typeof rawSocketBaseUrl === 'string') {
+  rawSocketBaseUrl = rawSocketBaseUrl.trim();
+  rawSocketBaseUrl = rawSocketBaseUrl.replace(/\/+$/, '');
+  rawSocketBaseUrl = rawSocketBaseUrl.replace(/^(https?):\/+/gi, '$1://');
+}
+
+export const SOCKET_BASE_URL = rawSocketBaseUrl;
+
 // Validate URL format - catch malformed URLs like "https:/" or "https://https://"
 try {
   const urlObj = new URL(API_BASE_URL);
@@ -86,15 +98,23 @@ if (API_BASE_URL.includes('5173')) {
 // Log API base URL in both development and production for debugging
 console.log('🌐 API Base URL:', API_BASE_URL);
 console.log('🌐 Backend URL:', API_BASE_URL.replace('/api', ''));
+console.log('🌐 Socket Base URL:', SOCKET_BASE_URL);
 console.log('🌐 Frontend URL:', window.location.origin);
 console.log('🌐 Environment:', import.meta.env.MODE);
 console.log('🌐 VITE_API_BASE_URL:', import.meta.env.VITE_API_BASE_URL || 'Not set (using default)');
+console.log('🌐 VITE_SOCKET_BASE_URL:', import.meta.env.VITE_SOCKET_BASE_URL || 'Not set (using API base URL)');
 
 // Warn if API_BASE_URL is localhost in production
 if (import.meta.env.MODE === 'production' && API_BASE_URL.includes('localhost')) {
   console.error('❌ WARNING: API_BASE_URL is set to localhost in production!');
   console.error('💡 Fix: Set VITE_API_BASE_URL environment variable to your production backend URL');
   console.error('💡 Example: VITE_API_BASE_URL=https://your-backend-domain.com/api');
+}
+
+if (import.meta.env.MODE === 'production' && SOCKET_BASE_URL.includes('localhost')) {
+  console.error('❌ WARNING: SOCKET_BASE_URL is set to localhost in production!');
+  console.error('💡 Fix: Set VITE_SOCKET_BASE_URL to your backend host (without /api).');
+  console.error('💡 Example: VITE_SOCKET_BASE_URL=https://your-backend-domain.com');
 }
 
 // API endpoints
@@ -410,4 +430,3 @@ export default {
   API_BASE_URL,
   API_ENDPOINTS,
 };
-
