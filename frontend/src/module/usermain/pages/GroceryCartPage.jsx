@@ -15,13 +15,10 @@ import { useCart } from "../../user/context/CartContext";
 
 const GroceryCartPage = () => {
   const navigate = useNavigate();
-  const { cart, updateQuantity, total, clearCart } = useCart();
+  const { cart, updateQuantity, total, clearCart, isGroceryItem } = useCart();
 
   // Filter grocery items (though CartContext usually keeps only one restaurant type)
-  const groceryItems = cart.filter(
-    (item) =>
-      item.restaurantId === "grocery-store" || item.restaurant === "MoGrocery",
-  );
+  const groceryItems = cart.filter((item) => isGroceryItem(item));
 
   if (groceryItems.length === 0) {
     return (

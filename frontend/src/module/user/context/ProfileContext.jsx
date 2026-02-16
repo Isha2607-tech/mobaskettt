@@ -73,9 +73,24 @@ export function ProfileProvider({ children }) {
   // VegMode state - stored in localStorage for persistence
   const [vegMode, setVegMode] = useState(() => {
     const saved = localStorage.getItem("userVegMode")
-    // Default to true (ON) if not set
-    return saved !== null ? saved === "true" : true
+    // Default to false (OFF) if not set
+    return saved !== null ? saved === "true" : false
   })
+
+  // One-time migration: older builds defaulted veg mode to true and persisted it.
+  // Reset once so existing users can see both veg and non-veg unless they explicitly turn veg mode on again.
+  useEffect(() => {
+    const migrationKey = "userVegModeDefaultFixApplied_v1"
+    const alreadyMigrated = localStorage.getItem(migrationKey) === "true"
+    if (alreadyMigrated) return
+
+    const savedVegMode = localStorage.getItem("userVegMode")
+    if (savedVegMode === "true") {
+      setVegMode(false)
+      localStorage.setItem("userVegMode", "false")
+    }
+    localStorage.setItem(migrationKey, "true")
+  }, [])
 
   // Save to localStorage whenever userProfile, addresses or paymentMethods change
   useEffect(() => {
@@ -450,7 +465,7 @@ export function useProfile() {
       removeDishFavorite: () => console.warn("ProfileProvider not available"),
       isDishFavorite: () => false,
       getDishFavorites: () => [],
-      vegMode: true,
+      vegMode: false,
       setVegMode: () => console.warn("ProfileProvider not available")
     }
   }

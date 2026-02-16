@@ -805,6 +805,9 @@ export default function Home() {
           params.trusted = "true";
         }
 
+        // Home page is MoFood-only.
+        params.platform = "mofood";
+
         // Optional: Add zoneId if available (for sorting/filtering, but show all restaurants)
         if (zoneId) {
           params.zoneId = zoneId;
@@ -821,7 +824,12 @@ export default function Home() {
           response.data.data &&
           response.data.data.restaurants
         ) {
-          const restaurantsArray = response.data.data.restaurants;
+          const restaurantsArray = (response.data.data.restaurants || []).filter(
+            (restaurant) => {
+              const platform = String(restaurant?.platform || "").toLowerCase();
+              return !platform || platform === "mofood";
+            },
+          );
           console.log(
             `Fetched ${restaurantsArray.length} restaurants from API`,
           );

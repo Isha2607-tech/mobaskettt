@@ -23,8 +23,10 @@ export default function AddToCartAnimation({
   hideOnPages = true,
   linkTo = '/cart',
   dynamicBottom = null,
+  /** When true, hide the View cart pill when the cart contains grocery items (for restaurant/food pages) */
+  hideWhenGroceryCart = false,
 }) {
-  const { items, itemCount, total, lastAddEvent, lastRemoveEvent } = useCart();
+  const { items, itemCount, total, lastAddEvent, lastRemoveEvent, isGroceryCart } = useCart();
   const location = useLocation();
   const navigate = useNavigate();
   const linkRef = useRef(null);
@@ -42,6 +44,9 @@ export default function AddToCartAnimation({
   const isOrderPage = location.pathname.startsWith('/orders/');
   const isAccountPage = location.pathname === '/account';
   const shouldHidePill = hideOnPages && (iscartPage || isOrderPage || isAccountPage);
+
+  // On restaurant/food pages: don't show View cart when cart has grocery items (keep carts separate)
+  const shouldHideForGroceryCart = hideWhenGroceryCart && isGroceryCart();
 
   // Handle removal animation when product is removed
   useEffect(() => {
@@ -416,7 +421,7 @@ export default function AddToCartAnimation({
       )}
 
       <AnimatePresence>
-        {itemCount > 0 && !shouldHidePill && (
+        {itemCount > 0 && !shouldHidePill && !shouldHideForGroceryCart && (
           <motion.div
             initial={{ y: 60, opacity: 0, scale: 0.8 }}
             animate={{

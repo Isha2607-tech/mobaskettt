@@ -1631,12 +1631,12 @@ export const adminAPI = {
     return apiClient.get(API_ENDPOINTS.ADMIN.GROCERY_APPROVALS, { params });
   },
 
-  approveGroceryItem: (id) => {
-    return apiClient.post(API_ENDPOINTS.ADMIN.GROCERY_APPROVAL_APPROVE.replace(':id', id));
+  approveGroceryItem: (id, payload = {}) => {
+    return apiClient.post(API_ENDPOINTS.ADMIN.GROCERY_APPROVAL_APPROVE.replace(':id', id), payload);
   },
 
-  rejectGroceryItem: (id, reason) => {
-    return apiClient.post(API_ENDPOINTS.ADMIN.GROCERY_APPROVAL_REJECT.replace(':id', id), { reason });
+  rejectGroceryItem: (id, reason, payload = {}) => {
+    return apiClient.post(API_ENDPOINTS.ADMIN.GROCERY_APPROVAL_REJECT.replace(':id', id), { reason, ...payload });
   },
 
   // Feedback Experience Management

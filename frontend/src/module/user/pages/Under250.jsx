@@ -286,6 +286,8 @@ export default function Under250() {
       price: item.price,
       image: item.image,
       restaurant: restaurant,
+      platform: "mofood",
+      restaurantPlatform: "mofood",
       description: item.description || "",
       originalPrice: item.originalPrice || item.price,
     }
@@ -986,7 +988,7 @@ export default function Under250() {
       </AnimatePresence>
 
       {/* Add to Cart Animation */}
-      <AddToCartAnimation dynamicBottom={viewCartButtonBottom} />
+      <AddToCartAnimation dynamicBottom={viewCartButtonBottom} hideWhenGroceryCart />
     </div>
   )
 }

@@ -3,6 +3,7 @@ import { successResponse, errorResponse } from '../../../shared/utils/response.j
 import Menu from '../../restaurant/models/Menu.js';
 import Restaurant from '../../restaurant/models/Restaurant.js';
 import winston from 'winston';
+import mongoose from 'mongoose';
 
 const logger = winston.createLogger({
   level: 'info',
@@ -14,6 +15,44 @@ const logger = winston.createLogger({
   ]
 });
 
+const resolvePlatformMatch = (platformQuery) => {
+  const normalized = String(platformQuery || '').toLowerCase();
+
+  if (normalized === 'mogrocery' || normalized === 'grocery') {
+    return { $in: ['mogrocery', 'grocery'] };
+  }
+
+  if (normalized === 'mofood' || normalized === 'food') {
+    return 'mofood';
+  }
+
+  // Keep existing grocery behavior when no platform is specified.
+  return { $in: ['mogrocery', 'grocery'] };
+};
+
+const buildApprovalMenuCandidates = async ({ platform, restaurantMongoId }) => {
+  const menuQuery = { isActive: true };
+
+  if (restaurantMongoId && mongoose.Types.ObjectId.isValid(String(restaurantMongoId))) {
+    menuQuery.restaurant = new mongoose.Types.ObjectId(String(restaurantMongoId));
+    return Menu.find(menuQuery).lean();
+  }
+
+  const normalizedPlatform = String(platform || '').toLowerCase();
+  if (!normalizedPlatform) {
+    return Menu.find(menuQuery).lean();
+  }
+
+  const platformMatch = resolvePlatformMatch(normalizedPlatform);
+  const restaurants = await Restaurant.find({ platform: platformMatch }).select('_id').lean();
+  const restaurantIds = restaurants.map((r) => r._id);
+
+  if (restaurantIds.length === 0) return [];
+
+  menuQuery.restaurant = { $in: restaurantIds };
+  return Menu.find(menuQuery).lean();
+};
+
 /**
  * Get all pending grocery approval requests
  * GET /api/admin/grocery-approvals
@@ -21,13 +60,13 @@ const logger = winston.createLogger({
  */
 export const getPendingGroceryApprovals = asyncHandler(async (req, res) => {
   try {
-    // Get restaurants that are grocery stores (you may need to add a platform field to Restaurant model)
-    // For now, we'll use the same Menu model but you can filter by restaurant type if needed
+    const platformMatch = resolvePlatformMatch(req.query?.platform);
+
     const menus = await Menu.find({ isActive: true })
       .populate({
         path: 'restaurant',
         select: 'name restaurantId platform',
-        match: { platform: 'grocery' } // Filter by platform if it exists
+        match: { platform: platformMatch }
       })
       .lean();
 
@@ -146,9 +185,14 @@ export const getPendingGroceryApprovals = asyncHandler(async (req, res) => {
 export const approveGroceryItem = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
-    const adminId = req.user._id;
+    const adminId = req.user?._id || req.admin?._id || null;
+    const contextPlatform = req.body?.platform || req.query?.platform;
+    const contextRestaurantMongoId = req.body?.restaurantMongoId || req.query?.restaurantMongoId;
 
-    const menus = await Menu.find({ isActive: true }).lean();
+    const menus = await buildApprovalMenuCandidates({
+      platform: contextPlatform,
+      restaurantMongoId: contextRestaurantMongoId
+    });
     let foundItem = null;
     let foundMenu = null;
     let foundSection = null;
@@ -330,13 +374,18 @@ export const rejectGroceryItem = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
-    const adminId = req.user._id;
+    const adminId = req.user?._id || req.admin?._id || null;
+    const contextPlatform = req.body?.platform || req.query?.platform;
+    const contextRestaurantMongoId = req.body?.restaurantMongoId || req.query?.restaurantMongoId;
 
     if (!reason || !reason.trim()) {
       return errorResponse(res, 400, 'Rejection reason is required');
     }
 
-    const menus = await Menu.find({ isActive: true }).lean();
+    const menus = await buildApprovalMenuCandidates({
+      platform: contextPlatform,
+      restaurantMongoId: contextRestaurantMongoId
+    });
     let foundItem = null;
     let foundMenu = null;
     let foundSection = null;

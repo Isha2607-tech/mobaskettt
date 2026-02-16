@@ -97,44 +97,76 @@ if (missingEnvVars.length > 0) {
 const app = express();
 const httpServer = createServer(app);
 
-// Initialize Socket.IO with proper CORS configuration
-const allowedSocketOrigins = [
-  process.env.CORS_ORIGIN,
+const parseOriginList = (...values) => {
+  const origins = [];
+  values.forEach((value) => {
+    if (!value || typeof value !== 'string') return;
+    value
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean)
+      .forEach((v) => origins.push(v));
+  });
+  return origins;
+};
+
+const configuredOrigins = [
+  ...parseOriginList(
+    process.env.CORS_ORIGINS,
+    process.env.CORS_ORIGIN,
+    process.env.FRONTEND_URL
+  ),
+  'https://foods.appzeto.com',
+  'http://foods.appzeto.com',
   'https://foozeto.appzeto.com',
   'http://foozeto.appzeto.com',
-  'http://localhost:5173',
   'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:3000',
   'http://127.0.0.1:5173',
-  'http://127.0.0.1:3000'
-].filter(Boolean); // Remove undefined values
+  'http://127.0.0.1:5174'
+];
+
+const allowedOrigins = [...new Set(configuredOrigins.filter(Boolean))];
+
+const defaultAllowedOriginPatterns = [
+  /^https:\/\/.*\.vercel\.app$/i
+];
+
+const envAllowedOriginPatterns = parseOriginList(process.env.CORS_ALLOWED_ORIGIN_REGEX)
+  .map((pattern) => {
+    try {
+      return new RegExp(pattern, 'i');
+    } catch {
+      console.warn(`Invalid CORS_ALLOWED_ORIGIN_REGEX pattern ignored: ${pattern}`);
+      return null;
+    }
+  })
+  .filter(Boolean);
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+
+  if (process.env.NODE_ENV !== 'production') {
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) return true;
+  }
+
+  if (defaultAllowedOriginPatterns.some((regex) => regex.test(origin))) return true;
+  if (envAllowedOriginPatterns.some((regex) => regex.test(origin))) return true;
+  return false;
+};
 
 const io = new Server(httpServer, {
   cors: {
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or Postman)
-      if (!origin) {
-        console.log('✅ Socket.IO: Allowing connection with no origin');
-        return callback(null, true);
-      }
-
-      // Check if origin is in allowed list
-      if (allowedSocketOrigins.includes(origin)) {
-        console.log(`✅ Socket.IO: Allowing connection from: ${origin}`);
+      if (isAllowedOrigin(origin)) {
+        console.log(`[Socket.IO CORS] Allowing connection from: ${origin}`);
         callback(null, true);
       } else {
-        // In development, allow all localhost origins
-        if (process.env.NODE_ENV !== 'production') {
-          if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-            console.log(`✅ Socket.IO: Allowing localhost connection from: ${origin}`);
-            return callback(null, true);
-          }
-          // Allow all origins in development for easier debugging
-          console.log(`⚠️ Socket.IO: Allowing connection from: ${origin} (development mode)`);
-          return callback(null, true);
-        } else {
-          console.error(`❌ Socket.IO: Blocking connection from: ${origin} (not in allowed list)`);
-          callback(new Error('Not allowed by CORS'));
-        }
+        console.error(`[Socket.IO CORS] Blocking connection from: ${origin} (not in allowlist)`);
+        callback(new Error('Not allowed by CORS'));
       }
     },
     methods: ['GET', 'POST', 'OPTIONS'],
@@ -314,36 +346,23 @@ connectRedis().catch(() => {
 
 // Security middleware
 app.use(helmet());
-// CORS configuration - allow multiple origins
-const allowedOrigins = [
-  process.env.CORS_ORIGIN,
-  'https://foods.appzeto.com',
-  'http://foods.appzeto.com',
-  'https://foozeto.appzeto.com',
-  'http://foozeto.appzeto.com',
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'http://127.0.0.1:5173',
-  'http://127.0.0.1:5174'
-].filter(Boolean); // Remove undefined values
-
-app.use(cors({
+// CORS configuration
+const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-
-    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+    if (isAllowedOrigin(origin)) {
       callback(null, true);
     } else {
-      console.warn(`⚠️ CORS blocked origin: ${origin}`);
-      callback(null, true); // Allow in development, block in production
+      console.warn(`[HTTP CORS] Blocked origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-}));
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
@@ -733,4 +752,8 @@ process.on('unhandledRejection', (err) => {
 });
 
 export default app;
+
+
+
+
 

@@ -26,7 +26,7 @@ import { toast } from "sonner";
 
 export default function GroceryCheckoutPage() {
   const navigate = useNavigate();
-  const { cart, clearCart } = useCart();
+  const { cart, clearCart, isGroceryItem } = useCart();
   const { getDefaultAddress, userProfile } = useProfile();
   const { location: liveLocation } = useUserLocation();
   const { zoneId } = useZone(liveLocation, "mogrocery");
@@ -38,10 +38,7 @@ export default function GroceryCheckoutPage() {
   const [scheduledTime, setScheduledTime] = useState("");
 
   // Filter grocery items
-  const groceryItems = cart.filter(
-    (item) =>
-      item.restaurantId === "grocery-store" || item.restaurant === "MoGrocery",
-  );
+  const groceryItems = cart.filter((item) => isGroceryItem(item));
 
   const deliveryAddress =
     "Select delivery address";

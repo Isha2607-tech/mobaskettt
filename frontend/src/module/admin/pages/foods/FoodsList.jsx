@@ -1,257 +1,100 @@
-import { useState, useMemo, useEffect } from "react"
-import { Search, Trash2, Loader2 } from "lucide-react"
-import { adminAPI, restaurantAPI } from "@/lib/api"
-import apiClient from "@/lib/api"
-import { toast } from "sonner"
+import { useEffect, useMemo, useState } from "react";
+import { Search, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { adminAPI } from "@/lib/api";
+import { toast } from "sonner";
 
 export default function FoodsList() {
-  const [searchQuery, setSearchQuery] = useState("")
-  const [foods, setFoods] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [deleting, setDeleting] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("");
+  const [foods, setFoods] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [processingId, setProcessingId] = useState(null);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [selectedFood, setSelectedFood] = useState(null);
 
-  // Fetch all foods from all restaurants
+  const fetchPendingFoods = async () => {
+    try {
+      setLoading(true);
+      const response = await adminAPI.getPendingGroceryApprovals({ platform: "mofood" });
+      const requests = response?.data?.data?.requests || response?.data?.requests || [];
+      setFoods(requests);
+    } catch (error) {
+      console.error("Error fetching pending food requests:", error);
+      toast.error("Failed to load pending food requests");
+      setFoods([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchAllFoods = async () => {
-      try {
-        setLoading(true)
-        
-        // First, fetch all restaurants
-        const restaurantsResponse = await adminAPI.getRestaurants({ limit: 1000 })
-        const restaurants = restaurantsResponse?.data?.data?.restaurants || 
-                          restaurantsResponse?.data?.restaurants || 
-                          []
-        
-        if (restaurants.length === 0) {
-          setFoods([])
-          setLoading(false)
-          return
-        }
-
-        // Fetch menu for each restaurant and extract all food items
-        const allFoods = []
-        
-        for (const restaurant of restaurants) {
-          try {
-            const restaurantId = restaurant._id || restaurant.id
-            const menuResponse = await restaurantAPI.getMenuByRestaurantId(restaurantId)
-            const menu = menuResponse?.data?.data?.menu || menuResponse?.data?.menu
-            
-            if (menu && menu.sections) {
-              // Extract items from sections and subsections
-              menu.sections.forEach((section) => {
-                // Items directly in section
-                if (section.items && Array.isArray(section.items)) {
-                  section.items.forEach((item) => {
-                    allFoods.push({
-                      id: item.id || `${restaurantId}-${section.id}-${item.name}`,
-                      _id: item._id,
-                      name: item.name || "Unnamed Item",
-                      image: item.image || item.images?.[0] || "https://via.placeholder.com/40",
-                      priority: "Normal", // Default priority
-                      status: item.isAvailable !== false && item.approvalStatus !== 'rejected',
-                      restaurantId: restaurantId,
-                      restaurantName: restaurant.name || "Unknown Restaurant",
-                      sectionName: section.name || "Unknown Section",
-                      price: item.price || 0,
-                      foodType: item.foodType || "Non-Veg",
-                      approvalStatus: item.approvalStatus || 'pending',
-                      originalItem: item // Keep original item data
-                    })
-                  })
-                }
-                
-                // Items in subsections
-                if (section.subsections && Array.isArray(section.subsections)) {
-                  section.subsections.forEach((subsection) => {
-                    if (subsection.items && Array.isArray(subsection.items)) {
-                      subsection.items.forEach((item) => {
-                        allFoods.push({
-                          id: item.id || `${restaurantId}-${section.id}-${subsection.id}-${item.name}`,
-                          _id: item._id,
-                          name: item.name || "Unnamed Item",
-                          image: item.image || item.images?.[0] || "https://via.placeholder.com/40",
-                          priority: "Normal", // Default priority
-                          status: item.isAvailable !== false && item.approvalStatus !== 'rejected',
-                          restaurantId: restaurantId,
-                          restaurantName: restaurant.name || "Unknown Restaurant",
-                          sectionName: section.name || "Unknown Section",
-                          subsectionName: subsection.name || "Unknown Subsection",
-                          price: item.price || 0,
-                          foodType: item.foodType || "Non-Veg",
-                          approvalStatus: item.approvalStatus || 'pending',
-                          originalItem: item // Keep original item data
-                        })
-                      })
-                    }
-                  })
-                }
-              })
-            }
-          } catch (error) {
-            // Silently skip restaurants that don't have menus or have errors
-            console.warn(`Failed to fetch menu for restaurant ${restaurant._id || restaurant.id}:`, error.message)
-          }
-        }
-        
-        setFoods(allFoods)
-      } catch (error) {
-        console.error("Error fetching foods:", error)
-        toast.error("Failed to load foods from restaurants")
-        setFoods([])
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchAllFoods()
-  }, [])
-
-  // Format ID to FOOD format (e.g., FOOD519399)
-  const formatFoodId = (id) => {
-    if (!id) return "FOOD000000"
-    
-    const idString = String(id)
-    // Extract last 6 digits from the ID
-    // Handle formats like "1768285554154-0.703896654519399" or "item-1768285554154-0.703896654519399"
-    const parts = idString.split(/[-.]/)
-    let lastDigits = ""
-    
-    // Get the last part and extract digits
-    if (parts.length > 0) {
-      const lastPart = parts[parts.length - 1]
-      // Extract only digits from the last part
-      const digits = lastPart.match(/\d+/g)
-      if (digits && digits.length > 0) {
-        // Get last 6 digits from all digits found
-        const allDigits = digits.join("")
-        lastDigits = allDigits.slice(-6).padStart(6, "0")
-      }
-    }
-    
-    // If no digits found, use a hash of the ID
-    if (!lastDigits) {
-      const hash = idString.split("").reduce((acc, char) => {
-        return ((acc << 5) - acc) + char.charCodeAt(0) | 0
-      }, 0)
-      lastDigits = Math.abs(hash).toString().slice(-6).padStart(6, "0")
-    }
-    
-    return `FOOD${lastDigits}`
-  }
+    fetchPendingFoods();
+  }, []);
 
   const filteredFoods = useMemo(() => {
-    let result = [...foods]
-    
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim()
-      result = result.filter(food =>
-        food.name.toLowerCase().includes(query) ||
-        food.id.toString().includes(query) ||
-        food.restaurantName?.toLowerCase().includes(query)
-      )
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return foods;
+
+    return foods.filter((food) =>
+      food.itemName?.toLowerCase().includes(query) ||
+      food.restaurantName?.toLowerCase().includes(query) ||
+      food.restaurantId?.toLowerCase().includes(query) ||
+      food.sectionName?.toLowerCase().includes(query) ||
+      food.category?.toLowerCase().includes(query)
+    );
+  }, [foods, searchQuery]);
+
+  const handleApprove = async (food) => {
+    try {
+      setProcessingId(food.id || food._id);
+      await adminAPI.approveGroceryItem(food.id || food._id, {
+        platform: "mofood",
+        restaurantMongoId: food.restaurantMongoId,
+      });
+      toast.success("Food approved successfully");
+      await fetchPendingFoods();
+    } catch (error) {
+      console.error("Error approving food:", error);
+      toast.error(error?.response?.data?.message || "Failed to approve food");
+    } finally {
+      setProcessingId(null);
     }
+  };
 
-    return result
-  }, [foods, searchQuery])
+  const openRejectModal = (food) => {
+    setSelectedFood(food);
+    setRejectReason("");
+    setShowRejectModal(true);
+  };
 
-  const handleDelete = async (id) => {
-    const food = foods.find(f => f.id === id)
-    if (!food) return
-
-    if (!window.confirm(`Are you sure you want to delete "${food.name}"? This action cannot be undone.`)) {
-      return
+  const handleReject = async () => {
+    if (!selectedFood) return;
+    if (!rejectReason.trim()) {
+      toast.error("Rejection reason is required");
+      return;
     }
 
     try {
-      setDeleting(true)
-      
-      // Get the restaurant's menu
-      const menuResponse = await restaurantAPI.getMenuByRestaurantId(food.restaurantId)
-      const menu = menuResponse?.data?.data?.menu || menuResponse?.data?.menu
-      
-      if (!menu || !menu.sections) {
-        throw new Error("Menu not found")
-      }
-
-      // Find and remove the item from the menu structure
-      let itemRemoved = false
-      const updatedSections = menu.sections.map(section => {
-        // Check items in section
-        if (section.items && Array.isArray(section.items)) {
-          const itemIndex = section.items.findIndex(item => 
-            String(item.id) === String(food.id) || 
-            String(item.id) === String(food.originalItem?.id)
-          )
-          if (itemIndex !== -1) {
-            section.items.splice(itemIndex, 1)
-            itemRemoved = true
-          }
-        }
-        
-        // Check items in subsections
-        if (section.subsections && Array.isArray(section.subsections)) {
-          section.subsections = section.subsections.map(subsection => {
-            if (subsection.items && Array.isArray(subsection.items)) {
-              const itemIndex = subsection.items.findIndex(item => 
-                String(item.id) === String(food.id) || 
-                String(item.id) === String(food.originalItem?.id)
-              )
-              if (itemIndex !== -1) {
-                subsection.items.splice(itemIndex, 1)
-                itemRemoved = true
-              }
-            }
-            return subsection
-          })
-        }
-        
-        return section
-      })
-
-      if (!itemRemoved) {
-        throw new Error("Item not found in menu")
-      }
-
-      // Update menu in backend
-      // Note: Since we're admin, we need to use a workaround
-      // The restaurant menu update endpoint requires restaurant authentication
-      // For now, we'll try using the restaurant endpoint directly
-      // TODO: Create admin endpoint: PUT /api/admin/restaurants/:id/menu
-      try {
-        // Try using restaurant menu update endpoint
-        // This might fail if backend doesn't allow admin to update restaurant menus
-        const response = await apiClient.put(
-          `/restaurant/menu`,
-          { sections: updatedSections }
-        )
-        
-        if (!response.data || !response.data.success) {
-          throw new Error(response.data?.message || "Failed to update menu")
-        }
-      } catch (apiError) {
-        // If direct API call fails, we need an admin endpoint
-        // For now, show a helpful error message
-        if (apiError.response?.status === 401 || apiError.response?.status === 403) {
-          throw new Error("Admin cannot directly update restaurant menus. Please contact developer to add admin menu update endpoint.")
-        }
-        throw apiError
-      }
-
-      // Remove from local state
-      setFoods(foods.filter(f => f.id !== id))
-      toast.success("Food item deleted successfully")
+      setProcessingId(selectedFood.id || selectedFood._id);
+      await adminAPI.rejectGroceryItem(selectedFood.id || selectedFood._id, rejectReason.trim(), {
+        platform: "mofood",
+        restaurantMongoId: selectedFood.restaurantMongoId,
+      });
+      toast.success("Food rejected successfully");
+      setShowRejectModal(false);
+      setSelectedFood(null);
+      setRejectReason("");
+      await fetchPendingFoods();
     } catch (error) {
-      console.error("Error deleting food:", error)
-      toast.error(error?.response?.data?.message || "Failed to delete food item")
+      console.error("Error rejecting food:", error);
+      toast.error(error?.response?.data?.message || "Failed to reject food");
     } finally {
-      setDeleting(false)
+      setProcessingId(null);
     }
-  }
+  };
 
   return (
     <div className="p-4 lg:p-6 bg-slate-50 min-h-screen">
-      {/* Header Section */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center">
@@ -262,124 +105,169 @@ export default function FoodsList() {
               <div className="w-2 h-2 bg-white rounded-sm"></div>
             </div>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">Food</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Food Requests</h1>
         </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-slate-900">Food List</h2>
-            <span className="px-3 py-1 rounded-full text-sm font-semibold bg-slate-100 text-slate-700">
+            <h2 className="text-lg font-semibold text-slate-900">Incoming Food Approval Requests</h2>
+            <span className="px-3 py-1 rounded-full text-sm font-semibold bg-orange-100 text-orange-700">
               {filteredFoods.length}
             </span>
           </div>
-
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="relative flex-1 sm:flex-initial min-w-[200px]">
-              <input
-                type="text"
-                placeholder="Ex : Foods"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2.5 w-full text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-              />
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            </div>
+          <div className="relative flex-1 sm:flex-initial min-w-[220px]">
+            <input
+              type="text"
+              placeholder="Search by food, restaurant, section"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 pr-4 py-2.5 w-full text-sm rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+            />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           </div>
         </div>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                  SL
-                </th>
-                <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                  Image
-                </th>
-                <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                  Title
-                </th>
-                <th className="px-6 py-4 text-center text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                  Action
-                </th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">SL</th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">Image</th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">Food</th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">Restaurant</th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">Section</th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">Price</th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">Requested</th>
+                <th className="px-4 py-3 text-center text-[10px] font-bold text-slate-700 uppercase tracking-wider">Action</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-20 text-center">
+                  <td colSpan={8} className="px-6 py-20 text-center">
                     <div className="flex flex-col items-center justify-center">
                       <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-2" />
-                      <p className="text-sm text-slate-500">Loading foods from restaurants...</p>
+                      <p className="text-sm text-slate-500">Loading pending food requests...</p>
                     </div>
                   </td>
                 </tr>
               ) : filteredFoods.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-20 text-center">
-                    <div className="flex flex-col items-center justify-center">
-                      <p className="text-lg font-semibold text-slate-700 mb-1">No Data Found</p>
-                      <p className="text-sm text-slate-500">No food items match your search</p>
-                    </div>
+                  <td colSpan={8} className="px-6 py-20 text-center">
+                    <p className="text-lg font-semibold text-slate-700 mb-1">No pending requests</p>
+                    <p className="text-sm text-slate-500">Newly added foods from restaurant will appear here</p>
                   </td>
                 </tr>
               ) : (
-                filteredFoods.map((food, index) => (
-                  <tr
-                    key={food.id}
-                    className="hover:bg-slate-50 transition-colors"
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm font-medium text-slate-700">{index + 1}</span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-100 flex items-center justify-center">
-                        <img
-                          src={food.image}
-                          alt={food.name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.target.src = "https://via.placeholder.com/40"
-                          }}
-                        />
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-slate-900">{food.name}</span>
-                        <span className="text-xs text-slate-500">ID #{formatFoodId(food.id)}</span>
-                        {food.restaurantName && (
-                          <span className="text-xs text-slate-400 mt-0.5">
-                            {food.restaurantName}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <button
-                        onClick={() => handleDelete(food.id)}
-                        disabled={deleting}
-                        className="p-1.5 rounded text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Delete"
-                      >
-                        {deleting ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-4 h-4" />
-                        )}
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                filteredFoods.map((food, index) => {
+                  const key = food.id || food._id || `${food.restaurantId}-${index}`;
+                  const isProcessing = processingId === key;
+                  return (
+                    <tr key={key} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 text-sm font-medium text-slate-700">{index + 1}</td>
+                      <td className="px-4 py-3">
+                        <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-100 flex items-center justify-center">
+                          <img
+                            src={food.image || "https://via.placeholder.com/40"}
+                            alt={food.itemName || "food"}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.target.src = "https://via.placeholder.com/40";
+                            }}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-slate-900">{food.itemName || "-"}</span>
+                          <span className="text-xs text-slate-500">{food.foodType || food.category || "-"}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col">
+                          <span className="text-sm text-slate-900">{food.restaurantName || "-"}</span>
+                          <span className="text-xs text-slate-500">{food.restaurantId || "-"}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-700">
+                        {food.subsectionName ? `${food.sectionName || "-"} / ${food.subsectionName}` : (food.sectionName || "-")}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-slate-700">Rs {food.price || 0}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600">
+                        {food.requestedAt ? new Date(food.requestedAt).toLocaleString() : "-"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => handleApprove(food)}
+                            disabled={!!processingId}
+                            className="inline-flex items-center justify-center w-8 h-8 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Approve"
+                          >
+                            {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                          </button>
+                          <button
+                            onClick={() => openRejectModal(food)}
+                            disabled={!!processingId}
+                            className="inline-flex items-center justify-center w-8 h-8 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Reject"
+                          >
+                            <XCircle className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {showRejectModal && selectedFood ? (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-lg bg-white shadow-xl border border-slate-200">
+            <div className="px-5 py-4 border-b border-slate-200">
+              <h3 className="text-lg font-semibold text-slate-900">Reject Food</h3>
+              <p className="text-sm text-slate-500 mt-1">Provide a reason for rejecting this food request.</p>
+            </div>
+            <div className="p-5">
+              <p className="text-sm text-slate-700 mb-2">
+                <span className="font-medium">Food:</span> {selectedFood.itemName || "-"}
+              </p>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                rows={4}
+                placeholder="Enter rejection reason..."
+                className="w-full rounded-md border border-slate-300 p-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+              />
+            </div>
+            <div className="px-5 py-4 border-t border-slate-200 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setShowRejectModal(false);
+                  setSelectedFood(null);
+                  setRejectReason("");
+                }}
+                className="px-4 py-2 rounded-md border border-slate-300 text-slate-700 text-sm hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReject}
+                disabled={!!processingId || !rejectReason.trim()}
+                className="px-4 py-2 rounded-md bg-red-600 text-white text-sm hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {processingId ? "Processing..." : "Reject"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
-  )
+  );
 }

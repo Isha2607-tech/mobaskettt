@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, CheckCircle2, XCircle, Eye, Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import {
@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { adminAPI } from "@/lib/api";
 import { toast } from "sonner";
+import alertSound from "@/assets/audio/alert.mp3";
 
 export default function FoodApproval() {
   const [requests, setRequests] = useState([]);
@@ -21,24 +22,89 @@ export default function FoodApproval() {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [processing, setProcessing] = useState(false);
+  const previousPendingCountRef = useRef(null);
+  const userInteractedRef = useRef(false);
+  const audioRef = useRef(null);
+  const isAlarmActiveRef = useRef(false);
 
-  const fetchPendingApprovals = async () => {
+  const stopNotificationAlarm = () => {
+    if (!audioRef.current) return;
+    isAlarmActiveRef.current = false;
+    audioRef.current.pause();
+    audioRef.current.currentTime = 0;
+  };
+
+  const startNotificationAlarm = () => {
     try {
-      setLoading(true);
-      const response = await adminAPI.getPendingFoodApprovals();
+      if (!audioRef.current || !userInteractedRef.current) return;
+      if (isAlarmActiveRef.current) return;
+      isAlarmActiveRef.current = true;
+      audioRef.current.loop = true;
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(() => {
+        isAlarmActiveRef.current = false;
+      });
+    } catch {
+      // ignore browser autoplay/runtime audio errors
+    }
+  };
+
+  const fetchPendingApprovals = async ({ showLoader = true } = {}) => {
+    try {
+      if (showLoader) setLoading(true);
+      const response = await adminAPI.getPendingFoodApprovals({ platform: "mofood" });
       const data = response?.data?.data?.requests || response?.data?.requests || [];
+
+      const previousCount = previousPendingCountRef.current;
+      if ((previousCount === null && data.length > 0) || (previousCount !== null && data.length > previousCount)) {
+        startNotificationAlarm();
+        toast.info("New food approval request received");
+      }
+      if (data.length === 0) {
+        stopNotificationAlarm();
+      }
+
+      previousPendingCountRef.current = data.length;
       setRequests(data);
     } catch (error) {
       console.error("Error fetching order approvals:", error);
       toast.error("Failed to load pending order approvals");
       setRequests([]);
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchPendingApprovals();
+    audioRef.current = new Audio(alertSound);
+    audioRef.current.volume = 0.7;
+
+    const markUserInteraction = () => {
+      userInteractedRef.current = true;
+      if ((previousPendingCountRef.current || 0) > 0) {
+        startNotificationAlarm();
+      }
+    };
+    window.addEventListener("click", markUserInteraction, { passive: true });
+    window.addEventListener("keydown", markUserInteraction, { passive: true });
+    window.addEventListener("touchstart", markUserInteraction, { passive: true });
+
+    fetchPendingApprovals({ showLoader: true });
+
+    const pollTimer = setInterval(() => {
+      fetchPendingApprovals({ showLoader: false });
+    }, 10000);
+
+    return () => {
+      clearInterval(pollTimer);
+      window.removeEventListener("click", markUserInteraction);
+      window.removeEventListener("keydown", markUserInteraction);
+      window.removeEventListener("touchstart", markUserInteraction);
+      if (audioRef.current) {
+        stopNotificationAlarm();
+        audioRef.current = null;
+      }
+    };
   }, []);
 
   const filteredRequests = useMemo(() => {
@@ -58,6 +124,7 @@ export default function FoodApproval() {
     try {
       setProcessing(true);
       await adminAPI.approveFoodItem(request._id || request.id);
+      stopNotificationAlarm();
       toast.success("Order approved successfully");
       await fetchPendingApprovals();
       setShowDetailModal(false);
@@ -79,6 +146,7 @@ export default function FoodApproval() {
     try {
       setProcessing(true);
       await adminAPI.rejectFoodItem(selectedRequest._id || selectedRequest.id, rejectReason);
+      stopNotificationAlarm();
       toast.success("Order rejected");
       await fetchPendingApprovals();
       setShowRejectModal(false);

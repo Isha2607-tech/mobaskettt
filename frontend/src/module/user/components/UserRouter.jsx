@@ -18,6 +18,7 @@ import ProductDetail from "../pages/ProductDetail";
 // Cart
 import CartPage from "@/module/usermain/pages/CartPage";
 import CheckoutPage from "@/module/usermain/pages/CheckoutPage";
+import PaymentPage from "@/module/usermain/pages/PaymentPage";
 
 // Orders
 import OrdersPage from "@/module/usermain/pages/OrdersPage";
@@ -138,6 +139,22 @@ export default function UserRouter() {
           element={
             <ProtectedRoute requiredRole="user" loginPath="/user/auth/sign-in">
               <CheckoutPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/payment"
+          element={
+            <ProtectedRoute requiredRole="user" loginPath="/user/auth/sign-in">
+              <PaymentPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/cart/payment"
+          element={
+            <ProtectedRoute requiredRole="user" loginPath="/user/auth/sign-in">
+              <PaymentPage />
             </ProtectedRoute>
           }
         />

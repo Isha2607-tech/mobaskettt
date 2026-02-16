@@ -743,10 +743,72 @@ export default function ItemDetailsPage() {
     }
   }
 
-  const handleDelete = () => {
-    // Delete logic here
-    console.log("Deleting item:", id)
-    navigate(-1)
+  const handleDelete = async () => {
+    if (!window.confirm("Are you sure you want to delete this item? This cannot be undone.")) {
+      return
+    }
+
+    try {
+      const itemId = String(itemData?.id || id || "").trim()
+      if (!itemId) {
+        toast.error("Cannot delete: item ID not found")
+        return
+      }
+
+      const menuResponse = await restaurantAPI.getMenu()
+      const menu = menuResponse.data?.data?.menu
+      let sections = menu?.sections || []
+      let itemRemoved = false
+
+      for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+        const section = sections[sectionIndex]
+
+        // Check items in section
+        if (section.items && Array.isArray(section.items)) {
+          const itemIndex = section.items.findIndex((item) => {
+            const itemIdStr = String(item.id || item._id || "").trim()
+            return itemIdStr === itemId
+          })
+          if (itemIndex !== -1) {
+            section.items.splice(itemIndex, 1)
+            itemRemoved = true
+            break
+          }
+        }
+
+        // Check items in subsections
+        if (!itemRemoved && section.subsections && Array.isArray(section.subsections)) {
+          for (let subIndex = 0; subIndex < section.subsections.length; subIndex++) {
+            const subsection = section.subsections[subIndex]
+            if (subsection.items && Array.isArray(subsection.items)) {
+              const subItemIndex = subsection.items.findIndex((item) => {
+                const itemIdStr = String(item.id || item._id || "").trim()
+                return itemIdStr === itemId
+              })
+              if (subItemIndex !== -1) {
+                subsection.items.splice(subItemIndex, 1)
+                itemRemoved = true
+                break
+              }
+            }
+          }
+        }
+        if (itemRemoved) break
+      }
+
+      if (!itemRemoved) {
+        toast.error("Item not found in menu")
+        return
+      }
+
+      await restaurantAPI.updateMenu({ sections })
+      toast.success("Item deleted successfully")
+      navigate("/restaurant/hub-menu", { replace: true })
+      window.dispatchEvent(new CustomEvent("foodsChanged"))
+    } catch (error) {
+      console.error("Error deleting item:", error)
+      toast.error(error.response?.data?.message || error.message || "Failed to delete item")
+    }
   }
 
   return (

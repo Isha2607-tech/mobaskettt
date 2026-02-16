@@ -1,10 +1,20 @@
 // src/context/cart-context.jsx
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
+import { toast } from "sonner";
+
+const STORAGE_KEYS = {
+  food: "cart_mofood",
+  grocery: "cart_mogrocery",
+  legacy: "cart",
+};
 
 // Default cart context value to prevent errors during initial render
 const defaultCartContext = {
-  _isProvider: false, // Flag to identify if this is from the actual provider
+  _isProvider: false,
   cart: [],
+  foodCart: [],
+  groceryCart: [],
   items: [],
   itemCount: 0,
   total: 0,
@@ -31,92 +41,176 @@ const defaultCartContext = {
   getFoodCartCount: () => 0,
   getGroceryCartCount: () => 0,
   isGroceryCart: () => false,
+  isGroceryItem: () => false,
 };
 
 const CartContext = createContext(defaultCartContext);
 
-export function CartProvider({ children }) {
-  // Safe init (works with SSR and bad JSON)
-  const [cart, setCart] = useState(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const saved = localStorage.getItem("cart");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
+const normalizeName = (name) => (name ? String(name).trim().toLowerCase() : "");
+
+const detectItemPlatform = (item) => {
+  const normalizedPlatform = String(
+    item?.platform || item?.restaurantPlatform || "",
+  ).toLowerCase();
+
+  if (normalizedPlatform === "mogrocery") return "mogrocery";
+  if (normalizedPlatform === "mofood") return "mofood";
+
+  // Backward-compatible fallback for old cart items.
+  if (
+    item?.restaurantId === "grocery-store" ||
+    String(item?.restaurant || "").toLowerCase().includes("mogrocery")
+  ) {
+    return "mogrocery";
+  }
+
+  return "mofood";
+};
+
+const isGroceryItem = (item) => detectItemPlatform(item) === "mogrocery";
+
+const parseStoredCart = (raw) => {
+  try {
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const keepSingleRestaurant = (items) => {
+  if (!Array.isArray(items) || items.length <= 1) return Array.isArray(items) ? items : [];
+
+  const restaurantIds = items.map((i) => i?.restaurantId).filter(Boolean);
+  const restaurantNames = items.map((i) => i?.restaurant).filter(Boolean);
+  const firstRestaurantId = restaurantIds[0] || null;
+  const firstRestaurantName = restaurantNames[0] || null;
+  const firstRestaurantNameNormalized = normalizeName(firstRestaurantName);
+
+  if (!firstRestaurantId && !firstRestaurantNameNormalized) return items;
+
+  return items.filter((item) => {
+    const itemRestaurantId = item?.restaurantId;
+    const itemRestaurantNameNormalized = normalizeName(item?.restaurant);
+
+    if (firstRestaurantNameNormalized && itemRestaurantNameNormalized) {
+      return itemRestaurantNameNormalized === firstRestaurantNameNormalized;
     }
+
+    if (firstRestaurantId && itemRestaurantId) {
+      return (
+        itemRestaurantId === firstRestaurantId ||
+        String(itemRestaurantId) === String(firstRestaurantId)
+      );
+    }
+
+    return false;
   });
+};
+
+const getActivePlatformFromPath = (pathname = "") => {
+  if (pathname.startsWith("/grocery") || pathname.startsWith("/user/grocery")) {
+    return "mogrocery";
+  }
+  return "mofood";
+};
+
+export function CartProvider({ children }) {
+  const location = useLocation();
+
+  const [initialCarts] = useState(() => {
+    if (typeof window === "undefined") return { food: [], grocery: [] };
+
+    const storedFood = parseStoredCart(localStorage.getItem(STORAGE_KEYS.food));
+    const storedGrocery = parseStoredCart(localStorage.getItem(STORAGE_KEYS.grocery));
+
+    if (storedFood.length > 0 || storedGrocery.length > 0) {
+      return {
+        food: keepSingleRestaurant(storedFood.map((i) => ({ ...i, platform: "mofood" }))),
+        grocery: keepSingleRestaurant(storedGrocery.map((i) => ({ ...i, platform: "mogrocery" }))),
+      };
+    }
+
+    // Migrate old single cart key
+    const legacy = parseStoredCart(localStorage.getItem(STORAGE_KEYS.legacy));
+    const food = legacy
+      .filter((item) => detectItemPlatform(item) === "mofood")
+      .map((item) => ({ ...item, platform: "mofood" }));
+    const grocery = legacy
+      .filter((item) => detectItemPlatform(item) === "mogrocery")
+      .map((item) => ({ ...item, platform: "mogrocery" }));
+
+    return {
+      food: keepSingleRestaurant(food),
+      grocery: keepSingleRestaurant(grocery),
+    };
+  });
+
+  const [foodCart, setFoodCart] = useState(initialCarts.food);
+  const [groceryCart, setGroceryCart] = useState(initialCarts.grocery);
 
   // Track last add event for animation
   const [lastAddEvent, setLastAddEvent] = useState(null);
   // Track last remove event for animation
   const [lastRemoveEvent, setLastRemoveEvent] = useState(null);
 
-  // Persist to localStorage whenever cart changes
+  const activePlatform = getActivePlatformFromPath(location?.pathname || "");
+
+  const activeCart = activePlatform === "mogrocery" ? groceryCart : foodCart;
+
+  // Persist carts to localStorage
   useEffect(() => {
     try {
-      localStorage.setItem("cart", JSON.stringify(cart));
+      localStorage.setItem(STORAGE_KEYS.food, JSON.stringify(foodCart));
+      localStorage.setItem(STORAGE_KEYS.grocery, JSON.stringify(groceryCart));
+      // Keep legacy key for backward compatibility and debug visibility.
+      localStorage.setItem(STORAGE_KEYS.legacy, JSON.stringify([...foodCart, ...groceryCart]));
     } catch {
-      // ignore storage errors (private mode, quota, etc.)
+      // ignore storage errors
     }
-  }, [cart]);
+  }, [foodCart, groceryCart]);
 
   const addToCart = (item, sourcePosition = null) => {
-    setCart((prev) => {
-      // CRITICAL: Validate restaurant consistency
-      // If cart already has items, ensure new item belongs to the same restaurant
-      if (prev.length > 0) {
-        const firstItemRestaurantId = prev[0]?.restaurantId;
-        const firstItemRestaurantName = prev[0]?.restaurant;
-        const newItemRestaurantId = item?.restaurantId;
-        const newItemRestaurantName = item?.restaurant;
+    const itemPlatform = detectItemPlatform(item);
+    const setTargetCart = itemPlatform === "mogrocery" ? setGroceryCart : setFoodCart;
+    const targetCart = itemPlatform === "mogrocery" ? groceryCart : foodCart;
 
-        // Normalize restaurant names for comparison (trim and case-insensitive)
-        const normalizeName = (name) => (name ? name.trim().toLowerCase() : "");
-        const firstRestaurantNameNormalized = normalizeName(
-          firstItemRestaurantName,
-        );
-        const newRestaurantNameNormalized = normalizeName(
-          newItemRestaurantName,
-        );
+    if (!item?.restaurantId && !item?.restaurant) {
+      console.error("Cannot add item: missing restaurant information", item);
+      toast.error("Item is missing restaurant information. Please refresh.");
+      return false;
+    }
 
-        // Check restaurant name first (more reliable than IDs which can have different formats)
-        // If names match, allow it even if IDs differ (same restaurant, different ID format)
-        if (firstRestaurantNameNormalized && newRestaurantNameNormalized) {
-          if (firstRestaurantNameNormalized !== newRestaurantNameNormalized) {
-            console.error("❌ Cannot add item: Restaurant name mismatch!", {
-              cartRestaurantId: firstItemRestaurantId,
-              cartRestaurantName: firstItemRestaurantName,
-              newItemRestaurantId: newItemRestaurantId,
-              newItemRestaurantName: newItemRestaurantName,
-            });
-            throw new Error(
-              `Cart already contains items from "${firstItemRestaurantName}". Please clear cart or complete order first.`,
-            );
-          }
-          // Names match - allow it (even if IDs differ, it's the same restaurant)
-        } else if (firstItemRestaurantId && newItemRestaurantId) {
-          // If names are not available, fallback to ID comparison
-          if (firstItemRestaurantId !== newItemRestaurantId) {
-            console.error(
-              "❌ Cannot add item: Cart contains items from different restaurant!",
-              {
-                cartRestaurantId: firstItemRestaurantId,
-                cartRestaurantName: firstItemRestaurantName,
-                newItemRestaurantId: newItemRestaurantId,
-                newItemRestaurantName: newItemRestaurantName,
-              },
-            );
-            throw new Error(
-              `Cart already contains items from "${firstItemRestaurantName || "another restaurant"}". Please clear cart or complete order first.`,
-            );
-          }
+    // Restaurant consistency only within the same platform cart.
+    if (targetCart.length > 0) {
+      const firstItemRestaurantId = targetCart[0]?.restaurantId;
+      const firstItemRestaurantName = targetCart[0]?.restaurant;
+      const newItemRestaurantId = item?.restaurantId;
+      const newItemRestaurantName = item?.restaurant;
+
+      const firstRestaurantNameNormalized = normalizeName(firstItemRestaurantName);
+      const newRestaurantNameNormalized = normalizeName(newItemRestaurantName);
+
+      if (firstRestaurantNameNormalized && newRestaurantNameNormalized) {
+        if (firstRestaurantNameNormalized !== newRestaurantNameNormalized) {
+          toast.error(
+            `Cart already contains items from "${firstItemRestaurantName}". Please clear cart or complete order first.`,
+          );
+          return false;
+        }
+      } else if (firstItemRestaurantId && newItemRestaurantId) {
+        if (String(firstItemRestaurantId) !== String(newItemRestaurantId)) {
+          toast.error(
+            `Cart already contains items from "${firstItemRestaurantName || "another restaurant"}". Please clear cart or complete order first.`,
+          );
+          return false;
         }
       }
+    }
 
+    setTargetCart((prev) => {
       const existing = prev.find((i) => i.id === item.id);
       if (existing) {
-        // Set last add event for animation when incrementing existing item
         if (sourcePosition) {
           setLastAddEvent({
             product: {
@@ -126,28 +220,20 @@ export function CartProvider({ children }) {
             },
             sourcePosition,
           });
-          // Clear after animation completes (increased delay)
           setTimeout(() => setLastAddEvent(null), 1500);
         }
         return prev.map((i) =>
-          i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i,
+          i.id === item.id ? { ...i, quantity: (i.quantity || 0) + 1 } : i,
         );
       }
 
-      // Validate item has required restaurant info
-      if (!item.restaurantId && !item.restaurant) {
-        console.error(
-          "❌ Cannot add item: Missing restaurant information!",
-          item,
-        );
-        throw new Error(
-          "Item is missing restaurant information. Please refresh the page.",
-        );
-      }
+      const newItem = {
+        ...item,
+        platform: itemPlatform,
+        restaurantPlatform: itemPlatform,
+        quantity: 1,
+      };
 
-      const newItem = { ...item, quantity: 1 };
-
-      // Set last add event for animation if sourcePosition is provided
       if (sourcePosition) {
         setLastAddEvent({
           product: {
@@ -157,12 +243,13 @@ export function CartProvider({ children }) {
           },
           sourcePosition,
         });
-        // Clear after animation completes (increased delay to allow full animation)
         setTimeout(() => setLastAddEvent(null), 1500);
       }
 
       return [...prev, newItem];
     });
+
+    return true;
   };
 
   const removeFromCart = (
@@ -170,10 +257,11 @@ export function CartProvider({ children }) {
     sourcePosition = null,
     productInfo = null,
   ) => {
-    setCart((prev) => {
+    const setTargetCart = activePlatform === "mogrocery" ? setGroceryCart : setFoodCart;
+
+    setTargetCart((prev) => {
       const itemToRemove = prev.find((i) => i.id === itemId);
       if (itemToRemove && sourcePosition && productInfo) {
-        // Set last remove event for animation
         setLastRemoveEvent({
           product: {
             id: productInfo.id || itemToRemove.id,
@@ -186,7 +274,6 @@ export function CartProvider({ children }) {
           },
           sourcePosition,
         });
-        // Clear after animation completes
         setTimeout(() => setLastRemoveEvent(null), 1500);
       }
       return prev.filter((i) => i.id !== itemId);
@@ -199,11 +286,12 @@ export function CartProvider({ children }) {
     sourcePosition = null,
     productInfo = null,
   ) => {
+    const setTargetCart = activePlatform === "mogrocery" ? setGroceryCart : setFoodCart;
+
     if (quantity <= 0) {
-      setCart((prev) => {
+      setTargetCart((prev) => {
         const itemToRemove = prev.find((i) => i.id === itemId);
         if (itemToRemove && sourcePosition && productInfo) {
-          // Set last remove event for animation
           setLastRemoveEvent({
             product: {
               id: productInfo.id || itemToRemove.id,
@@ -216,7 +304,6 @@ export function CartProvider({ children }) {
             },
             sourcePosition,
           });
-          // Clear after animation completes
           setTimeout(() => setLastRemoveEvent(null), 1500);
         }
         return prev.filter((i) => i.id !== itemId);
@@ -224,16 +311,14 @@ export function CartProvider({ children }) {
       return;
     }
 
-    // When quantity decreases (but not to 0), also trigger removal animation
-    setCart((prev) => {
+    setTargetCart((prev) => {
       const existingItem = prev.find((i) => i.id === itemId);
       if (
         existingItem &&
-        quantity < existingItem.quantity &&
+        quantity < (existingItem.quantity || 0) &&
         sourcePosition &&
         productInfo
       ) {
-        // Set last remove event for animation when decreasing quantity
         setLastRemoveEvent({
           product: {
             id: productInfo.id || existingItem.id,
@@ -246,7 +331,6 @@ export function CartProvider({ children }) {
           },
           sourcePosition,
         });
-        // Clear after animation completes
         setTimeout(() => setLastRemoveEvent(null), 1500);
       }
       return prev.map((i) => (i.id === itemId ? { ...i, quantity } : i));
@@ -254,153 +338,70 @@ export function CartProvider({ children }) {
   };
 
   const getCartCount = () =>
-    cart.reduce((total, item) => total + (item.quantity || 0), 0);
+    activeCart.reduce((total, item) => total + (item.quantity || 0), 0);
 
-  const getFoodCartCount = () => {
-    const isGrocery =
-      cart.length > 0 &&
-      (cart[0]?.restaurantId === "grocery-store" ||
-        cart[0]?.restaurant === "MoGrocery");
-    return isGrocery ? 0 : getCartCount();
+  const getFoodCartCount = () =>
+    foodCart.reduce((total, item) => total + (item.quantity || 0), 0);
+
+  const getGroceryCartCount = () =>
+    groceryCart.reduce((total, item) => total + (item.quantity || 0), 0);
+
+  const isGroceryCart = () => activePlatform === "mogrocery" && groceryCart.length > 0;
+
+  const isInCart = (itemId) => activeCart.some((i) => i.id === itemId);
+
+  const getCartItem = (itemId) => activeCart.find((i) => i.id === itemId);
+
+  const clearCart = (platform = activePlatform) => {
+    if (platform === "mogrocery") {
+      setGroceryCart([]);
+      return;
+    }
+    if (platform === "mofood") {
+      setFoodCart([]);
+      return;
+    }
+    setFoodCart([]);
+    setGroceryCart([]);
   };
 
-  const getGroceryCartCount = () => {
-    const isGrocery =
-      cart.length > 0 &&
-      (cart[0]?.restaurantId === "grocery-store" ||
-        cart[0]?.restaurant === "MoGrocery");
-    return isGrocery ? getCartCount() : 0;
-  };
-
-  const isGroceryCart = () => {
-    return (
-      cart.length > 0 &&
-      (cart[0]?.restaurantId === "grocery-store" ||
-        cart[0]?.restaurant === "MoGrocery")
-    );
-  };
-
-  const isInCart = (itemId) => cart.some((i) => i.id === itemId);
-
-  const getCartItem = (itemId) => cart.find((i) => i.id === itemId);
-
-  const clearCart = () => setCart([]);
-
-  // Clean cart to remove items from different restaurants
-  // Keeps only items from the specified restaurant
+  // Keeps only items from one restaurant in food cart.
   const cleanCartForRestaurant = (restaurantId, restaurantName) => {
-    setCart((prev) => {
+    setFoodCart((prev) => {
       if (prev.length === 0) return prev;
 
-      // Normalize restaurant name for comparison
-      const normalizeName = (name) => (name ? name.trim().toLowerCase() : "");
       const targetRestaurantNameNormalized = normalizeName(restaurantName);
 
-      // Filter cart to keep only items from the target restaurant
       const cleanedCart = prev.filter((item) => {
         const itemRestaurantId = item?.restaurantId;
-        const itemRestaurantName = item?.restaurant;
-        const itemRestaurantNameNormalized = normalizeName(itemRestaurantName);
+        const itemRestaurantNameNormalized = normalizeName(item?.restaurant);
 
-        // Check by restaurant name first (more reliable)
         if (targetRestaurantNameNormalized && itemRestaurantNameNormalized) {
-          return (
-            itemRestaurantNameNormalized === targetRestaurantNameNormalized
-          );
+          return itemRestaurantNameNormalized === targetRestaurantNameNormalized;
         }
-        // Fallback to ID comparison
+
         if (restaurantId && itemRestaurantId) {
-          return (
-            itemRestaurantId === restaurantId ||
-            itemRestaurantId === restaurantId.toString() ||
-            itemRestaurantId.toString() === restaurantId
-          );
+          return String(itemRestaurantId) === String(restaurantId);
         }
-        // If no match, remove item
+
         return false;
       });
 
       if (cleanedCart.length !== prev.length) {
-        console.warn(
-          "🧹 Cleaned cart: Removed items from different restaurants",
-          {
-            before: prev.length,
-            after: cleanedCart.length,
-            removed: prev.length - cleanedCart.length,
-          },
-        );
+        console.warn("Cleaned food cart: removed items from different restaurants", {
+          before: prev.length,
+          after: cleanedCart.length,
+          removed: prev.length - cleanedCart.length,
+        });
       }
 
       return cleanedCart;
     });
   };
 
-  // Validate and clean cart on mount/load to prevent multiple restaurant items
-  // This runs only once on initial load to clean up any corrupted cart data from localStorage
-  useEffect(() => {
-    if (cart.length === 0) return;
-
-    // Get unique restaurant IDs and names
-    const restaurantIds = cart.map((item) => item.restaurantId).filter(Boolean);
-    const restaurantNames = cart.map((item) => item.restaurant).filter(Boolean);
-    const uniqueRestaurantIds = [...new Set(restaurantIds)];
-    const uniqueRestaurantNames = [...new Set(restaurantNames)];
-
-    // Normalize restaurant names for comparison
-    const normalizeName = (name) => (name ? name.trim().toLowerCase() : "");
-    const uniqueRestaurantNamesNormalized =
-      uniqueRestaurantNames.map(normalizeName);
-    const uniqueRestaurantNamesSet = new Set(uniqueRestaurantNamesNormalized);
-
-    // Check if cart has items from multiple restaurants
-    if (uniqueRestaurantIds.length > 1 || uniqueRestaurantNamesSet.size > 1) {
-      console.warn(
-        "⚠️ Cart contains items from multiple restaurants. Cleaning cart...",
-        {
-          restaurantIds: uniqueRestaurantIds,
-          restaurantNames: uniqueRestaurantNames,
-        },
-      );
-
-      // Keep items from the first restaurant (most recent or first in cart)
-      const firstRestaurantId = uniqueRestaurantIds[0];
-      const firstRestaurantName = uniqueRestaurantNames[0];
-
-      setCart((prev) => {
-        const normalizeName = (name) => (name ? name.trim().toLowerCase() : "");
-        const firstRestaurantNameNormalized =
-          normalizeName(firstRestaurantName);
-
-        return prev.filter((item) => {
-          const itemRestaurantId = item?.restaurantId;
-          const itemRestaurantName = item?.restaurant;
-          const itemRestaurantNameNormalized =
-            normalizeName(itemRestaurantName);
-
-          // Check by restaurant name first
-          if (firstRestaurantNameNormalized && itemRestaurantNameNormalized) {
-            return (
-              itemRestaurantNameNormalized === firstRestaurantNameNormalized
-            );
-          }
-          // Fallback to ID comparison
-          if (firstRestaurantId && itemRestaurantId) {
-            return (
-              itemRestaurantId === firstRestaurantId ||
-              itemRestaurantId === firstRestaurantId.toString() ||
-              itemRestaurantId.toString() === firstRestaurantId
-            );
-          }
-          return false;
-        });
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run once on mount to clean up localStorage data
-
-  // Transform cart to match AddToCartAnimation expected structure
+  // Transform active cart to match AddToCartAnimation expected structure
   const cartForAnimation = useMemo(() => {
-    const items = cart.map((item) => ({
+    const items = activeCart.map((item) => ({
       product: {
         id: item.id,
         name: item.name,
@@ -409,11 +410,11 @@ export function CartProvider({ children }) {
       quantity: item.quantity || 1,
     }));
 
-    const itemCount = cart.reduce(
+    const itemCount = activeCart.reduce(
       (total, item) => total + (item.quantity || 0),
       0,
     );
-    const total = cart.reduce(
+    const total = activeCart.reduce(
       (sum, item) => sum + (item.price || 0) * (item.quantity || 0),
       0,
     );
@@ -423,59 +424,46 @@ export function CartProvider({ children }) {
       itemCount,
       total,
     };
-  }, [cart]);
+  }, [activeCart]);
 
-  const value = useMemo(
-    () => ({
-      _isProvider: true, // Flag to identify this is from the actual provider
-      // Keep original cart array for backward compatibility
-      cart,
-      // Add animation-compatible structure
-      items: cartForAnimation.items,
-      itemCount: cartForAnimation.itemCount,
-      total: cartForAnimation.total,
-      lastAddEvent,
-      lastRemoveEvent,
-      addToCart,
-      removeFromCart,
-      updateQuantity,
-      getCartCount,
-      isInCart,
-      getCartItem,
-      clearCart,
-      cleanCartForRestaurant,
-      getFoodCartCount,
-      getGroceryCartCount,
-      isGroceryCart,
-    }),
-    [
-      cart,
-      cartForAnimation,
-      lastAddEvent,
-      lastRemoveEvent,
-      getFoodCartCount,
-      getGroceryCartCount,
-      isGroceryCart,
-    ],
-  );
+  const value = {
+    _isProvider: true,
+    cart: activeCart,
+    foodCart,
+    groceryCart,
+    items: cartForAnimation.items,
+    itemCount: cartForAnimation.itemCount,
+    total: cartForAnimation.total,
+    lastAddEvent,
+    lastRemoveEvent,
+    addToCart,
+    removeFromCart,
+    updateQuantity,
+    getCartCount,
+    isInCart,
+    getCartItem,
+    clearCart,
+    cleanCartForRestaurant,
+    getFoodCartCount,
+    getGroceryCartCount,
+    isGroceryCart,
+    isGroceryItem,
+  };
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }
 
 export function useCart() {
   const context = useContext(CartContext);
-  // Check if context is from the actual provider by checking the _isProvider flag
   if (!context || context._isProvider !== true) {
-    // In development, log a warning but don't throw to prevent crashes
-    if (process.env.NODE_ENV === "development") {
+    if (import.meta.env.DEV) {
       console.warn(
-        "⚠️ useCart called outside CartProvider. Using default values.",
+        "useCart called outside CartProvider. Using default values.",
       );
       console.warn(
-        "💡 Make sure the component is rendered inside UserLayout which provides CartProvider.",
+        "Make sure the component is rendered inside UserLayout which provides CartProvider.",
       );
     }
-    // Return default context instead of throwing
     return defaultCartContext;
   }
   return context;

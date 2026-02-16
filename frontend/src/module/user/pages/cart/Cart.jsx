@@ -537,7 +537,7 @@ export default function Cart() {
 
         const response = await orderAPI.calculateOrder({
           items,
-          restaurantId: restaurantData?.restaurantId || restaurantData?._id || restaurantId || null,
+          restaurantId: restaurantData?._id || restaurantData?.restaurantId || restaurantId || null,
           deliveryAddress: defaultAddress,
           couponCode: appliedCoupon?.code || couponCode || null,
           deliveryFleet: deliveryFleet || 'standard'
@@ -702,7 +702,7 @@ export default function Cart() {
 
           const response = await orderAPI.calculateOrder({
             items,
-            restaurantId: restaurantData?.restaurantId || restaurantData?._id || restaurantId || null,
+            restaurantId: restaurantData?._id || restaurantData?.restaurantId || restaurantId || null,
             deliveryAddress: defaultAddress,
             couponCode: coupon.code,
             deliveryFleet: deliveryFleet || 'standard'
@@ -738,7 +738,7 @@ export default function Cart() {
 
           const response = await orderAPI.calculateOrder({
             items,
-            restaurantId: restaurantData?.restaurantId || restaurantData?._id || restaurantId || null,
+            restaurantId: restaurantData?._id || restaurantData?.restaurantId || restaurantId || null,
             deliveryAddress: defaultAddress,
             couponCode: null,
             deliveryFleet: deliveryFleet || 'standard'
@@ -813,7 +813,7 @@ export default function Cart() {
       
       // CRITICAL: Validate restaurant ID before placing order
       // Ensure we're using the correct restaurant from restaurantData (most reliable)
-      const finalRestaurantId = restaurantData?.restaurantId || restaurantData?._id || null;
+      const finalRestaurantId = restaurantData?._id || restaurantData?.restaurantId || null;
       const finalRestaurantName = restaurantData?.name || null;
       
       if (!finalRestaurantId) {

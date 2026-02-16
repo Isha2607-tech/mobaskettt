@@ -188,7 +188,7 @@ export default function AdminRouter() {
         <Route path="zone-setup/add" element={<AddZone />} />
         <Route path="zone-setup/edit/:id" element={<AddZone />} />
         <Route path="zone-setup/view/:id" element={<ViewZone />} />
-        <Route path="food-approval" element={<PlatformAwareRoute mofoodComponent={FoodApproval} mogroceryComponent={GroceryApproval} />} />
+        <Route path="food-approval" element={<FoodApproval />} />
         <Route path="grocery-approval" element={<GroceryApproval />} />
         {/* Restaurants/Stores */}
         <Route path="restaurants" element={<PlatformAwareRoute mofoodComponent={RestaurantsList} mogroceryComponent={GroceryStoresList} />} />

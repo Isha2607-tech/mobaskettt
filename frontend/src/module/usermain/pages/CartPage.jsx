@@ -21,7 +21,7 @@ import { useCart } from "../../user/context/CartContext";
 
 export default function CartPage() {
   const navigate = useNavigate();
-  const { cart, updateQuantity, removeFromCart, total } = useCart();
+  const { cart, updateQuantity, removeFromCart, total, isGroceryItem } = useCart();
   const [deliveryOptions, setDeliveryOptions] = useState({
     deliveryType: "now",
     deliveryDate: null,
@@ -29,10 +29,7 @@ export default function CartPage() {
   });
 
   // Filter food items only (exclude grocery items)
-  const cartItems = cart.filter(
-    (item) =>
-      item.restaurantId !== "grocery-store" && item.restaurant !== "MoGrocery",
-  );
+  const cartItems = cart.filter((item) => !isGroceryItem(item));
 
   const [discountCode, setDiscountCode] = useState("");
 

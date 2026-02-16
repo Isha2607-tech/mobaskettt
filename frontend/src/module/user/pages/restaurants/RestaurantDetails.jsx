@@ -461,11 +461,11 @@ export default function RestaurantDetails() {
           // Handle both dining restaurant and regular restaurant data structures
           const transformedRestaurant = {
             id:
-              actualRestaurant?.restaurantId ||
               actualRestaurant?._id ||
+              actualRestaurant?.restaurantId ||
               actualRestaurant?.id ||
-              apiRestaurant?.restaurantId ||
               apiRestaurant?._id ||
+              apiRestaurant?.restaurantId ||
               null,
             name:
               actualRestaurant?.name ||
@@ -597,6 +597,7 @@ export default function RestaurantDetails() {
               : [],
             // Menu sections for display (will be populated from menu API)
             menuSections: [],
+            platform: actualRestaurant?.platform || apiRestaurant?.platform || "mofood",
             // Availability fields for grayscale styling
             isActive: actualRestaurant?.isActive !== false, // Default to true if not specified
             isAcceptingOrders: actualRestaurant?.isAcceptingOrders !== false, // Default to true if not specified
@@ -1061,10 +1062,13 @@ export default function RestaurantDetails() {
     // Note: We don't block cart operations based on restaurant availability
     // Only block if user is out of service zone
 
+    // Use stable item id (API may return id or _id)
+    const stableItemId = String(item.id || item._id || `item-${Date.now()}-${Math.random()}`);
+
     // Update local state
     setQuantities((prev) => ({
       ...prev,
-      [item.id]: newQuantity,
+      [stableItemId]: newQuantity,
     }));
 
     // CRITICAL: Validate restaurant data before adding to cart
@@ -1078,7 +1082,7 @@ export default function RestaurantDetails() {
 
     // Ensure we have a valid restaurantId
     const validRestaurantId =
-      restaurant?.restaurantId || restaurant?._id || restaurant?.id;
+      restaurant?._id || restaurant?.restaurantId || restaurant?.id;
     if (!validRestaurantId) {
       console.error("❌ Cannot add item to cart: Restaurant ID is missing!", {
         restaurant: restaurant,
@@ -1101,15 +1105,17 @@ export default function RestaurantDetails() {
 
     // Prepare cart item with all required properties
     const cartItem = {
-      id: item.id,
+      id: stableItemId,
       name: item.name,
       price: item.price,
       image: item.image,
       restaurant: restaurant.name, // Use restaurant.name directly (already validated)
       restaurantId: validRestaurantId, // Use validated restaurantId
+      platform: "mofood",
+      restaurantPlatform: "mofood",
       description: item.description,
       originalPrice: item.originalPrice,
-      isVeg: item.isVeg !== false, // Add isVeg property
+      isVeg: getItemDietType(item) === "veg",
     };
 
     // Get source position for animation from event target
@@ -1150,13 +1156,13 @@ export default function RestaurantDetails() {
     if (newQuantity <= 0) {
       // Pass sourcePosition and product info for removal animation
       const productInfo = {
-        id: item.id,
+        id: stableItemId,
         name: item.name,
         imageUrl: item.image,
       };
-      removeFromCart(item.id, sourcePosition, productInfo);
+      removeFromCart(stableItemId, sourcePosition, productInfo);
     } else {
-      const existingCartItem = getCartItem(item.id);
+      const existingCartItem = getCartItem(stableItemId);
       if (existingCartItem) {
         // Prepare product info for animation
         const productInfo = {
@@ -1170,25 +1176,28 @@ export default function RestaurantDetails() {
           try {
             addToCart(cartItem, sourcePosition);
             if (newQuantity > existingCartItem.quantity + 1) {
-              updateQuantity(item.id, newQuantity);
+              updateQuantity(stableItemId, newQuantity);
             }
           } catch (error) {
             // Handle restaurant mismatch error
             console.error("❌ Error adding item to cart:", error);
-            toast.error(
-              error.message ||
-                "Cannot add item from different restaurant. Please clear cart first.",
-            );
+            const fallbackMessage = "Cannot add item from different restaurant. Please clear cart first.";
+            const normalizedError = String(error?.message || "").toLowerCase();
+            if (normalizedError.includes("cannot mix")) {
+              toast.error("Your cart has grocery items. Clear cart to add MoFood items.");
+            } else {
+              toast.error(error.message || fallbackMessage);
+            }
             return; // Don't update quantity if add failed
           }
         }
         // If decreasing quantity, trigger removal animation with sourcePosition
         else if (newQuantity < existingCartItem.quantity && sourcePosition) {
-          updateQuantity(item.id, newQuantity, sourcePosition, productInfo);
+          updateQuantity(stableItemId, newQuantity, sourcePosition, productInfo);
         }
         // Otherwise just update quantity without animation
         else {
-          updateQuantity(item.id, newQuantity);
+          updateQuantity(stableItemId, newQuantity);
         }
       } else {
         // Add to cart first (adds with quantity 1), then update to desired quantity
@@ -1196,15 +1205,18 @@ export default function RestaurantDetails() {
         try {
           addToCart(cartItem, sourcePosition);
           if (newQuantity > 1) {
-            updateQuantity(item.id, newQuantity);
+            updateQuantity(stableItemId, newQuantity);
           }
         } catch (error) {
           // Handle restaurant mismatch error
           console.error("❌ Error adding item to cart:", error);
-          toast.error(
-            error.message ||
-              "Cannot add item from different restaurant. Please clear cart first.",
-          );
+          const fallbackMessage = "Cannot add item from different restaurant. Please clear cart first.";
+          const normalizedError = String(error?.message || "").toLowerCase();
+          if (normalizedError.includes("cannot mix")) {
+            toast.error("Your cart has grocery items. Clear cart to add MoFood items.");
+          } else {
+            toast.error(error.message || fallbackMessage);
+          }
         }
       }
     }
@@ -1261,7 +1273,7 @@ export default function RestaurantDetails() {
   // Handle bookmark click
   const handleBookmarkClick = (item) => {
     const restaurantId =
-      restaurant?.restaurantId || restaurant?._id || restaurant?.id;
+      restaurant?._id || restaurant?.restaurantId || restaurant?.id;
     if (!restaurantId) {
       toast.error("Restaurant information is missing");
       return;
@@ -1375,7 +1387,7 @@ export default function RestaurantDetails() {
   // Handle share click
   const handleShareClick = async (item) => {
     const restaurantId =
-      restaurant?.restaurantId || restaurant?._id || restaurant?.id;
+      restaurant?._id || restaurant?.restaurantId || restaurant?.id;
     const dishId = item.id || item._id;
     const restaurantSlug = restaurant?.slug || slug || "";
 
@@ -1434,6 +1446,25 @@ export default function RestaurantDetails() {
     setShowItemDetail(true);
   };
 
+  const getItemDietType = (item) => {
+    const normalizedFoodType = String(item?.foodType || "")
+      .toLowerCase()
+      .replace(/[\s_-]/g, "");
+
+    if (normalizedFoodType === "veg" || normalizedFoodType === "vegetarian") {
+      return "veg";
+    }
+    if (
+      normalizedFoodType === "nonveg" ||
+      normalizedFoodType === "nonvegetarian"
+    ) {
+      return "non-veg";
+    }
+    if (item?.isVeg === true) return "veg";
+    if (item?.isVeg === false) return "non-veg";
+    return "unknown";
+  };
+
   // Helper function to calculate final price after discount
   const getFinalPrice = (item) => {
     // If discount exists, calculate from originalPrice, otherwise use price directly
@@ -1457,6 +1488,8 @@ export default function RestaurantDetails() {
     if (!items) return items;
 
     return items.filter((item) => {
+      const itemDietType = getItemDietType(item);
+
       // Under 250 filter (when coming from Under 250 page)
       if (showOnlyUnder250) {
         const finalPrice = getFinalPrice(item);
@@ -1473,17 +1506,17 @@ export default function RestaurantDetails() {
       // VegMode filter - when vegMode is ON, show only Veg items
       // When vegMode is false/null/undefined, show all items (Veg and Non-Veg)
       if (vegMode === true) {
-        if (item.foodType !== "Veg") return false;
+        if (itemDietType !== "veg") return false;
       }
 
       // Veg/Non-veg filter (local filter override)
       if (filters.vegNonVeg === "veg") {
         // Show only veg items
-        if (item.foodType !== "Veg") return false;
+        if (itemDietType !== "veg") return false;
       }
       if (filters.vegNonVeg === "non-veg") {
         // Show only non-veg items
-        if (item.foodType !== "Non-Veg") return false;
+        if (itemDietType !== "non-veg") return false;
       }
 
       return true;
@@ -1952,9 +1985,9 @@ export default function RestaurantDetails() {
                         <div className="space-y-0">
                           {sortMenuItems(filterMenuItems(section.items)).map(
                             (item) => {
-                              const quantity = quantities[item.id] || 0;
+                              const quantity = quantities[item.id || item._id] || 0;
                               // Determine veg/non-veg based on foodType
-                              const isVeg = item.foodType === "Veg";
+                              const isVeg = getItemDietType(item) === "veg";
 
                               // Debug: Log preparationTime for troubleshooting
                               if (item.preparationTime) {
@@ -2262,9 +2295,10 @@ export default function RestaurantDetails() {
                                           filterMenuItems(subsection.items),
                                         ).map((item) => {
                                           const quantity =
-                                            quantities[item.id] || 0;
+                                            quantities[item.id || item._id] || 0;
                                           // Determine veg/non-veg based on foodType
-                                          const isVeg = item.foodType === "Veg";
+                                          const isVeg =
+                                            getItemDietType(item) === "veg";
 
                                           // Debug: Log preparationTime for troubleshooting
                                           if (item.preparationTime) {
@@ -3331,14 +3365,14 @@ export default function RestaurantDetails() {
                                 selectedItem,
                                 Math.max(
                                   0,
-                                  (quantities[selectedItem.id] || 0) - 1,
+                                  (quantities[selectedItem.id || selectedItem._id] || 0) - 1,
                                 ),
                                 e,
                               );
                             }
                           }}
                           disabled={
-                            (quantities[selectedItem.id] || 0) === 0 ||
+                            (quantities[selectedItem.id || selectedItem._id] || 0) === 0 ||
                             shouldShowGrayscale
                           }
                           className={`${
@@ -3356,14 +3390,14 @@ export default function RestaurantDetails() {
                               : "text-gray-900 dark:text-white"
                           }`}
                         >
-                          {quantities[selectedItem.id] || 0}
+                          {quantities[selectedItem.id || selectedItem._id] || 0}
                         </span>
                         <button
                           onClick={(e) => {
                             if (!shouldShowGrayscale) {
                               updateItemQuantity(
                                 selectedItem,
-                                (quantities[selectedItem.id] || 0) + 1,
+                                (quantities[selectedItem.id || selectedItem._id] || 0) + 1,
                                 e,
                               );
                             }
@@ -3390,7 +3424,7 @@ export default function RestaurantDetails() {
                           if (!shouldShowGrayscale) {
                             updateItemQuantity(
                               selectedItem,
-                              (quantities[selectedItem.id] || 0) + 1,
+                              (quantities[selectedItem.id || selectedItem._id] || 0) + 1,
                               e,
                             );
                             setShowItemDetail(false);
@@ -3825,6 +3859,7 @@ export default function RestaurantDetails() {
         bottomOffset={150}
         linkTo="/cart"
         hideOnPages={true}
+        hideWhenGroceryCart={true}
       />
     </AnimatedPage>
   );

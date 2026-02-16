@@ -44,7 +44,7 @@ const resolveRestaurantForOrder = async (order) => {
   }).lean();
 };
 
-const triggerDeliveryBroadcastForApprovedGroceryOrder = async (order, restaurantDoc) => {
+const triggerDeliveryBroadcastForApprovedOrder = async (order, restaurantDoc) => {
   try {
     if (!order || order.status === 'cancelled' || order.deliveryPartnerId) return;
 
@@ -132,7 +132,7 @@ const triggerDeliveryBroadcastForApprovedGroceryOrder = async (order, restaurant
       await notifyMultipleDeliveryBoys(populatedOrder, [anyDeliveryBoy.deliveryPartnerId], 'immediate');
     }
   } catch (error) {
-    logger.error(`Failed to trigger delivery broadcast for grocery order ${order?.orderId}: ${error.message}`);
+    logger.error(`Failed to trigger delivery broadcast for approved order ${order?.orderId}: ${error.message}`);
   }
 };
 
@@ -263,7 +263,6 @@ export const approveFoodItem = asyncHandler(async (req, res) => {
     }
 
     const restaurantDoc = await resolveRestaurantForOrder(order);
-    const isMoGroceryOrder = restaurantDoc?.platform === 'mogrocery';
 
     order.adminApproval = {
       status: 'approved',
@@ -272,25 +271,22 @@ export const approveFoodItem = asyncHandler(async (req, res) => {
       reviewedBy: adminId || null
     };
 
-    // For MoGrocery, admin approval acts as acceptance and should open delivery assignment flow.
-    if (isMoGroceryOrder) {
-      order.status = 'preparing';
-      if (!order.tracking?.confirmed?.status) {
-        order.tracking.confirmed = { status: true, timestamp: new Date() };
-      }
-      order.tracking.preparing = { status: true, timestamp: new Date() };
+    // Admin approval acts as acceptance and should open delivery assignment flow
+    // for both MoFood and MoGrocery.
+    order.status = 'preparing';
+    if (!order.tracking?.confirmed?.status) {
+      order.tracking.confirmed = { status: true, timestamp: new Date() };
     }
+    order.tracking.preparing = { status: true, timestamp: new Date() };
 
     await order.save();
 
-    if (isMoGroceryOrder) {
-      try {
-        await notifyRestaurantOrderUpdate(order._id.toString(), 'preparing');
-      } catch (notifError) {
-        logger.error(`Failed to emit preparing update for grocery order ${order.orderId}: ${notifError.message}`);
-      }
-      void triggerDeliveryBroadcastForApprovedGroceryOrder(order, restaurantDoc);
+    try {
+      await notifyRestaurantOrderUpdate(order._id.toString(), 'preparing');
+    } catch (notifError) {
+      logger.error(`Failed to emit preparing update for approved order ${order.orderId}: ${notifError.message}`);
     }
+    void triggerDeliveryBroadcastForApprovedOrder(order, restaurantDoc);
 
     logger.info(`Order approved by admin: ${order.orderId}`, {
       orderId: order.orderId,

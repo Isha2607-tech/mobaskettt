@@ -60,20 +60,70 @@ export const getOrders = asyncHandler(async (req, res) => {
     const delivery = req.delivery;
     const { status, page = 1, limit = 20, includeDelivered } = req.query;
 
+    const deliveryIdString = delivery._id.toString();
+    const deliveryIdObject = mongoose.Types.ObjectId.isValid(deliveryIdString)
+      ? new mongoose.Types.ObjectId(deliveryIdString)
+      : null;
+
+    // Orders visible to this delivery partner:
+    // 1) Already assigned orders
+    // 2) Unassigned orders where this delivery partner was notified via priority/expanded lists
+    const visibleOrdersQuery = {
+      $or: [
+        { deliveryPartnerId: delivery._id },
+        {
+          $and: [
+            {
+              $or: [
+                { deliveryPartnerId: { $exists: false } },
+                { deliveryPartnerId: null }
+              ]
+            },
+            { status: { $in: ['preparing', 'ready'] } },
+            {
+              $or: [
+                {
+                  'assignmentInfo.priorityDeliveryPartnerIds': {
+                    $in: deliveryIdObject ? [deliveryIdString, deliveryIdObject] : [deliveryIdString]
+                  }
+                },
+                {
+                  'assignmentInfo.expandedDeliveryPartnerIds': {
+                    $in: deliveryIdObject ? [deliveryIdString, deliveryIdObject] : [deliveryIdString]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+
     // Build query
-    const query = { deliveryPartnerId: delivery._id };
+    let query = visibleOrdersQuery;
 
     if (status) {
-      query.status = status;
+      query = {
+        $and: [
+          visibleOrdersQuery,
+          { status }
+        ]
+      };
     } else {
       // By default, exclude delivered and cancelled orders unless explicitly requested
       if (includeDelivered !== 'true' && includeDelivered !== true) {
-        query.status = { $nin: ['delivered', 'cancelled'] };
-        // Also exclude orders with completed delivery phase
-        query.$or = [
-          { 'deliveryState.currentPhase': { $ne: 'completed' } },
-          { 'deliveryState.currentPhase': { $exists: false } }
-        ];
+        query = {
+          $and: [
+            visibleOrdersQuery,
+            { status: { $nin: ['delivered', 'cancelled'] } },
+            {
+              $or: [
+                { 'deliveryState.currentPhase': { $ne: 'completed' } },
+                { 'deliveryState.currentPhase': { $exists: false } }
+              ]
+            }
+          ]
+        };
       }
     }
 
