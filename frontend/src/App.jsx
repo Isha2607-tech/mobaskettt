@@ -120,34 +120,12 @@ export default function App() {
   const location = useLocation();
 
   useEffect(() => {
-    const pathname = location.pathname || "";
-    const shouldAskLocationPermission =
-      pathname.startsWith("/delivery") ||
-      pathname.startsWith("/restaurant") ||
-      pathname === "/home" ||
-      pathname.startsWith("/home/");
-
-    if (!shouldAskLocationPermission || typeof window === "undefined") {
-      return;
-    }
-
-    if (!("geolocation" in navigator)) {
-      return;
-    }
-
-    const sessionKey = `locationPermissionAsked:${pathname.split("/")[1] || "home"}`;
-    if (sessionStorage.getItem(sessionKey) === "true") {
-      return;
-    }
+    if (typeof window === "undefined" || !("geolocation" in navigator)) return;
 
     const requestLocationPermission = () => {
       navigator.geolocation.getCurrentPosition(
-        () => {
-          sessionStorage.setItem(sessionKey, "true");
-        },
-        () => {
-          sessionStorage.setItem(sessionKey, "true");
-        },
+        () => {},
+        () => {},
         {
           enableHighAccuracy: false,
           timeout: 10000,
@@ -156,29 +134,12 @@ export default function App() {
       );
     };
 
-    // Ask only when browser reports prompt state; fallback to requesting directly.
-    if (navigator.permissions?.query) {
-      navigator.permissions
-        .query({ name: "geolocation" })
-        .then((result) => {
-          if (result.state === "prompt") {
-            requestLocationPermission();
-            return;
-          }
-          if (result.state === "granted") {
-            sessionStorage.setItem(sessionKey, "true");
-            return;
-          }
-          // denied
-          sessionStorage.setItem(sessionKey, "true");
-        })
-        .catch(() => {
-          requestLocationPermission();
-        });
-      return;
-    }
-
+    // Explicit request on app open + every route navigation.
     requestLocationPermission();
+
+    // Some WebView wrappers delay permission bridge wiring on first paint.
+    const retryTimer = window.setTimeout(requestLocationPermission, 700);
+    return () => window.clearTimeout(retryTimer);
   }, [location.pathname]);
 
   return (
