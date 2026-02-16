@@ -28,6 +28,7 @@ export const sidebarMenuData = [
         icon: "Utensils",
         subItems: [
           { label: "Restaurant Foods List", path: "/admin/foods" },
+          { label: "Menu", path: "/admin/food/menu" },
           { label: "Restaurant Addons List", path: "/admin/addons" },
         ],
       },

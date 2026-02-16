@@ -28,6 +28,7 @@ import RestaurantsBulkImport from "../pages/restaurant/RestaurantsBulkImport";
 import RestaurantsBulkExport from "../pages/restaurant/RestaurantsBulkExport";
 // Food Management
 import FoodsList from "../pages/foods/FoodsList";
+import FoodMenuManager from "../pages/foods/FoodMenuManager";
 import AddonsList from "../pages/addons/AddonsList";
 // Grocery Management
 import GroceryProductsList from "../pages/grocery/GroceryProductsList";
@@ -210,6 +211,7 @@ export default function AdminRouter() {
         {/* Foods */}
         <Route path="foods" element={<PlatformAwareRoute mofoodComponent={FoodsList} mogroceryComponent={GroceryProductsList} />} />
         <Route path="food/list" element={<PlatformAwareRoute mofoodComponent={FoodsList} mogroceryComponent={GroceryProductsList} />} />
+        <Route path="food/menu" element={<FoodMenuManager />} />
         {/* Addons */}
         <Route path="addons" element={<PlatformAwareRoute mofoodComponent={AddonsList} mogroceryComponent={GroceryAddonsList} />} />
         

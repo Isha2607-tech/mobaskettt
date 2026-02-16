@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { restaurantAPI, diningAPI } from "@/lib/api";
+import { restaurantAPI, diningAPI, orderAPI } from "@/lib/api";
 import { API_BASE_URL } from "@/lib/api/config";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -690,40 +690,29 @@ export default function RestaurantDetails() {
               ) {
                 const menuSections = menuResponse.data.data.menu.sections || [];
 
-                // Collect all recommended items from all sections
-                // Only include items that are both recommended (isRecommended === true) AND available (isAvailable !== false)
-                const recommendedItems = [];
+                const normalizeText = (value) =>
+                  String(value || "")
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, " ")
+                    .trim();
+                const normalizeId = (value) =>
+                  String(value || "").trim().toLowerCase();
+
+                const availableMenuItems = [];
                 menuSections.forEach((section) => {
-                  // Check direct items - only include if isRecommended is explicitly true (strict check) AND item is available
-                  if (section.items && Array.isArray(section.items)) {
+                  if (Array.isArray(section.items)) {
                     section.items.forEach((item) => {
-                      // Strict check: isRecommended must be exactly boolean true
-                      // This will exclude: false, undefined, null, 0, "", and any other falsy values
-                      if (
-                        item.isRecommended === true &&
-                        typeof item.isRecommended === "boolean" &&
-                        item.isAvailable !== false
-                      ) {
-                        recommendedItems.push(item);
+                      if (item?.isAvailable !== false) {
+                        availableMenuItems.push(item);
                       }
                     });
                   }
-                  // Check subsection items - only include if isRecommended is explicitly true (strict check) AND item is available
-                  if (
-                    section.subsections &&
-                    Array.isArray(section.subsections)
-                  ) {
+                  if (Array.isArray(section.subsections)) {
                     section.subsections.forEach((subsection) => {
-                      if (subsection.items && Array.isArray(subsection.items)) {
+                      if (Array.isArray(subsection.items)) {
                         subsection.items.forEach((item) => {
-                          // Strict check: isRecommended must be exactly boolean true
-                          // This will exclude: false, undefined, null, 0, "", and any other falsy values
-                          if (
-                            item.isRecommended === true &&
-                            typeof item.isRecommended === "boolean" &&
-                            item.isAvailable !== false
-                          ) {
-                            recommendedItems.push(item);
+                          if (item?.isAvailable !== false) {
+                            availableMenuItems.push(item);
                           }
                         });
                       }
@@ -731,16 +720,84 @@ export default function RestaurantDetails() {
                   }
                 });
 
-                // Debug log to verify recommended items and their isRecommended values
-                console.log(
-                  "Recommended items collected:",
-                  recommendedItems.map((item) => ({
-                    name: item.name,
-                    isRecommended: item.isRecommended,
-                    isRecommendedType: typeof item.isRecommended,
-                    preparationTime: item.preparationTime,
-                  })),
-                );
+                const itemById = new Map();
+                const itemByName = new Map();
+                availableMenuItems.forEach((item) => {
+                  const itemId = normalizeId(item?.id || item?._id);
+                  const itemName = normalizeText(item?.name);
+                  if (itemId && !itemById.has(itemId)) itemById.set(itemId, item);
+                  if (itemName && !itemByName.has(itemName)) itemByName.set(itemName, item);
+                });
+
+                let personalizedRecommendedItems = [];
+                try {
+                  const ordersResponse = await orderAPI.getOrders({ limit: 200, page: 1 });
+                  const ordersData =
+                    ordersResponse?.data?.data?.orders ||
+                    ordersResponse?.data?.orders ||
+                    (Array.isArray(ordersResponse?.data?.data)
+                      ? ordersResponse.data.data
+                      : []);
+
+                  const targetRestaurantId = normalizeId(restaurantIdForMenu);
+                  const targetRestaurantName = normalizeText(transformedRestaurant?.name);
+
+                  const itemScore = new Map();
+                  const addScore = (key, item) => {
+                    if (!key || !item) return;
+                    const current = itemScore.get(key) || { item, score: 0 };
+                    current.score += 1;
+                    itemScore.set(key, current);
+                  };
+
+                  ordersData
+                    .filter((order) => {
+                      const orderRestaurantId = normalizeId(
+                        order?.restaurantId?._id || order?.restaurantId || order?.restaurant || order?.restaurantName
+                      );
+                      const orderRestaurantName = normalizeText(
+                        order?.restaurantId?.name || order?.restaurant || order?.restaurantName
+                      );
+                      return (
+                        (targetRestaurantId && orderRestaurantId === targetRestaurantId) ||
+                        (targetRestaurantName && orderRestaurantName === targetRestaurantName)
+                      );
+                    })
+                    .forEach((order) => {
+                      const orderItems = Array.isArray(order?.items) ? order.items : [];
+                      orderItems.forEach((orderedItem) => {
+                        const orderedIds = [
+                          orderedItem?.itemId,
+                          orderedItem?.menuItemId,
+                          orderedItem?._id,
+                          orderedItem?.id,
+                        ]
+                          .map(normalizeId)
+                          .filter(Boolean);
+                        const orderedName = normalizeText(
+                          orderedItem?.name || orderedItem?.foodName
+                        );
+
+                        let matched = false;
+                        for (const orderedId of orderedIds) {
+                          if (itemById.has(orderedId)) {
+                            addScore(orderedId, itemById.get(orderedId));
+                            matched = true;
+                            break;
+                          }
+                        }
+                        if (!matched && orderedName && itemByName.has(orderedName)) {
+                          addScore(`name:${orderedName}`, itemByName.get(orderedName));
+                        }
+                      });
+                    });
+
+                  personalizedRecommendedItems = Array.from(itemScore.values())
+                    .sort((a, b) => b.score - a.score)
+                    .map((entry) => entry.item);
+                } catch (ordersError) {
+                  console.warn("Could not build personalized recommendations:", ordersError?.message || ordersError);
+                }
 
                 // Debug log to check preparationTime in menu sections
                 console.log(
@@ -755,15 +812,18 @@ export default function RestaurantDetails() {
                   })),
                 );
 
-                // Always create recommended section (even if empty) - will show "No dish Yet" if empty
-                const finalMenuSections = [
-                  {
-                    name: "Recommended for you",
-                    items: recommendedItems,
-                    subsections: [],
-                  },
-                  ...menuSections,
-                ];
+                const finalMenuSections =
+                  personalizedRecommendedItems.length > 0
+                    ? [
+                        {
+                          name: "Recommended for you",
+                          isPersonalizedRecommended: true,
+                          items: personalizedRecommendedItems,
+                          subsections: [],
+                        },
+                        ...menuSections,
+                      ]
+                    : menuSections;
 
                 setRestaurant((prev) => ({
                   ...prev,
@@ -1228,7 +1288,7 @@ export default function RestaurantDetails() {
       ? restaurant.menuSections.map((section, index) => {
           // Handle section name - check for valid non-empty string
           let sectionTitle = "Unnamed Section";
-          if (index === 0) {
+          if (section?.isPersonalizedRecommended) {
             sectionTitle = "Recommended for you";
           } else if (
             section?.name &&
@@ -1868,9 +1928,11 @@ export default function RestaurantDetails() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 py-6 sm:py-8 md:py-10 lg:py-12 space-y-6 md:space-y-8 lg:space-y-10">
             {getFilteredSections().map(
               ({ section, originalIndex }, sectionIndex) => {
+                const isRecommendedSection =
+                  section?.isPersonalizedRecommended === true;
                 // Handle section name - check for valid non-empty string
                 let sectionTitle = "Unnamed Section";
-                if (originalIndex === 0) {
+                if (isRecommendedSection) {
                   sectionTitle = "Recommended for you";
                 } else if (
                   section?.name &&
@@ -1896,7 +1958,7 @@ export default function RestaurantDetails() {
                     className="space-y-4 scroll-mt-20"
                   >
                     {/* Section Header */}
-                    {sectionIndex === 0 && (
+                    {isRecommendedSection && (
                       <div className="flex items-center justify-between">
                         <h2 className="text-lg font-bold text-gray-900 dark:text-white">
                           Recommended for you
@@ -1924,7 +1986,7 @@ export default function RestaurantDetails() {
                         </button>
                       </div>
                     )}
-                    {sectionIndex > 0 && (
+                    {!isRecommendedSection && (
                       <div className="flex items-center justify-between">
                         <div className="space-y-1">
                           <h2 className="text-lg font-bold text-gray-900 dark:text-white">
@@ -1970,7 +2032,7 @@ export default function RestaurantDetails() {
 
                     {/* Direct Items */}
                     {isExpanded &&
-                      originalIndex === 0 &&
+                      isRecommendedSection &&
                       section.items &&
                       section.items.length === 0 && (
                         <div className="text-center py-8">
@@ -3856,7 +3918,8 @@ export default function RestaurantDetails() {
 
       {/* Add to Cart Animation Component */}
       <AddToCartAnimation
-        bottomOffset={150}
+        bottomOffset={130}
+        pillClassName="scale-105"
         linkTo="/cart"
         hideOnPages={true}
         hideWhenGroceryCart={true}

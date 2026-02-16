@@ -895,6 +895,12 @@ export const adminAPI = {
   getRestaurants: (params = {}) => {
     return apiClient.get(API_ENDPOINTS.ADMIN.RESTAURANTS, { params });
   },
+  getRestaurantMenu: (restaurantId) => {
+    return apiClient.get(`/admin/restaurants/${restaurantId}/menu`);
+  },
+  addRestaurantMenuItem: (restaurantId, payload) => {
+    return apiClient.post(`/admin/restaurants/${restaurantId}/menu/items`, payload);
+  },
 
   // Create restaurant
   createRestaurant: (data) => {

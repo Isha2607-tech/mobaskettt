@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { useEffect } from "react";
 import { Toaster } from "sonner";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AuthRedirect from "@/components/AuthRedirect";
@@ -116,6 +117,70 @@ function UserPathRedirect() {
 }
 
 export default function App() {
+  const location = useLocation();
+
+  useEffect(() => {
+    const pathname = location.pathname || "";
+    const shouldAskLocationPermission =
+      pathname.startsWith("/delivery") ||
+      pathname.startsWith("/restaurant") ||
+      pathname === "/home" ||
+      pathname.startsWith("/home/");
+
+    if (!shouldAskLocationPermission || typeof window === "undefined") {
+      return;
+    }
+
+    if (!("geolocation" in navigator)) {
+      return;
+    }
+
+    const sessionKey = `locationPermissionAsked:${pathname.split("/")[1] || "home"}`;
+    if (sessionStorage.getItem(sessionKey) === "true") {
+      return;
+    }
+
+    const requestLocationPermission = () => {
+      navigator.geolocation.getCurrentPosition(
+        () => {
+          sessionStorage.setItem(sessionKey, "true");
+        },
+        () => {
+          sessionStorage.setItem(sessionKey, "true");
+        },
+        {
+          enableHighAccuracy: false,
+          timeout: 10000,
+          maximumAge: 300000,
+        },
+      );
+    };
+
+    // Ask only when browser reports prompt state; fallback to requesting directly.
+    if (navigator.permissions?.query) {
+      navigator.permissions
+        .query({ name: "geolocation" })
+        .then((result) => {
+          if (result.state === "prompt") {
+            requestLocationPermission();
+            return;
+          }
+          if (result.state === "granted") {
+            sessionStorage.setItem(sessionKey, "true");
+            return;
+          }
+          // denied
+          sessionStorage.setItem(sessionKey, "true");
+        })
+        .catch(() => {
+          requestLocationPermission();
+        });
+      return;
+    }
+
+    requestLocationPermission();
+  }, [location.pathname]);
+
   return (
     <>
       <Toaster position="top-center" richColors />
