@@ -308,7 +308,6 @@ export default function OrderTracking() {
       normalized === "ready" ||
       normalized === "preparing" ||
       normalized === "accepted" ||
-      normalized === "confirmed" ||
       deliveryStatus === "accepted" ||
       deliveryStatus === "reached_pickup" ||
       deliveryPhase === "en_route_to_pickup" ||
@@ -655,7 +654,7 @@ export default function OrderTracking() {
     if (confirmed) {
       const timer1 = setTimeout(() => {
         setShowConfirmation(false)
-        setOrderStatus(order ? deriveUiOrderStatus(order.status, order) : 'preparing')
+        setOrderStatus(order ? deriveUiOrderStatus(order.status, order) : 'placed')
       }, 3000)
       return () => clearTimeout(timer1)
     }

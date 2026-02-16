@@ -65,6 +65,7 @@ export const getOrders = asyncHandler(async (req, res) => {
       cancelledBy,
       platform
     } = req.query;
+    const now = new Date();
 
     // Build query
     const query = {};
@@ -120,7 +121,7 @@ export const getOrders = asyncHandler(async (req, res) => {
       // Scheduled tab should show only future scheduled orders.
       if (status === 'scheduled') {
         query['scheduledDelivery.isScheduled'] = true;
-        query['scheduledDelivery.scheduledFor'] = { $gt: new Date() };
+        query['scheduledDelivery.scheduledFor'] = { $gt: now };
       }
       
       // If restaurant-cancelled, filter by cancellation reason
@@ -137,6 +138,18 @@ export const getOrders = asyncHandler(async (req, res) => {
       query.cancellationReason = { 
         $regex: /rejected by restaurant|restaurant rejected|restaurant cancelled/i 
       };
+    }
+
+    // Default admin listings (including "all") should not show future scheduled orders.
+    // They become visible once scheduled time is reached.
+    if (status !== 'scheduled') {
+      query.$nor = [
+        {
+          status: 'scheduled',
+          'scheduledDelivery.isScheduled': true,
+          'scheduledDelivery.scheduledFor': { $gt: now }
+        }
+      ];
     }
 
     // Payment status filter
@@ -1920,4 +1933,3 @@ export const processRefund = asyncHandler(async (req, res) => {
     return errorResponse(res, 500, error.message || 'Failed to process refund');
   }
 });
-

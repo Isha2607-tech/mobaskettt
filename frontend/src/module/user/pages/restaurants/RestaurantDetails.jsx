@@ -3918,7 +3918,7 @@ export default function RestaurantDetails() {
 
       {/* Add to Cart Animation Component */}
       <AddToCartAnimation
-        bottomOffset={130}
+        bottomOffset={96}
         pillClassName="scale-105"
         linkTo="/cart"
         hideOnPages={true}

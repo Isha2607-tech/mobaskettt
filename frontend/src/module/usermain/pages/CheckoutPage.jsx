@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   MapPin,
@@ -22,6 +22,7 @@ import { initRazorpayPayment } from "@/lib/utils/razorpay";
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { cart, clearCart, isGroceryItem } = useCart();
   const { getDefaultAddress, userProfile } = useProfile();
   const { location: liveLocation } = useUserLocation();
@@ -29,6 +30,13 @@ export default function CheckoutPage() {
 
   const [paymentMethod, setPaymentMethod] = useState("card");
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+
+  const deliveryType =
+    location.state?.deliveryType === "scheduled" ? "scheduled" : "now";
+  const deliveryDate = location.state?.deliveryDate
+    ? new Date(location.state.deliveryDate)
+    : null;
+  const deliveryTimeSlot = location.state?.deliveryTimeSlot || null;
 
   const foodItems = useMemo(
     () => cart.filter((item) => !isGroceryItem(item)),
@@ -90,6 +98,27 @@ export default function CheckoutPage() {
       isVeg: item.isVeg !== false,
     }));
 
+  const buildScheduledFor = () => {
+    if (deliveryType !== "scheduled" || !deliveryDate || !deliveryTimeSlot) {
+      return null;
+    }
+
+    const [slotStart] = String(deliveryTimeSlot).split("-");
+    const [hours, minutes] = String(slotStart || "")
+      .split(":")
+      .map((value) => Number(value));
+
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes)) {
+      return null;
+    }
+
+    const scheduledAt = new Date(deliveryDate);
+    if (Number.isNaN(scheduledAt.getTime())) return null;
+
+    scheduledAt.setHours(hours, minutes, 0, 0);
+    return scheduledAt;
+  };
+
   const handleProceedToPayment = async () => {
     if (isPlacingOrder) return;
 
@@ -101,6 +130,18 @@ export default function CheckoutPage() {
     if (!selectedAddress) {
       toast.error("Please add/select a delivery address first.");
       return;
+    }
+
+    if (deliveryType === "scheduled") {
+      const scheduledAt = buildScheduledFor();
+      if (!scheduledAt) {
+        toast.error("Please select a valid delivery date and time slot.");
+        return;
+      }
+      if (scheduledAt.getTime() <= Date.now()) {
+        toast.error("Scheduled delivery time must be in the future.");
+        return;
+      }
     }
 
     const restaurantId = foodItems[0]?.restaurantId;
@@ -144,6 +185,10 @@ export default function CheckoutPage() {
         sendCutlery: false,
         paymentMethod: backendPaymentMethod,
         zoneId: zoneId || undefined,
+        deliveryOption: deliveryType === "scheduled" ? "scheduled" : "now",
+        scheduledFor:
+          deliveryType === "scheduled" ? buildScheduledFor()?.toISOString() : undefined,
+        deliveryTimeSlot: deliveryType === "scheduled" ? deliveryTimeSlot : undefined,
       };
 
       const orderResponse = await orderAPI.createOrder(orderPayload);
