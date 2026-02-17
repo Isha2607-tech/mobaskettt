@@ -393,6 +393,7 @@ export default function OrderTracking() {
       )
     )
   }, [order?.deliveryState?.currentPhase, order?.deliveryState?.status, order?.status, riderInfo])
+  const riderDialNumber = sanitizePhoneForTel(riderInfo?.phone || "")
 
   const canModifyOrder = useMemo(() => {
     const status = String(order?.status || "").toLowerCase()
@@ -1524,22 +1525,6 @@ export default function OrderTracking() {
           <ChevronRight className="w-5 h-5 text-gray-400" />
         </motion.button>
 
-        {isRiderAccepted && riderInfo && (
-          <motion.div
-            className="bg-white rounded-xl shadow-sm overflow-hidden"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.68 }}
-          >
-            <SectionItem
-              icon={Phone}
-              title={riderInfo.name}
-              subtitle={riderInfo.phone || "Phone number not available"}
-              showArrow={false}
-            />
-          </motion.div>
-        )}
-
         {/* Delivery Details Banner */}
         <motion.div
           className="bg-yellow-50 rounded-xl p-4 text-center"
@@ -1554,33 +1539,46 @@ export default function OrderTracking() {
           </p>
         </motion.div>
 
-        {/* Contact & Address Section - Your (customer) details only, never delivery partner */}
+        {/* Contact & Address Section */}
         <motion.div 
           className="bg-white rounded-xl shadow-sm overflow-hidden"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.7 }}
         >
-          <SectionItem 
-            icon={Phone}
-            title={
-              order?.userId?.fullName ||
-              order?.userId?.name ||
-              profile?.fullName ||
-              profile?.name ||
-              'Your details'
-            }
-            subtitle={
-              order?.userId?.phone ||
-              profile?.phone ||
-              defaultAddress?.phone ||
-              'Phone number not available'
-            }
-            onClick={() => navigate("/profile/edit")}
-            rightContent={
-              <span className="text-green-600 font-medium text-sm">Edit</span>
-            }
-          />
+          <div className="p-4 border-b border-dashed border-gray-200">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">
+              Delivery Partner Details
+            </p>
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                <Phone className="w-5 h-5 text-green-700" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-gray-900 truncate">
+                  {isRiderAccepted && riderInfo?.name ? riderInfo.name : "Delivery partner will be assigned soon"}
+                </p>
+                <p className="text-sm text-gray-500 truncate">
+                  {isRiderAccepted && riderInfo?.phone ? riderInfo.phone : "Phone number not available"}
+                </p>
+              </div>
+              <motion.button
+                className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                  riderDialNumber ? "bg-green-600 text-white" : "bg-gray-100 text-gray-400"
+                }`}
+                whileTap={{ scale: 0.92 }}
+                onClick={() => {
+                  if (riderDialNumber) {
+                    window.location.href = `tel:${riderDialNumber}`
+                  } else {
+                    toast.error("Delivery partner phone number not available")
+                  }
+                }}
+              >
+                <Phone className="w-4 h-4" />
+              </motion.button>
+            </div>
+          </div>
           <SectionItem 
             icon={HomeIcon}
             title="Delivery at Location"
