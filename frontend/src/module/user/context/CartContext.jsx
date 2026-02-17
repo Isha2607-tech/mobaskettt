@@ -20,6 +20,16 @@ const defaultCartContext = {
   total: 0,
   lastAddEvent: null,
   lastRemoveEvent: null,
+  foodItems: [],
+  groceryItems: [],
+  foodItemCount: 0,
+  groceryItemCount: 0,
+  foodTotal: 0,
+  groceryTotal: 0,
+  lastAddEventFood: null,
+  lastAddEventGrocery: null,
+  lastRemoveEventFood: null,
+  lastRemoveEventGrocery: null,
   addToCart: () => {
     console.warn("CartProvider not available - addToCart called");
   },
@@ -153,6 +163,10 @@ export function CartProvider({ children }) {
   const [lastAddEvent, setLastAddEvent] = useState(null);
   // Track last remove event for animation
   const [lastRemoveEvent, setLastRemoveEvent] = useState(null);
+  const [lastAddEventFood, setLastAddEventFood] = useState(null);
+  const [lastAddEventGrocery, setLastAddEventGrocery] = useState(null);
+  const [lastRemoveEventFood, setLastRemoveEventFood] = useState(null);
+  const [lastRemoveEventGrocery, setLastRemoveEventGrocery] = useState(null);
 
   const activePlatform = getActivePlatformFromPath(location?.pathname || "");
 
@@ -212,14 +226,22 @@ export function CartProvider({ children }) {
       const existing = prev.find((i) => i.id === item.id);
       if (existing) {
         if (sourcePosition) {
-          setLastAddEvent({
+          const addEvent = {
             product: {
               id: item.id,
               name: item.name,
               imageUrl: item.image || item.imageUrl,
             },
             sourcePosition,
-          });
+          };
+          setLastAddEvent(addEvent);
+          if (itemPlatform === "mogrocery") {
+            setLastAddEventGrocery(addEvent);
+            setTimeout(() => setLastAddEventGrocery(null), 1500);
+          } else {
+            setLastAddEventFood(addEvent);
+            setTimeout(() => setLastAddEventFood(null), 1500);
+          }
           setTimeout(() => setLastAddEvent(null), 1500);
         }
         return prev.map((i) =>
@@ -235,14 +257,22 @@ export function CartProvider({ children }) {
       };
 
       if (sourcePosition) {
-        setLastAddEvent({
+        const addEvent = {
           product: {
             id: item.id,
             name: item.name,
             imageUrl: item.image || item.imageUrl,
           },
           sourcePosition,
-        });
+        };
+        setLastAddEvent(addEvent);
+        if (itemPlatform === "mogrocery") {
+          setLastAddEventGrocery(addEvent);
+          setTimeout(() => setLastAddEventGrocery(null), 1500);
+        } else {
+          setLastAddEventFood(addEvent);
+          setTimeout(() => setLastAddEventFood(null), 1500);
+        }
         setTimeout(() => setLastAddEvent(null), 1500);
       }
 
@@ -262,7 +292,7 @@ export function CartProvider({ children }) {
     setTargetCart((prev) => {
       const itemToRemove = prev.find((i) => i.id === itemId);
       if (itemToRemove && sourcePosition && productInfo) {
-        setLastRemoveEvent({
+        const removeEvent = {
           product: {
             id: productInfo.id || itemToRemove.id,
             name: productInfo.name || itemToRemove.name,
@@ -273,7 +303,15 @@ export function CartProvider({ children }) {
               itemToRemove.imageUrl,
           },
           sourcePosition,
-        });
+        };
+        setLastRemoveEvent(removeEvent);
+        if (activePlatform === "mogrocery") {
+          setLastRemoveEventGrocery(removeEvent);
+          setTimeout(() => setLastRemoveEventGrocery(null), 1500);
+        } else {
+          setLastRemoveEventFood(removeEvent);
+          setTimeout(() => setLastRemoveEventFood(null), 1500);
+        }
         setTimeout(() => setLastRemoveEvent(null), 1500);
       }
       return prev.filter((i) => i.id !== itemId);
@@ -292,7 +330,7 @@ export function CartProvider({ children }) {
       setTargetCart((prev) => {
         const itemToRemove = prev.find((i) => i.id === itemId);
         if (itemToRemove && sourcePosition && productInfo) {
-          setLastRemoveEvent({
+          const removeEvent = {
             product: {
               id: productInfo.id || itemToRemove.id,
               name: productInfo.name || itemToRemove.name,
@@ -303,7 +341,15 @@ export function CartProvider({ children }) {
                 itemToRemove.imageUrl,
             },
             sourcePosition,
-          });
+          };
+          setLastRemoveEvent(removeEvent);
+          if (activePlatform === "mogrocery") {
+            setLastRemoveEventGrocery(removeEvent);
+            setTimeout(() => setLastRemoveEventGrocery(null), 1500);
+          } else {
+            setLastRemoveEventFood(removeEvent);
+            setTimeout(() => setLastRemoveEventFood(null), 1500);
+          }
           setTimeout(() => setLastRemoveEvent(null), 1500);
         }
         return prev.filter((i) => i.id !== itemId);
@@ -319,7 +365,7 @@ export function CartProvider({ children }) {
         sourcePosition &&
         productInfo
       ) {
-        setLastRemoveEvent({
+        const removeEvent = {
           product: {
             id: productInfo.id || existingItem.id,
             name: productInfo.name || existingItem.name,
@@ -330,7 +376,15 @@ export function CartProvider({ children }) {
               existingItem.imageUrl,
           },
           sourcePosition,
-        });
+        };
+        setLastRemoveEvent(removeEvent);
+        if (activePlatform === "mogrocery") {
+          setLastRemoveEventGrocery(removeEvent);
+          setTimeout(() => setLastRemoveEventGrocery(null), 1500);
+        } else {
+          setLastRemoveEventFood(removeEvent);
+          setTimeout(() => setLastRemoveEventFood(null), 1500);
+        }
         setTimeout(() => setLastRemoveEvent(null), 1500);
       }
       return prev.map((i) => (i.id === itemId ? { ...i, quantity } : i));
@@ -426,6 +480,40 @@ export function CartProvider({ children }) {
     };
   }, [activeCart]);
 
+  const foodCartForAnimation = useMemo(() => {
+    const items = foodCart.map((item) => ({
+      product: {
+        id: item.id,
+        name: item.name,
+        imageUrl: item.image || item.imageUrl,
+      },
+      quantity: item.quantity || 1,
+    }));
+
+    return {
+      items,
+      itemCount: foodCart.reduce((total, item) => total + (item.quantity || 0), 0),
+      total: foodCart.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 0), 0),
+    };
+  }, [foodCart]);
+
+  const groceryCartForAnimation = useMemo(() => {
+    const items = groceryCart.map((item) => ({
+      product: {
+        id: item.id,
+        name: item.name,
+        imageUrl: item.image || item.imageUrl,
+      },
+      quantity: item.quantity || 1,
+    }));
+
+    return {
+      items,
+      itemCount: groceryCart.reduce((total, item) => total + (item.quantity || 0), 0),
+      total: groceryCart.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 0), 0),
+    };
+  }, [groceryCart]);
+
   const value = {
     _isProvider: true,
     cart: activeCart,
@@ -436,6 +524,16 @@ export function CartProvider({ children }) {
     total: cartForAnimation.total,
     lastAddEvent,
     lastRemoveEvent,
+    foodItems: foodCartForAnimation.items,
+    groceryItems: groceryCartForAnimation.items,
+    foodItemCount: foodCartForAnimation.itemCount,
+    groceryItemCount: groceryCartForAnimation.itemCount,
+    foodTotal: foodCartForAnimation.total,
+    groceryTotal: groceryCartForAnimation.total,
+    lastAddEventFood,
+    lastAddEventGrocery,
+    lastRemoveEventFood,
+    lastRemoveEventGrocery,
     addToCart,
     removeFromCart,
     updateQuantity,

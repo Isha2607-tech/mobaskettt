@@ -699,6 +699,65 @@ export default function DeliveryHome() {
     }
   }, [])
 
+  const isOrderCancelledState = useCallback((order) => {
+    if (!order) return false
+    const statusValues = [
+      order?.orderStatus,
+      order?.status,
+      order?.deliveryState?.status,
+      order?.deliveryPhase,
+      order?.deliveryState?.currentPhase
+    ]
+      .filter(Boolean)
+      .map((value) => String(value).toLowerCase())
+
+    return statusValues.some((value) => value.includes('cancel'))
+  }, [])
+
+  const isCancelledConflictError = useCallback((error) => {
+    const status = error?.response?.status
+    const message = String(
+      error?.response?.data?.message ||
+      error?.message ||
+      ''
+    ).toLowerCase()
+    return status === 409 && (message.includes('cancel') || message.includes('terminal'))
+  }, [])
+
+  const handleCancelledOrderConflict = useCallback((error, fallbackMessage) => {
+    const backendMessage = error?.response?.data?.message
+    const message = backendMessage || fallbackMessage || 'Order was cancelled by user.'
+    toast.error(message)
+
+    localStorage.removeItem('deliveryActiveOrder')
+    stopNewOrderAlertSound('order cancelled conflict')
+
+    setShowreachedPickupPopup(false)
+    setShowOrderIdConfirmationPopup(false)
+    setShowReachedDropPopup(false)
+    setShowOrderDeliveredAnimation(false)
+    setShowCustomerReviewPopup(false)
+    setShowPaymentPage(false)
+    setShowNewOrderPopup(false)
+
+    clearNewOrder()
+    clearOrderReady()
+    acceptedOrderIdsRef.current.clear()
+
+    if (routePolylineRef.current) {
+      routePolylineRef.current.setMap(null)
+    }
+    if (directionsRendererRef.current) {
+      directionsRendererRef.current.setMap(null)
+    }
+
+    setDirectionsResponse(null)
+    directionsResponseRef.current = null
+    setRoutePolyline([])
+    setShowRoutePath(false)
+    setSelectedRestaurant(null)
+  }, [clearNewOrder, clearOrderReady, stopNewOrderAlertSound])
+
   const {
     bookedGigs,
     currentGig,
@@ -2919,6 +2978,10 @@ export default function DeliveryHome() {
             isNetworkError: error.code === 'ERR_NETWORK',
             currentLocation: currentLocation && currentLocation.length === 2 ? 'available' : 'not available'
           })
+          if (isCancelledConflictError(error)) {
+            handleCancelledOrderConflict(error, 'Order was cancelled before it could be accepted.')
+            return
+          }
           
           // Log full error response for debugging
           if (error.response?.data) {
@@ -3076,6 +3139,10 @@ export default function DeliveryHome() {
 
   // Handle Reached Pickup button swipe
   const handlereachedPickupTouchStart = (e) => {
+    if (isOrderCancelledState(selectedRestaurant)) {
+      handleCancelledOrderConflict(null, 'Order was cancelled by user.')
+      return
+    }
     reachedPickupSwipeStartX.current = e.touches[0].clientX
     reachedPickupSwipeStartY.current = e.touches[0].clientY
     reachedPickupIsSwiping.current = false
@@ -3105,6 +3172,12 @@ export default function DeliveryHome() {
   }
 
   const handlereachedPickupTouchEnd = (e) => {
+    if (isOrderCancelledState(selectedRestaurant)) {
+      setreachedPickupButtonProgress(0)
+      handleCancelledOrderConflict(null, 'Order was cancelled by user.')
+      return
+    }
+
     if (!reachedPickupIsSwiping.current) {
       setreachedPickupButtonProgress(0)
       return
@@ -3242,6 +3315,13 @@ export default function DeliveryHome() {
               orderId: orderId || 'unknown',
               selectedRestaurant: selectedRestaurant
             })
+
+            if (isCancelledConflictError(error)) {
+              setreachedPickupButtonProgress(0)
+              setreachedPickupIsAnimatingToComplete(false)
+              handleCancelledOrderConflict(error, 'Order was cancelled before pickup confirmation.')
+              return
+            }
             
             // Show specific error message
             const errorMessage = error.response?.data?.message || 
@@ -3288,6 +3368,10 @@ export default function DeliveryHome() {
 
   // Handle Reached Drop button swipe
   const handleReachedDropTouchStart = (e) => {
+    if (isOrderCancelledState(selectedRestaurant)) {
+      handleCancelledOrderConflict(null, 'Order was cancelled by user.')
+      return
+    }
     reachedDropSwipeStartX.current = e.touches[0].clientX
     reachedDropSwipeStartY.current = e.touches[0].clientY
     reachedDropIsSwiping.current = false
@@ -3317,6 +3401,12 @@ export default function DeliveryHome() {
   }
 
   const handleReachedDropTouchEnd = (e) => {
+    if (isOrderCancelledState(selectedRestaurant)) {
+      setReachedDropButtonProgress(0)
+      handleCancelledOrderConflict(null, 'Order was cancelled by user.')
+      return
+    }
+
     if (!reachedDropIsSwiping.current) {
       setReachedDropButtonProgress(0)
       return
@@ -3376,6 +3466,13 @@ export default function DeliveryHome() {
             }
           } catch (error) {
             const status = error.response?.status
+
+            if (isCancelledConflictError(error)) {
+              setReachedDropButtonProgress(0)
+              setReachedDropIsAnimatingToComplete(false)
+              handleCancelledOrderConflict(error, 'Order was cancelled before drop confirmation.')
+              return
+            }
             
             // Handle 500 errors gracefully (server-side issue, popup already shown)
             if (status === 500) {
@@ -3423,6 +3520,10 @@ export default function DeliveryHome() {
 
   // Handle Order ID Confirmation button swipe
   const handleOrderIdConfirmTouchStart = (e) => {
+    if (isOrderCancelledState(selectedRestaurant)) {
+      handleCancelledOrderConflict(null, 'Order was cancelled by user.')
+      return
+    }
     orderIdConfirmSwipeStartX.current = e.touches[0].clientX
     orderIdConfirmSwipeStartY.current = e.touches[0].clientY
     orderIdConfirmIsSwiping.current = false
@@ -3622,6 +3723,12 @@ export default function DeliveryHome() {
   }
 
   const handleOrderIdConfirmTouchEnd = (e) => {
+    if (isOrderCancelledState(selectedRestaurant)) {
+      setOrderIdConfirmButtonProgress(0)
+      handleCancelledOrderConflict(null, 'Order was cancelled by user.')
+      return
+    }
+
     // Disable swipe if bill image is not uploaded
     if (!billImageUploaded) {
       toast.error('Please upload bill image first')
@@ -3920,6 +4027,12 @@ export default function DeliveryHome() {
           const status = error.response?.status
           const msg = error.response?.data?.message || error.message || ''
           console.error('❌ Error confirming order ID:', { status, message: msg, data: error.response?.data })
+          if (isCancelledConflictError(error)) {
+            setOrderIdConfirmButtonProgress(0)
+            setOrderIdConfirmIsAnimatingToComplete(false)
+            handleCancelledOrderConflict(error, 'Order was cancelled before order ID confirmation.')
+            return
+          }
           toast.error(msg || 'Failed to confirm order ID. Please try again.')
         }
         
@@ -10100,6 +10213,11 @@ export default function DeliveryHome() {
             <p className="text-gray-500 text-sm font-medium">
               Order ID: {selectedRestaurant?.orderId || 'ORD1234567890'}
             </p>
+            {isOrderCancelledState(selectedRestaurant) && (
+              <p className="mt-2 text-sm font-semibold text-red-600">
+                Order cancelled by user
+              </p>
+            )}
           </div>
 
           {/* Action Buttons */}
@@ -10309,12 +10427,14 @@ export default function DeliveryHome() {
           <div className="relative w-full">
             <motion.div
               ref={reachedPickupButtonRef}
-              className="relative w-full bg-green-600 rounded-full overflow-hidden shadow-xl"
-              style={{ touchAction: 'pan-x' }} // Prevent vertical scrolling, allow horizontal pan
-              onTouchStart={handlereachedPickupTouchStart}
-              onTouchMove={handlereachedPickupTouchMove}
-              onTouchEnd={handlereachedPickupTouchEnd}
-              whileTap={{ scale: 0.98 }}
+              className={`relative w-full rounded-full overflow-hidden shadow-xl ${
+                isOrderCancelledState(selectedRestaurant) ? 'bg-gray-400 opacity-70' : 'bg-green-600'
+              }`}
+              style={{ touchAction: isOrderCancelledState(selectedRestaurant) ? 'none' : 'pan-x' }} // Prevent vertical scrolling, allow horizontal pan
+              onTouchStart={isOrderCancelledState(selectedRestaurant) ? undefined : handlereachedPickupTouchStart}
+              onTouchMove={isOrderCancelledState(selectedRestaurant) ? undefined : handlereachedPickupTouchMove}
+              onTouchEnd={isOrderCancelledState(selectedRestaurant) ? undefined : handlereachedPickupTouchEnd}
+              whileTap={isOrderCancelledState(selectedRestaurant) ? {} : { scale: 0.98 }}
             >
               {/* Swipe progress background */}
               <motion.div
@@ -10360,7 +10480,9 @@ export default function DeliveryHome() {
                       damping: 25
                     } : { duration: 0 }}
                   >
-                    {reachedPickupButtonProgress > 0.5 ? 'Release to Confirm' : 'Reached Pickup'}
+                    {isOrderCancelledState(selectedRestaurant)
+                      ? 'Order Cancelled'
+                      : (reachedPickupButtonProgress > 0.5 ? 'Release to Confirm' : 'Reached Pickup')}
                   </motion.span>
                 </div>
               </div>
@@ -10452,16 +10574,18 @@ export default function DeliveryHome() {
               <motion.div
                 ref={orderIdConfirmButtonRef}
                 className={`relative w-full rounded-full overflow-hidden shadow-xl ${
-                  billImageUploaded ? 'bg-green-600' : 'bg-gray-400 cursor-not-allowed'
+                  isOrderCancelledState(selectedRestaurant)
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : (billImageUploaded ? 'bg-green-600' : 'bg-gray-400 cursor-not-allowed')
                 }`}
                 style={{ 
-                  touchAction: billImageUploaded ? 'pan-x' : 'none',
-                  opacity: billImageUploaded ? 1 : 0.6
+                  touchAction: billImageUploaded && !isOrderCancelledState(selectedRestaurant) ? 'pan-x' : 'none',
+                  opacity: billImageUploaded && !isOrderCancelledState(selectedRestaurant) ? 1 : 0.6
                 }}
-                onTouchStart={billImageUploaded ? handleOrderIdConfirmTouchStart : undefined}
-                onTouchMove={billImageUploaded ? handleOrderIdConfirmTouchMove : undefined}
-                onTouchEnd={billImageUploaded ? handleOrderIdConfirmTouchEnd : undefined}
-                whileTap={billImageUploaded ? { scale: 0.98 } : {}}
+                onTouchStart={billImageUploaded && !isOrderCancelledState(selectedRestaurant) ? handleOrderIdConfirmTouchStart : undefined}
+                onTouchMove={billImageUploaded && !isOrderCancelledState(selectedRestaurant) ? handleOrderIdConfirmTouchMove : undefined}
+                onTouchEnd={billImageUploaded && !isOrderCancelledState(selectedRestaurant) ? handleOrderIdConfirmTouchEnd : undefined}
+                whileTap={billImageUploaded && !isOrderCancelledState(selectedRestaurant) ? { scale: 0.98 } : {}}
               >
                 {/* Swipe progress background */}
                 <motion.div
@@ -10507,7 +10631,9 @@ export default function DeliveryHome() {
                         damping: 25
                       } : { duration: 0 }}
                     >
-                      {!billImageUploaded 
+                      {isOrderCancelledState(selectedRestaurant)
+                        ? 'Order Cancelled'
+                        : !billImageUploaded 
                         ? 'Upload Bill First' 
                         : orderIdConfirmButtonProgress > 0.5 
                         ? 'Release to Confirm' 
@@ -10551,6 +10677,11 @@ export default function DeliveryHome() {
             <p className="text-gray-500 text-sm font-medium">
               Order ID: {selectedRestaurant?.orderId || 'ORD1234567890'}
             </p>
+            {isOrderCancelledState(selectedRestaurant) && (
+              <p className="mt-2 text-sm font-semibold text-red-600">
+                Order cancelled by user
+              </p>
+            )}
           </div>
 
           {/* Action Buttons */}
@@ -10573,12 +10704,14 @@ export default function DeliveryHome() {
           <div className="relative w-full">
             <motion.div
               ref={reachedDropButtonRef}
-              className="relative w-full bg-green-600 rounded-full overflow-hidden shadow-xl"
-              style={{ touchAction: 'pan-x' }} // Prevent vertical scrolling, allow horizontal pan
-              onTouchStart={handleReachedDropTouchStart}
-              onTouchMove={handleReachedDropTouchMove}
-              onTouchEnd={handleReachedDropTouchEnd}
-              whileTap={{ scale: 0.98 }}
+              className={`relative w-full rounded-full overflow-hidden shadow-xl ${
+                isOrderCancelledState(selectedRestaurant) ? 'bg-gray-400 opacity-70' : 'bg-green-600'
+              }`}
+              style={{ touchAction: isOrderCancelledState(selectedRestaurant) ? 'none' : 'pan-x' }} // Prevent vertical scrolling, allow horizontal pan
+              onTouchStart={isOrderCancelledState(selectedRestaurant) ? undefined : handleReachedDropTouchStart}
+              onTouchMove={isOrderCancelledState(selectedRestaurant) ? undefined : handleReachedDropTouchMove}
+              onTouchEnd={isOrderCancelledState(selectedRestaurant) ? undefined : handleReachedDropTouchEnd}
+              whileTap={isOrderCancelledState(selectedRestaurant) ? {} : { scale: 0.98 }}
             >
               {/* Swipe progress background */}
               <motion.div
@@ -10624,7 +10757,9 @@ export default function DeliveryHome() {
                       damping: 25
                     } : { duration: 0 }}
                   >
-                    {reachedDropButtonProgress > 0.5 ? 'Release to Confirm' : 'Reached Drop'}
+                    {isOrderCancelledState(selectedRestaurant)
+                      ? 'Order Cancelled'
+                      : (reachedDropButtonProgress > 0.5 ? 'Release to Confirm' : 'Reached Drop')}
                   </motion.span>
                 </div>
               </div>
@@ -10881,6 +11016,10 @@ export default function DeliveryHome() {
                     }
                   } catch (error) {
                     console.error('❌ Error submitting review:', error)
+                    if (isCancelledConflictError(error)) {
+                      handleCancelledOrderConflict(error, 'Order was cancelled before delivery completion.')
+                      return
+                    }
                     toast.error('Failed to submit review. Please try again.')
                     // Still show payment page even if review fails
                     setShowCustomerReviewPopup(false)
@@ -11028,6 +11167,7 @@ export default function DeliveryHome() {
     </div>
   )
 }
+
 
 
 

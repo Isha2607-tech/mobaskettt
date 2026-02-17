@@ -4,6 +4,7 @@ import { ArrowLeft, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useCart } from "../../user/context/CartContext";
+import AddToCartAnimation from "../../user/components/AddToCartAnimation";
 
 export default function GroceryBestSellerProductsPage() {
   const navigate = useNavigate();
@@ -59,12 +60,34 @@ export default function GroceryBestSellerProductsPage() {
 
   const headerTitle = useMemo(() => title || "Products", [title]);
 
-  const handleAddToCart = (product) => {
+  const getSourcePosition = (event, itemId) => {
+    if (!event) return null;
+    let buttonElement = event.currentTarget;
+    if (!buttonElement && event.target) {
+      buttonElement = event.target.closest("button") || event.target;
+    }
+    if (!buttonElement) return null;
+
+    const rect = buttonElement.getBoundingClientRect();
+    const scrollX = window.pageXOffset || window.scrollX || 0;
+    const scrollY = window.pageYOffset || window.scrollY || 0;
+
+    return {
+      viewportX: rect.left + rect.width / 2,
+      viewportY: rect.top + rect.height / 2,
+      scrollX,
+      scrollY,
+      itemId,
+    };
+  };
+
+  const handleAddToCart = (product, event) => {
     try {
       const image =
         Array.isArray(product?.images) && product.images[0]
           ? product.images[0]
           : "https://via.placeholder.com/200";
+      const sourcePosition = getSourcePosition(event, product?._id || product?.id);
       addToCart({
         id: product?._id || product?.id,
         name: product?.name || "Product",
@@ -74,7 +97,7 @@ export default function GroceryBestSellerProductsPage() {
         image,
         restaurantId: "grocery-store",
         restaurant: "MoGrocery",
-      });
+      }, sourcePosition);
       toast.success("Added to cart");
     } catch (err) {
       toast.error(err?.message || "Failed to add to cart");
@@ -101,9 +124,9 @@ export default function GroceryBestSellerProductsPage() {
       )}
 
       {!loading && !error && products.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 px-4 py-4">
+        <div className="grid grid-cols-2 gap-3 px-4 py-4 md:grid-cols-3">
           {products.map((product) => (
-            <div key={product._id} className="rounded-2xl border border-slate-200 p-3 bg-white shadow-sm">
+            <div key={product._id} className="rounded-2xl border border-slate-200 p-3 bg-white shadow-sm flex flex-col min-h-[240px]">
               <div className="w-full aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 flex items-center justify-center">
                 <img
                   src={Array.isArray(product.images) && product.images[0] ? product.images[0] : "https://via.placeholder.com/200"}
@@ -113,19 +136,20 @@ export default function GroceryBestSellerProductsPage() {
               </div>
               <p className="text-sm font-semibold text-slate-900 line-clamp-2">{product.name}</p>
               <p className="text-xs text-slate-500 mt-1">{product.unit || "Unit not specified"}</p>
-              <div className="mt-2 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-bold text-slate-900">Rs {product.sellingPrice ?? 0}</p>
+              <div className="mt-auto pt-3">
+                <div className="flex items-end justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-slate-900">Rs {product.sellingPrice ?? 0}</p>
                   {product.mrp && Number(product.mrp) > Number(product.sellingPrice) && (
                     <p className="text-xs text-slate-400 line-through">Rs {product.mrp}</p>
                   )}
-                </div>
-                {isInCart(product?._id || product?.id) && (
-                  <p className="text-[11px] font-semibold text-emerald-700">Already added to cart</p>
-                )}
+                    {isInCart(product?._id || product?.id) && (
+                      <p className="text-[10px] font-semibold text-emerald-700 mt-1">Added to cart</p>
+                    )}
+                  </div>
                 <button
                   type="button"
-                  onClick={() => handleAddToCart(product)}
+                    onClick={(event) => handleAddToCart(product, event)}
                   className={`h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1 ${
                     isInCart(product?._id || product?.id)
                       ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
@@ -135,11 +159,20 @@ export default function GroceryBestSellerProductsPage() {
                   <ShoppingCart size={14} />
                   {isInCart(product?._id || product?.id) ? "Added" : "Add"}
                 </button>
+                </div>
               </div>
             </div>
           ))}
         </div>
       )}
+
+      <AddToCartAnimation
+        bottomOffset={96}
+        pillClassName="scale-105"
+        linkTo="/grocery/cart"
+        platform="mogrocery"
+        hideOnPages={true}
+      />
     </div>
   );
 }

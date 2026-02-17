@@ -341,15 +341,7 @@ export const mogroceryMenuData = [
         path: "/admin/grocery-approval",
         icon: "CheckCircle2",
       },
-      {
-        type: "expandable",
-        label: "Products",
-        icon: "Package",
-        subItems: [
-          { label: "Store Products List", path: "/admin/grocery-products" },
-          { label: "Product Addons List", path: "/admin/grocery-addons" },
-        ],
-      },
+      
       {
         type: "link",
         label: "Categories",
@@ -366,6 +358,12 @@ export const mogroceryMenuData = [
         type: "link",
         label: "Products",
         path: "/admin/grocery-products-catalog",
+        icon: "Package",
+      },
+      {
+        type: "link",
+        label: "Product Addons List",
+        path: "/admin/grocery-addons",
         icon: "Package",
       },
       {

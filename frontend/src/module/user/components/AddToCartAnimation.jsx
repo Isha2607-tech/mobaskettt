@@ -24,10 +24,28 @@ export default function AddToCartAnimation({
   hideOnPages = true,
   linkTo = '/cart',
   dynamicBottom = null,
+  platform = null,
   /** When true, hide the View cart pill when the cart contains grocery items (for restaurant/food pages) */
   hideWhenGroceryCart = false,
 }) {
-  const { items, itemCount, total, lastAddEvent, lastRemoveEvent, isGroceryCart } = useCart();
+  const {
+    items,
+    itemCount,
+    total,
+    lastAddEvent,
+    lastRemoveEvent,
+    foodItems,
+    groceryItems,
+    foodItemCount,
+    groceryItemCount,
+    foodTotal,
+    groceryTotal,
+    lastAddEventFood,
+    lastAddEventGrocery,
+    lastRemoveEventFood,
+    lastRemoveEventGrocery,
+    groceryCart,
+  } = useCart();
   const location = useLocation();
   const navigate = useNavigate();
   const linkRef = useRef(null);
@@ -37,22 +55,32 @@ export default function AddToCartAnimation({
   const flyingThumbnailRef = useRef(null);
   const prevItemsRef = useRef(items);
 
+  const resolvedPlatform = platform || (linkTo.startsWith('/grocery') ? 'mogrocery' : 'mofood');
+  const isGroceryMode = resolvedPlatform === 'mogrocery';
+  const animationItems = isGroceryMode ? groceryItems : foodItems.length ? foodItems : items;
+  const animationItemCount = isGroceryMode ? groceryItemCount : foodItemCount || itemCount;
+  const animationTotal = isGroceryMode ? groceryTotal : foodTotal || total;
+  const animationLastAddEvent = isGroceryMode ? lastAddEventGrocery : (lastAddEventFood || lastAddEvent);
+  const animationLastRemoveEvent = isGroceryMode ? lastRemoveEventGrocery : (lastRemoveEventFood || lastRemoveEvent);
+
   // Hide pill on cart pages, order pages, and account page (if enabled)
   const iscartPage = location.pathname === '/cart' || 
                      location.pathname === '/user/cart' ||
+                     location.pathname === '/grocery/cart' ||
                      location.pathname.startsWith('/cart/') ||
-                     location.pathname.startsWith('/user/cart/');
+                     location.pathname.startsWith('/user/cart/') ||
+                     location.pathname.startsWith('/grocery/cart/');
   const isOrderPage = location.pathname.startsWith('/orders/');
   const isAccountPage = location.pathname === '/account';
   const shouldHidePill = hideOnPages && (iscartPage || isOrderPage || isAccountPage);
 
   // On restaurant/food pages: don't show View cart when cart has grocery items (keep carts separate)
-  const shouldHideForGroceryCart = hideWhenGroceryCart && isGroceryCart();
+  const shouldHideForGroceryCart = hideWhenGroceryCart && Array.isArray(groceryCart) && groceryCart.length > 0;
 
   // Handle removal animation when product is removed
   useEffect(() => {
-    if (lastRemoveEvent && lastRemoveEvent.sourcePosition && linkRef.current) {
-      const { product, sourcePosition } = lastRemoveEvent;
+    if (animationLastRemoveEvent && animationLastRemoveEvent.sourcePosition && linkRef.current) {
+      const { product, sourcePosition } = animationLastRemoveEvent;
       
       // Store the sourcePosition immediately to prevent it from being lost
       const savedSourcePosition = { ...sourcePosition };
@@ -186,12 +214,12 @@ export default function AddToCartAnimation({
         }
       }, 10);
     }
-  }, [lastRemoveEvent]);
+  }, [animationLastRemoveEvent]);
 
   // Handle fly-to-cart animation when product is added
   useEffect(() => {
-    if (lastAddEvent && lastAddEvent.sourcePosition && linkRef.current) {
-      const { product, sourcePosition } = lastAddEvent;
+    if (animationLastAddEvent && animationLastAddEvent.sourcePosition && linkRef.current) {
+      const { product, sourcePosition } = animationLastAddEvent;
       
       // Store the sourcePosition immediately to prevent it from being lost
       const savedSourcePosition = { ...sourcePosition };
@@ -326,11 +354,11 @@ export default function AddToCartAnimation({
         }
       }, 150); // Increased delay to ensure pill animation completes
     }
-  }, [lastAddEvent]);
+  }, [animationLastAddEvent]);
 
   // Enhanced GSAP pulse animation when cart changes (but not on removal or fly-to-cart)
   useEffect(() => {
-    if (itemCount > 0 && linkRef.current && !removedProduct && !flyingProduct && !lastRemoveEvent) {
+    if (animationItemCount > 0 && linkRef.current && !removedProduct && !flyingProduct && !animationLastRemoveEvent) {
       // Kill any existing animations first
       gsap.killTweensOf(linkRef.current);
       
@@ -365,11 +393,11 @@ export default function AddToCartAnimation({
         ease: 'power1.in',
       });
     }
-  }, [itemCount, total, removedProduct, flyingProduct, lastRemoveEvent]);
+  }, [animationItemCount, animationTotal, removedProduct, flyingProduct, animationLastRemoveEvent]);
 
   // Get up to 3 most recently added items for thumbnails
   // Since items are added to the end of the array, we take the last 3
-  const thumbnailItems = items.slice(-3).reverse();
+  const thumbnailItems = animationItems.slice(-3).reverse();
 
   const content = (
     <>
@@ -422,7 +450,7 @@ export default function AddToCartAnimation({
       )}
 
       <AnimatePresence>
-        {itemCount > 0 && !shouldHidePill && !shouldHideForGroceryCart && (
+        {animationItemCount > 0 && !shouldHidePill && !shouldHideForGroceryCart && (
           <motion.div
             initial={{ y: 60, opacity: 0, scale: 0.8 }}
             animate={{
@@ -491,7 +519,7 @@ export default function AddToCartAnimation({
               >
                 <span className="text-xs font-bold leading-tight drop-shadow-sm">View cart</span>
                 <span className="text-[10px] opacity-95 leading-tight font-medium">
-                  {itemCount} {itemCount === 1 ? 'item' : 'items'}
+                  {animationItemCount} {animationItemCount === 1 ? 'item' : 'items'}
                 </span>
               </motion.div>
 

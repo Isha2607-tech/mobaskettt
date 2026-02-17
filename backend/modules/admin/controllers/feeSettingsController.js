@@ -13,20 +13,42 @@ const logger = winston.createLogger({
   ]
 });
 
+const normalizePlatform = (rawPlatform) => {
+  return rawPlatform === 'mogrocery' ? 'mogrocery' : 'mofood';
+};
+
+const resolvePlatform = (req) => {
+  const requestedPlatform = req.query?.platform || req.body?.platform;
+  return normalizePlatform(requestedPlatform);
+};
+
+const getPlatformFilter = (platform) => {
+  if (platform === 'mogrocery') {
+    return { platform: 'mogrocery' };
+  }
+  // Backward compatibility: older docs may not have platform set.
+  return { $or: [{ platform: 'mofood' }, { platform: { $exists: false } }] };
+};
+
 /**
  * Get current fee settings
  * GET /api/admin/fee-settings
  */
 export const getFeeSettings = asyncHandler(async (req, res) => {
   try {
+    const platform = resolvePlatform(req);
     // Get the most recent active fee settings
-    let feeSettings = await FeeSettings.findOne({ isActive: true })
+    let feeSettings = await FeeSettings.findOne({
+      ...getPlatformFilter(platform),
+      isActive: true
+    })
       .sort({ createdAt: -1 })
       .lean();
 
     // If no active settings exist, create default ones
     if (!feeSettings) {
       const defaultSettings = new FeeSettings({
+        platform,
         deliveryFee: 25,
         freeDeliveryThreshold: 149,
         platformFee: 5,
@@ -54,6 +76,7 @@ export const getFeeSettings = asyncHandler(async (req, res) => {
  */
 export const createOrUpdateFeeSettings = asyncHandler(async (req, res) => {
   try {
+    const platform = resolvePlatform(req);
     const { deliveryFee, deliveryFeeRanges, freeDeliveryThreshold, platformFee, gstRate, isActive } = req.body;
 
     // Validate platform fee
@@ -86,13 +109,14 @@ export const createOrUpdateFeeSettings = asyncHandler(async (req, res) => {
     // Deactivate all existing settings if this is being set as active
     if (isActive !== false) {
       await FeeSettings.updateMany(
-        { isActive: true },
+        { ...getPlatformFilter(platform), isActive: true },
         { isActive: false, updatedBy: req.admin?._id || null }
       );
     }
 
     // Create new fee settings
     const feeSettingsData = {
+      platform,
       deliveryFee: deliveryFee !== undefined ? Number(deliveryFee) : 25,
       freeDeliveryThreshold: freeDeliveryThreshold ? Number(freeDeliveryThreshold) : 149,
       platformFee: Number(platformFee),
@@ -130,6 +154,7 @@ export const createOrUpdateFeeSettings = asyncHandler(async (req, res) => {
  */
 export const updateFeeSettings = asyncHandler(async (req, res) => {
   try {
+    const platform = resolvePlatform(req);
     const { id } = req.params;
     const { deliveryFee, deliveryFeeRanges, freeDeliveryThreshold, platformFee, gstRate, isActive } = req.body;
 
@@ -142,7 +167,7 @@ export const updateFeeSettings = asyncHandler(async (req, res) => {
     // If setting as active, deactivate others
     if (isActive === true && !feeSettings.isActive) {
       await FeeSettings.updateMany(
-        { _id: { $ne: id }, isActive: true },
+        { _id: { $ne: id }, ...getPlatformFilter(feeSettings.platform || platform), isActive: true },
         { isActive: false, updatedBy: req.admin?._id || null }
       );
     }
@@ -201,6 +226,9 @@ export const updateFeeSettings = asyncHandler(async (req, res) => {
     }
 
     feeSettings.updatedBy = req.admin?._id || null;
+    if (!feeSettings.platform) {
+      feeSettings.platform = platform;
+    }
 
     await feeSettings.save();
 
@@ -219,15 +247,16 @@ export const updateFeeSettings = asyncHandler(async (req, res) => {
  */
 export const getFeeSettingsHistory = asyncHandler(async (req, res) => {
   try {
+    const platform = resolvePlatform(req);
     const { limit = 50, offset = 0 } = req.query;
 
-    const feeSettings = await FeeSettings.find()
+    const feeSettings = await FeeSettings.find(getPlatformFilter(platform))
       .sort({ createdAt: -1 })
       .limit(parseInt(limit))
       .skip(parseInt(offset))
       .lean();
 
-    const total = await FeeSettings.countDocuments();
+    const total = await FeeSettings.countDocuments(getPlatformFilter(platform));
 
     return successResponse(res, 200, 'Fee settings history retrieved successfully', {
       feeSettings,
@@ -247,16 +276,22 @@ export const getFeeSettingsHistory = asyncHandler(async (req, res) => {
  */
 export const getPublicFeeSettings = asyncHandler(async (req, res) => {
   try {
-    const feeSettings = await FeeSettings.findOne({ isActive: true })
+    const platform = resolvePlatform(req);
+    const feeSettings = await FeeSettings.findOne({
+      ...getPlatformFilter(platform),
+      isActive: true
+    })
       .sort({ createdAt: -1 })
-      .select('deliveryFee freeDeliveryThreshold platformFee gstRate')
+      .select('platform deliveryFee deliveryFeeRanges freeDeliveryThreshold platformFee gstRate')
       .lean();
 
     // If no active settings, return default values
     if (!feeSettings) {
       return successResponse(res, 200, 'Fee settings retrieved successfully', {
         feeSettings: {
+          platform,
           deliveryFee: 25,
+          deliveryFeeRanges: [],
           freeDeliveryThreshold: 149,
           platformFee: 5,
           gstRate: 5,

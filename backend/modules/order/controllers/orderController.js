@@ -670,13 +670,15 @@ export const createOrder = async (req, res) => {
 
     // Always trust server-side pricing so plan benefits (free delivery/discount) are guaranteed.
     const couponCode = req.body?.couponCode || incomingPricing?.couponCode || incomingPricing?.appliedCoupon?.code || null;
+    const pricingPlatform = restaurantPlatform === 'mogrocery' ? 'mogrocery' : 'mofood';
     const pricing = await calculateOrderPricing({
       items,
       restaurantId: assignedRestaurantId,
       deliveryAddress: normalizedAddress,
       couponCode,
       deliveryFleet: deliveryFleet || 'standard',
-      userId
+      userId,
+      platform: pricingPlatform
     });
 
     // Log restaurant assignment for debugging
@@ -2201,7 +2203,7 @@ export const verifyEditedOrderCartPayment = async (req, res) => {
  */
 export const calculateOrder = async (req, res) => {
   try {
-    const { items, restaurantId, deliveryAddress, couponCode, deliveryFleet } = req.body;
+    const { items, restaurantId, deliveryAddress, couponCode, deliveryFleet, platform } = req.body;
     const userId = req.user?.id || req.user?._id || null;
 
     // Validate required fields
@@ -2219,7 +2221,8 @@ export const calculateOrder = async (req, res) => {
       deliveryAddress,
       couponCode,
       deliveryFleet: deliveryFleet || 'standard',
-      userId
+      userId,
+      platform: platform === 'mogrocery' ? 'mogrocery' : 'mofood'
     });
 
     res.json({

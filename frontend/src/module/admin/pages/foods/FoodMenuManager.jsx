@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { adminAPI } from "@/lib/api";
+import { adminAPI, restaurantAPI } from "@/lib/api";
 import { Loader2, Plus, Store } from "lucide-react";
 import { toast } from "sonner";
 
@@ -7,8 +7,10 @@ export default function FoodMenuManager() {
   const [restaurants, setRestaurants] = useState([]);
   const [selectedRestaurantId, setSelectedRestaurantId] = useState("");
   const [menu, setMenu] = useState({ sections: [] });
+  const [addons, setAddons] = useState([]);
   const [loadingRestaurants, setLoadingRestaurants] = useState(true);
   const [loadingMenu, setLoadingMenu] = useState(false);
+  const [loadingAddons, setLoadingAddons] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [form, setForm] = useState({
@@ -72,6 +74,33 @@ export default function FoodMenuManager() {
     };
 
     fetchMenu();
+  }, [selectedRestaurantId]);
+
+  useEffect(() => {
+    const fetchAddons = async () => {
+      if (!selectedRestaurantId) {
+        setAddons([]);
+        return;
+      }
+
+      try {
+        setLoadingAddons(true);
+        const response = await restaurantAPI.getAddonsByRestaurantId(selectedRestaurantId);
+        const addonRows =
+          response?.data?.data?.addons ||
+          response?.data?.addons ||
+          [];
+        setAddons(Array.isArray(addonRows) ? addonRows : []);
+      } catch (error) {
+        console.error("Failed to load addons:", error);
+        toast.error("Failed to load restaurant add-ons");
+        setAddons([]);
+      } finally {
+        setLoadingAddons(false);
+      }
+    };
+
+    fetchAddons();
   }, [selectedRestaurantId]);
 
   const selectedRestaurant = useMemo(
@@ -302,6 +331,55 @@ export default function FoodMenuManager() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mt-6">
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">
+          {selectedRestaurant?.name ? `${selectedRestaurant.name} Add-ons` : "Add-ons"}
+        </h2>
+
+        {loadingAddons ? (
+          <div className="py-16 flex items-center justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-slate-600" />
+          </div>
+        ) : !selectedRestaurantId ? (
+          <p className="text-sm text-slate-500">Select a restaurant to view add-ons.</p>
+        ) : addons.length === 0 ? (
+          <p className="text-sm text-slate-500">No add-ons found for this restaurant.</p>
+        ) : (
+          <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg overflow-hidden">
+            {addons.map((addon, index) => {
+              const addonId = addon.id || addon._id || `${addon.name || "addon"}-${index}`;
+              return (
+                <div
+                  key={String(addonId)}
+                  className="px-4 py-3 flex items-center justify-between gap-3 text-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium text-slate-800 truncate">{addon.name || "Unnamed Add-on"}</p>
+                    {addon.description ? (
+                      <p className="text-xs text-slate-500 truncate">{addon.description}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                        addon.isAvailable === false
+                          ? "bg-slate-100 text-slate-500"
+                          : "bg-emerald-50 text-emerald-700"
+                      }`}
+                    >
+                      {addon.isAvailable === false ? "Unavailable" : "Available"}
+                    </span>
+                    <span className="font-semibold text-slate-700">
+                      Rs {Number(addon.price || 0).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

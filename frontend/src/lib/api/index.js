@@ -1396,24 +1396,41 @@ export const adminAPI = {
   },
 
   // Fee Settings Management (Delivery & Platform Fee)
-  getFeeSettings: () => {
-    return apiClient.get(API_ENDPOINTS.ADMIN.FEE_SETTINGS);
+  getFeeSettings: (params = {}) => {
+    return apiClient.get(API_ENDPOINTS.ADMIN.FEE_SETTINGS, {
+      params: { ...params, platform: params.platform || getAdminPlatform() }
+    });
   },
 
-  getPublicFeeSettings: () => {
-    return apiClient.get(API_ENDPOINTS.ADMIN.FEE_SETTINGS_PUBLIC);
+  getPublicFeeSettings: (platform = null) => {
+    const resolvedPlatform = platform || (typeof window !== "undefined" ? (window.location.pathname.includes("/grocery") ? "mogrocery" : "mofood") : "mofood");
+    return apiClient.get(API_ENDPOINTS.ADMIN.FEE_SETTINGS_PUBLIC, {
+      params: { platform: resolvedPlatform }
+    });
   },
 
   getFeeSettingsHistory: (params = {}) => {
-    return apiClient.get(API_ENDPOINTS.ADMIN.FEE_SETTINGS_HISTORY, { params });
+    return apiClient.get(API_ENDPOINTS.ADMIN.FEE_SETTINGS_HISTORY, {
+      params: { ...params, platform: params.platform || getAdminPlatform() }
+    });
   },
 
   createOrUpdateFeeSettings: (data) => {
-    return apiClient.post(API_ENDPOINTS.ADMIN.FEE_SETTINGS, data);
+    return apiClient.post(API_ENDPOINTS.ADMIN.FEE_SETTINGS, {
+      ...data,
+      platform: data?.platform || getAdminPlatform()
+    });
   },
 
-  updateFeeSettings: (id, data) => {
-    return apiClient.put(API_ENDPOINTS.ADMIN.FEE_SETTINGS_BY_ID.replace(':id', id), data);
+  updateFeeSettings: (id, data, params = {}) => {
+    return apiClient.put(
+      API_ENDPOINTS.ADMIN.FEE_SETTINGS_BY_ID.replace(':id', id),
+      {
+        ...data,
+        platform: data?.platform || params.platform || getAdminPlatform()
+      },
+      { params: { ...params, platform: params.platform || getAdminPlatform() } }
+    );
   },
 
   // Zone Management

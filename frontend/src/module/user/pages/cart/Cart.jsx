@@ -540,7 +540,8 @@ export default function Cart() {
           restaurantId: restaurantData?._id || restaurantData?.restaurantId || restaurantId || null,
           deliveryAddress: defaultAddress,
           couponCode: appliedCoupon?.code || couponCode || null,
-          deliveryFleet: deliveryFleet || 'standard'
+          deliveryFleet: deliveryFleet || 'standard',
+          platform: "mofood"
         })
 
         if (response?.data?.success && response?.data?.data?.pricing) {
@@ -592,7 +593,7 @@ export default function Cart() {
   useEffect(() => {
     const fetchFeeSettings = async () => {
       try {
-        const response = await adminAPI.getPublicFeeSettings()
+        const response = await adminAPI.getPublicFeeSettings("mofood")
         if (response.data.success && response.data.data.feeSettings) {
           setFeeSettings({
             deliveryFee: response.data.data.feeSettings.deliveryFee || 25,
@@ -705,7 +706,8 @@ export default function Cart() {
             restaurantId: restaurantData?._id || restaurantData?.restaurantId || restaurantId || null,
             deliveryAddress: defaultAddress,
             couponCode: coupon.code,
-            deliveryFleet: deliveryFleet || 'standard'
+            deliveryFleet: deliveryFleet || 'standard',
+            platform: "mofood"
           })
 
           if (response?.data?.success && response?.data?.data?.pricing) {
@@ -741,7 +743,8 @@ export default function Cart() {
             restaurantId: restaurantData?._id || restaurantData?.restaurantId || restaurantId || null,
             deliveryAddress: defaultAddress,
             couponCode: null,
-            deliveryFleet: deliveryFleet || 'standard'
+            deliveryFleet: deliveryFleet || 'standard',
+            platform: "mofood"
           })
 
         if (response?.data?.success && response?.data?.data?.pricing) {

@@ -20,6 +20,12 @@ const deliveryFeeRangeSchema = new mongoose.Schema({
 
 const feeSettingsSchema = new mongoose.Schema(
   {
+    platform: {
+      type: String,
+      enum: ['mofood', 'mogrocery'],
+      default: 'mofood',
+      index: true,
+    },
     deliveryFee: {
       type: Number,
       default: 25,
@@ -70,7 +76,7 @@ const feeSettingsSchema = new mongoose.Schema(
 );
 
 // Indexes
-feeSettingsSchema.index({ isActive: 1 });
+feeSettingsSchema.index({ platform: 1, isActive: 1 });
 feeSettingsSchema.index({ createdAt: -1 });
 
 const FeeSettings = mongoose.model('FeeSettings', feeSettingsSchema);

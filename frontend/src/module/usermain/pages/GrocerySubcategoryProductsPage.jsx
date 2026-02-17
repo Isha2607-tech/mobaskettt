@@ -4,6 +4,7 @@ import { ArrowLeft, ShoppingCart } from "lucide-react";
 import api from "@/lib/api";
 import { toast } from "sonner";
 import { useCart } from "../../user/context/CartContext";
+import AddToCartAnimation from "../../user/components/AddToCartAnimation";
 
 export default function GrocerySubcategoryProductsPage() {
   const navigate = useNavigate();
@@ -44,9 +45,31 @@ export default function GrocerySubcategoryProductsPage() {
 
   const title = useMemo(() => subcategory?.name || "Subcategory Products", [subcategory]);
 
-  const handleAddToCart = (product) => {
+  const getSourcePosition = (event, itemId) => {
+    if (!event) return null;
+    let buttonElement = event.currentTarget;
+    if (!buttonElement && event.target) {
+      buttonElement = event.target.closest("button") || event.target;
+    }
+    if (!buttonElement) return null;
+
+    const rect = buttonElement.getBoundingClientRect();
+    const scrollX = window.pageXOffset || window.scrollX || 0;
+    const scrollY = window.pageYOffset || window.scrollY || 0;
+
+    return {
+      viewportX: rect.left + rect.width / 2,
+      viewportY: rect.top + rect.height / 2,
+      scrollX,
+      scrollY,
+      itemId,
+    };
+  };
+
+  const handleAddToCart = (product, event) => {
     try {
       const image = Array.isArray(product?.images) && product.images[0] ? product.images[0] : "https://via.placeholder.com/200";
+      const sourcePosition = getSourcePosition(event, product?._id || product?.id);
       addToCart({
         id: product?._id || product?.id,
         name: product?.name || "Product",
@@ -56,7 +79,7 @@ export default function GrocerySubcategoryProductsPage() {
         image,
         restaurantId: "grocery-store",
         restaurant: "MoGrocery",
-      });
+      }, sourcePosition);
       toast.success("Added to cart");
     } catch (error) {
       toast.error(error?.message || "Failed to add to cart");
@@ -125,7 +148,7 @@ export default function GrocerySubcategoryProductsPage() {
                 )}
                 <button
                   type="button"
-                  onClick={() => handleAddToCart(product)}
+                  onClick={(event) => handleAddToCart(product, event)}
                   className={`h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1 ${
                     isInCart(product?._id || product?.id)
                       ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
@@ -140,6 +163,14 @@ export default function GrocerySubcategoryProductsPage() {
           ))}
         </div>
       )}
+
+      <AddToCartAnimation
+        bottomOffset={96}
+        pillClassName="scale-105"
+        linkTo="/grocery/cart"
+        platform="mogrocery"
+        hideOnPages={true}
+      />
     </div>
   );
 }

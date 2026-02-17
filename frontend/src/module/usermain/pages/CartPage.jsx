@@ -137,7 +137,7 @@ export default function CartPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f6e9dc] pb-24">
+    <div className="min-h-screen bg-[#f6e9dc]">
       {/* Header */}
       <div className="bg-white sticky top-0 z-50 rounded-b-3xl">
         <div className="px-4 py-3 flex items-center gap-3">
@@ -382,7 +382,7 @@ export default function CartPage() {
           </div>
 
           {/* Checkout Button */}
-          <div className="px-4 pb-20">
+          <div className="px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-6">
             <Button
               className="w-full bg-[#ff8100] hover:bg-[#e67300] text-white font-bold py-4 rounded-xl text-base"
               onClick={handleCheckout}

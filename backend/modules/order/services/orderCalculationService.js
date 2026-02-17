@@ -11,9 +11,18 @@ import mongoose from 'mongoose';
  * Get active fee settings from database
  * Returns default values if no settings found
  */
-const getFeeSettings = async () => {
+const getFeeSettings = async (platform = 'mofood') => {
+  const normalizedPlatform = platform === 'mogrocery' ? 'mogrocery' : 'mofood';
+  const platformFilter =
+    normalizedPlatform === 'mogrocery'
+      ? { platform: 'mogrocery' }
+      : { $or: [{ platform: 'mofood' }, { platform: { $exists: false } }] };
+
   try {
-    const feeSettings = await FeeSettings.findOne({ isActive: true })
+    const feeSettings = await FeeSettings.findOne({
+      ...platformFilter,
+      isActive: true
+    })
       .sort({ createdAt: -1 })
       .lean();
     
@@ -43,9 +52,27 @@ const getFeeSettings = async () => {
 /**
  * Calculate delivery fee based on order value, distance, and restaurant settings
  */
-export const calculateDeliveryFee = async (orderValue, restaurant, deliveryAddress = null) => {
+export const calculateDeliveryFee = async (orderValue, restaurant, deliveryAddress = null, platform = 'mofood') => {
   // Get fee settings from database
-  const feeSettings = await getFeeSettings();
+  const feeSettings = await getFeeSettings(restaurant?.platform || platform || 'mofood');
+
+  // If admin range-based delivery fees are configured, they take precedence.
+  if (feeSettings.deliveryFeeRanges && Array.isArray(feeSettings.deliveryFeeRanges) && feeSettings.deliveryFeeRanges.length > 0) {
+    const sortedRanges = [...feeSettings.deliveryFeeRanges].sort((a, b) => a.min - b.min);
+
+    for (let i = 0; i < sortedRanges.length; i++) {
+      const range = sortedRanges[i];
+      const isLastRange = i === sortedRanges.length - 1;
+
+      if (isLastRange) {
+        if (orderValue >= range.min && orderValue <= range.max) {
+          return range.fee;
+        }
+      } else if (orderValue >= range.min && orderValue < range.max) {
+        return range.fee;
+      }
+    }
+  }
   
   // Check restaurant settings for free delivery threshold (takes priority)
   if (restaurant?.freeDeliveryAbove) {
@@ -57,31 +84,6 @@ export const calculateDeliveryFee = async (orderValue, restaurant, deliveryAddre
     const freeDeliveryThreshold = feeSettings.freeDeliveryThreshold || 149;
     if (orderValue >= freeDeliveryThreshold) {
       return 0;
-    }
-  }
-  
-  // Check if delivery fee ranges are configured
-  if (feeSettings.deliveryFeeRanges && Array.isArray(feeSettings.deliveryFeeRanges) && feeSettings.deliveryFeeRanges.length > 0) {
-    // Sort ranges by min value to ensure proper checking
-    const sortedRanges = [...feeSettings.deliveryFeeRanges].sort((a, b) => a.min - b.min);
-    
-    // Find matching range (orderValue >= min && orderValue < max)
-    // For the last range, we check orderValue >= min && orderValue <= max
-    for (let i = 0; i < sortedRanges.length; i++) {
-      const range = sortedRanges[i];
-      const isLastRange = i === sortedRanges.length - 1;
-      
-      if (isLastRange) {
-        // Last range: include max value
-        if (orderValue >= range.min && orderValue <= range.max) {
-          return range.fee;
-        }
-      } else {
-        // Other ranges: exclude max value (handled by next range)
-        if (orderValue >= range.min && orderValue < range.max) {
-          return range.fee;
-        }
-      }
     }
   }
   
@@ -103,8 +105,8 @@ export const calculateDeliveryFee = async (orderValue, restaurant, deliveryAddre
 /**
  * Calculate platform fee
  */
-export const calculatePlatformFee = async () => {
-  const feeSettings = await getFeeSettings();
+export const calculatePlatformFee = async (platform = 'mofood') => {
+  const feeSettings = await getFeeSettings(platform);
   return feeSettings.platformFee || 5;
 };
 
@@ -112,9 +114,9 @@ export const calculatePlatformFee = async () => {
  * Calculate GST (Goods and Services Tax)
  * GST is calculated on subtotal after discounts
  */
-export const calculateGST = async (subtotal, discount = 0) => {
+export const calculateGST = async (subtotal, discount = 0, platform = 'mofood') => {
   const taxableAmount = subtotal - discount;
-  const feeSettings = await getFeeSettings();
+  const feeSettings = await getFeeSettings(platform);
   const gstRate = (feeSettings.gstRate || 5) / 100; // Convert percentage to decimal
   return Math.round(taxableAmount * gstRate);
 };
@@ -397,7 +399,8 @@ export const calculateOrderPricing = async ({
   deliveryAddress = null,
   couponCode = null,
   deliveryFleet = 'standard',
-  userId = null
+  userId = null,
+  platform = 'mofood'
 }) => {
   try {
     // Calculate subtotal from items
@@ -513,11 +516,14 @@ export const calculateOrderPricing = async ({
     const planDiscount = Number(planBenefits?.discount || 0);
     const totalDiscount = Math.min(Math.round(subtotal), Math.max(0, Math.round(discount + planDiscount)));
 
+    const pricingPlatform = restaurant?.platform === 'mogrocery' ? 'mogrocery' : (platform === 'mogrocery' ? 'mogrocery' : 'mofood');
+
     // Calculate delivery fee
     const deliveryFee = await calculateDeliveryFee(
       subtotal,
       restaurant,
-      deliveryAddress
+      deliveryAddress,
+      pricingPlatform
     );
     
     // Apply free delivery from coupon or active plan.
@@ -525,10 +531,10 @@ export const calculateOrderPricing = async ({
     const finalDeliveryFee = isFreeDeliveryApplied ? 0 : deliveryFee;
     
     // Calculate platform fee
-    const platformFee = await calculatePlatformFee();
+    const platformFee = await calculatePlatformFee(pricingPlatform);
     
     // Calculate GST on subtotal after discount
-    const gst = await calculateGST(subtotal, totalDiscount);
+    const gst = await calculateGST(subtotal, totalDiscount, pricingPlatform);
     
     // Calculate total
     const total = subtotal - totalDiscount + finalDeliveryFee + platformFee + gst;

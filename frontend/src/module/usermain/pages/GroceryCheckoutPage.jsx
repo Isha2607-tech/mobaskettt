@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -20,7 +20,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useProfile } from "../../user/context/ProfileContext";
 import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
 import { useZone } from "../../user/hooks/useZone";
-import { orderAPI, restaurantAPI } from "@/lib/api";
+import { adminAPI, orderAPI, restaurantAPI } from "@/lib/api";
 import { initRazorpayPayment } from "@/lib/utils/razorpay";
 import { toast } from "sonner";
 
@@ -36,14 +36,22 @@ export default function GroceryCheckoutPage() {
   const [deliveryOption, setDeliveryOption] = useState("now");
   const [scheduledDate, setScheduledDate] = useState(new Date());
   const [scheduledTime, setScheduledTime] = useState("");
+  const [feeSettings, setFeeSettings] = useState({
+    deliveryFee: 25,
+    deliveryFeeRanges: [],
+    freeDeliveryThreshold: 149,
+    platformFee: 5,
+    gstRate: 5,
+  });
+  const [calculatedPricing, setCalculatedPricing] = useState(null);
+  const [loadingPricing, setLoadingPricing] = useState(false);
+  const [resolvedRestaurant, setResolvedRestaurant] = useState(null);
 
   // Filter grocery items
   const groceryItems = cart.filter((item) => isGroceryItem(item));
 
   const deliveryAddress =
     "Select delivery address";
-  const handlingCharge = 2;
-  const deliveryFee = 0;
 
   const selectedAddress = useMemo(() => {
     const defaultAddress = getDefaultAddress();
@@ -93,14 +101,42 @@ export default function GroceryCheckoutPage() {
     0,
   );
   const totalSavings = itemsTotal - subtotal;
-  const grandTotal = subtotal + handlingCharge + deliveryFee;
+
+  useEffect(() => {
+    const fetchFeeSettings = async () => {
+      try {
+        const response = await adminAPI.getPublicFeeSettings("mogrocery");
+        const settings = response?.data?.data?.feeSettings || response?.data?.feeSettings || {};
+        setFeeSettings((prev) => ({
+          ...prev,
+          deliveryFee: Number(settings.deliveryFee ?? prev.deliveryFee),
+          deliveryFeeRanges: Array.isArray(settings.deliveryFeeRanges)
+            ? settings.deliveryFeeRanges
+            : prev.deliveryFeeRanges,
+          freeDeliveryThreshold: Number(settings.freeDeliveryThreshold ?? prev.freeDeliveryThreshold),
+          platformFee: Number(settings.platformFee ?? prev.platformFee),
+          gstRate: Number(settings.gstRate ?? prev.gstRate),
+        }));
+      } catch (error) {
+        console.error("Failed to fetch grocery fee settings:", error);
+      }
+    };
+
+    fetchFeeSettings();
+  }, []);
 
   const resolveGroceryRestaurant = async () => {
+    if (resolvedRestaurant?.restaurantId) {
+      return resolvedRestaurant;
+    }
+
     const cartRestaurantId = groceryItems[0]?.restaurantId;
     const cartRestaurantName = groceryItems[0]?.restaurant || "MoGrocery";
 
     if (cartRestaurantId && cartRestaurantId !== "grocery-store") {
-      return { restaurantId: cartRestaurantId, restaurantName: cartRestaurantName };
+      const resolved = { restaurantId: cartRestaurantId, restaurantName: cartRestaurantName };
+      setResolvedRestaurant(resolved);
+      return resolved;
     }
 
     const restaurantsResponse = await restaurantAPI.getRestaurants({ limit: 200 });
@@ -119,10 +155,12 @@ export default function GroceryCheckoutPage() {
       throw new Error("Unable to resolve store for checkout.");
     }
 
-    return {
+    const resolved = {
       restaurantId: resolvedRestaurantId,
       restaurantName: groceryLikeStore?.name || cartRestaurantName,
     };
+    setResolvedRestaurant(resolved);
+    return resolved;
   };
 
   const buildOrderItems = () =>
@@ -135,6 +173,86 @@ export default function GroceryCheckoutPage() {
       description: item.description || "",
       isVeg: item.isVeg !== false,
     }));
+
+  useEffect(() => {
+    const resolveRestaurantForPreview = async () => {
+      if (!groceryItems.length) {
+        setResolvedRestaurant(null);
+        return;
+      }
+      try {
+        await resolveGroceryRestaurant();
+      } catch (error) {
+        console.error("Failed to resolve grocery store for preview:", error);
+      }
+    };
+
+    resolveRestaurantForPreview();
+  }, [groceryItems]);
+
+  useEffect(() => {
+    const calculatePricingPreview = async () => {
+      if (!groceryItems.length || !selectedAddress || !resolvedRestaurant?.restaurantId) {
+        setLoadingPricing(false);
+        setCalculatedPricing(null);
+        return;
+      }
+
+      try {
+        setLoadingPricing(true);
+        const response = await orderAPI.calculateOrder({
+          items: buildOrderItems(),
+          restaurantId: resolvedRestaurant.restaurantId,
+          deliveryAddress: selectedAddress,
+          deliveryFleet: "standard",
+          platform: "mogrocery",
+          zoneId: zoneId || undefined,
+        });
+        setCalculatedPricing(response?.data?.data?.pricing || null);
+      } catch (error) {
+        console.error("Failed to calculate grocery pricing preview:", error);
+        setCalculatedPricing(null);
+      } finally {
+        setLoadingPricing(false);
+      }
+    };
+
+    calculatePricingPreview();
+  }, [groceryItems, selectedAddress, resolvedRestaurant, zoneId]);
+
+  const showPricingLoading = loadingPricing && !calculatedPricing;
+
+  const resolveDeliveryFeeFromRanges = (orderSubtotal, ranges, fallbackDeliveryFee, freeThreshold) => {
+    const sortedRanges = Array.isArray(ranges)
+      ? [...ranges].sort((a, b) => Number(a?.min || 0) - Number(b?.min || 0))
+      : [];
+
+    const matchingRange = sortedRanges.find((range) => {
+      const min = Number(range?.min ?? 0);
+      const max = Number(range?.max ?? Number.MAX_SAFE_INTEGER);
+      return orderSubtotal >= min && orderSubtotal <= max;
+    });
+
+    if (matchingRange) return Math.max(0, Number(matchingRange?.fee ?? 0));
+    if (orderSubtotal >= Number(freeThreshold ?? 149)) return 0;
+    return Math.max(0, Number(fallbackDeliveryFee ?? 25));
+  };
+
+  const fallbackDeliveryFee = resolveDeliveryFeeFromRanges(
+    subtotal,
+    feeSettings?.deliveryFeeRanges,
+    feeSettings?.deliveryFee,
+    feeSettings?.freeDeliveryThreshold,
+  );
+  const fallbackPlatformFee = Number(feeSettings?.platformFee ?? 5);
+  const fallbackTax = Math.max(0, subtotal * (Number(feeSettings?.gstRate ?? 5) / 100));
+  const summaryDeliveryFee = Number(calculatedPricing?.deliveryFee ?? fallbackDeliveryFee);
+  const summaryPlatformFee = Number(calculatedPricing?.platformFee ?? fallbackPlatformFee);
+  const summaryTax = Number(calculatedPricing?.tax ?? fallbackTax);
+  const grandTotal = Number(
+    calculatedPricing?.total ??
+      subtotal + summaryDeliveryFee + summaryPlatformFee + summaryTax - Number(calculatedPricing?.discount ?? 0),
+  );
 
   const handlePlaceOrder = async () => {
     if (isPlacingOrder) return;
@@ -165,6 +283,7 @@ export default function GroceryCheckoutPage() {
         restaurantId,
         deliveryAddress: selectedAddress,
         deliveryFleet: "standard",
+        platform: "mogrocery",
       });
       const calculatedPricing = pricingResponse?.data?.data?.pricing;
       if (!calculatedPricing?.total) {
@@ -362,24 +481,36 @@ export default function GroceryCheckoutPage() {
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600">Subtotal</span>
               <span className="text-gray-900 font-bold">
-                ₹{subtotal.toFixed(2)}
+                {showPricingLoading ? "Calculating..." : `Rs ${subtotal.toFixed(2)}`}
               </span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600">Delivery Fee</span>
-              <span className="text-yellow-600 font-bold">FREE</span>
+              <span className="text-gray-900 font-bold">
+                {showPricingLoading
+                  ? "Calculating..."
+                  : summaryDeliveryFee > 0
+                    ? `Rs ${summaryDeliveryFee.toFixed(2)}`
+                    : "FREE"}
+              </span>
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600">Handling Charge</span>
+              <span className="text-gray-600">Platform Fee</span>
               <span className="text-gray-900 font-bold">
-                ₹{handlingCharge.toFixed(2)}
+                {showPricingLoading ? "Calculating..." : `Rs ${summaryPlatformFee.toFixed(2)}`}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">GST & Taxes</span>
+              <span className="text-gray-900 font-bold">
+                {showPricingLoading ? "Calculating..." : `Rs ${summaryTax.toFixed(2)}`}
               </span>
             </div>
             {totalSavings > 0 && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-600">Total Savings</span>
                 <span className="text-yellow-700 font-bold">
-                  -₹{totalSavings.toFixed(2)}
+                  -Rs {totalSavings.toFixed(2)}
                 </span>
               </div>
             )}
@@ -389,7 +520,7 @@ export default function GroceryCheckoutPage() {
                   Grand Total
                 </span>
                 <span className="text-xl font-black text-gray-900">
-                  ₹{grandTotal.toFixed(2)}
+                  {showPricingLoading ? "Calculating..." : `Rs ${grandTotal.toFixed(2)}`}
                 </span>
               </div>
             </div>

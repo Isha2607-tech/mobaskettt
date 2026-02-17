@@ -21,7 +21,7 @@ import { useCart } from "../../user/context/CartContext";
 import { useProfile } from "../../user/context/ProfileContext";
 import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
 import { useZone } from "../../user/hooks/useZone";
-import { locationAPI, orderAPI, restaurantAPI } from "@/lib/api";
+import { adminAPI, locationAPI, orderAPI, restaurantAPI } from "@/lib/api";
 import { initRazorpayPayment } from "@/lib/utils/razorpay";
 
 export default function CheckoutPage() {
@@ -36,6 +36,15 @@ export default function CheckoutPage() {
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [addons, setAddons] = useState([]);
   const [loadingAddons, setLoadingAddons] = useState(false);
+  const [loadingPricing, setLoadingPricing] = useState(false);
+  const [calculatedPricing, setCalculatedPricing] = useState(null);
+  const [feeSettings, setFeeSettings] = useState({
+    deliveryFee: 25,
+    deliveryFeeRanges: [],
+    freeDeliveryThreshold: 149,
+    platformFee: 5,
+    gstRate: 5,
+  });
   const [pendingOnlineOrder, setPendingOnlineOrder] = useState(null);
   const [selectedAddress, setSelectedAddress] = useState(null);
   const [showAddAddressForm, setShowAddAddressForm] = useState(false);
@@ -246,26 +255,134 @@ export default function CheckoutPage() {
     fetchAddons();
   }, [restaurantId]);
 
+  useEffect(() => {
+    const fetchPublicFeeSettings = async () => {
+      try {
+        const response = await adminAPI.getPublicFeeSettings("mofood");
+        const settings = response?.data?.data?.feeSettings || response?.data?.feeSettings || {};
+        setFeeSettings((prev) => ({
+          ...prev,
+          deliveryFee: Number(settings.deliveryFee ?? prev.deliveryFee),
+          deliveryFeeRanges: Array.isArray(settings.deliveryFeeRanges)
+            ? settings.deliveryFeeRanges
+            : prev.deliveryFeeRanges,
+          freeDeliveryThreshold: Number(
+            settings.freeDeliveryThreshold ?? prev.freeDeliveryThreshold,
+          ),
+          platformFee: Number(settings.platformFee ?? prev.platformFee),
+          gstRate: Number(settings.gstRate ?? prev.gstRate),
+        }));
+      } catch (error) {
+        console.error("Failed to fetch public fee settings:", error);
+      }
+    };
+
+    fetchPublicFeeSettings();
+  }, []);
+
+  useEffect(() => {
+    const fetchPricingPreview = async () => {
+      if (!restaurantId || !selectedAddress || foodItems.length === 0) {
+        setCalculatedPricing(null);
+        return;
+      }
+
+      try {
+        setLoadingPricing(true);
+        const previewItems = foodItems.map((item) => ({
+          itemId: String(item.id || item._id || item.itemId || ""),
+          name: item.name,
+          price: Number(item.price || 0),
+          quantity: Number(item.quantity || 1),
+          image: item.image || item.imageUrl || "",
+          description: item.description || "",
+          isVeg: item.isVeg !== false,
+        }));
+
+        const response = await orderAPI.calculateOrder({
+          items: previewItems,
+          restaurantId,
+          deliveryAddress: selectedAddress,
+          deliveryFleet: "standard",
+          platform: "mofood",
+        });
+
+        const pricing = response?.data?.data?.pricing || null;
+        setCalculatedPricing(pricing);
+      } catch (error) {
+        console.error("Failed to calculate pricing preview:", error);
+        setCalculatedPricing(null);
+      } finally {
+        setLoadingPricing(false);
+      }
+    };
+
+    fetchPricingPreview();
+  }, [foodItems, restaurantId, selectedAddress]);
+
+  const getRangeBasedDeliveryFee = (subtotal, ranges = [], fallback = 25) => {
+    if (!Array.isArray(ranges) || ranges.length === 0) return Number(fallback || 0);
+    const sorted = [...ranges].sort((a, b) => Number(a.min || 0) - Number(b.min || 0));
+    for (let i = 0; i < sorted.length; i += 1) {
+      const range = sorted[i];
+      const min = Number(range?.min ?? 0);
+      const max = Number(range?.max ?? Number.MAX_SAFE_INTEGER);
+      const fee = Number(range?.fee ?? fallback ?? 0);
+      const isLast = i === sorted.length - 1;
+      if ((isLast && subtotal >= min && subtotal <= max) || (!isLast && subtotal >= min && subtotal < max)) {
+        return fee;
+      }
+    }
+    return Number(fallback || 0);
+  };
+
+  const formatCurrency = (amount) => `\u20B9${Number(amount || 0).toFixed(2)}`;
+
   const orderSummary = useMemo(() => {
-    const subtotal = foodItems.reduce(
+    const fallbackSubtotal = foodItems.reduce(
       (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0),
       0,
     );
-    const deliveryFee = 0;
-    const discount = 0;
-    const total = subtotal + deliveryFee - discount;
+    const fallbackFreeDeliveryThreshold = Number(feeSettings?.freeDeliveryThreshold ?? 149);
+    const fallbackDeliveryFeeConfigured = Number(feeSettings?.deliveryFee ?? 25);
+    const fallbackPlatformFee = Number(feeSettings?.platformFee ?? 5);
+    const fallbackTax = Math.round(
+      Math.max(0, fallbackSubtotal) * (Number(feeSettings?.gstRate ?? 5) / 100),
+    );
+    const rangeDeliveryFee = getRangeBasedDeliveryFee(
+      fallbackSubtotal,
+      feeSettings?.deliveryFeeRanges,
+      fallbackDeliveryFeeConfigured,
+    );
+    const fallbackDeliveryFee =
+      (!feeSettings?.deliveryFeeRanges?.length &&
+        fallbackFreeDeliveryThreshold > 0 &&
+        fallbackSubtotal >= fallbackFreeDeliveryThreshold)
+        ? 0
+        : rangeDeliveryFee;
+
+    const subtotal = Number(calculatedPricing?.subtotal ?? fallbackSubtotal);
+    const deliveryFee = Number(calculatedPricing?.deliveryFee ?? fallbackDeliveryFee);
+    const discount = Number(calculatedPricing?.discount ?? 0);
+    const platformFee = Number(calculatedPricing?.platformFee ?? fallbackPlatformFee);
+    const tax = Number(calculatedPricing?.tax ?? fallbackTax);
+    const total = Number(
+      calculatedPricing?.total ?? subtotal + deliveryFee + platformFee + tax - discount,
+    );
 
     return {
       items: foodItems,
       subtotal,
       deliveryFee,
       discount,
+      platformFee,
+      tax,
       total,
       deliveryAddress:
         selectedAddress?.formattedAddress || "Select delivery address",
       estimatedTime: "30-40 min",
     };
-  }, [foodItems, selectedAddress]);
+  }, [calculatedPricing, feeSettings, foodItems, selectedAddress]);
 
   const buildOrderItems = () =>
     foodItems.map((item) => ({
@@ -381,6 +498,7 @@ export default function CheckoutPage() {
         restaurantId,
         deliveryAddress: selectedAddress,
         deliveryFleet: "standard",
+        platform: "mofood",
       });
       const calculatedPricing = pricingResponse?.data?.data?.pricing;
       if (!calculatedPricing?.total) {
@@ -488,7 +606,7 @@ export default function CheckoutPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#fff7ed] pb-24">
+    <div className="min-h-screen bg-[#fff7ed]">
       <div className="bg-white/90 backdrop-blur sticky top-0 z-50 border-b border-orange-100">
         <div className="px-4 py-3 flex items-center gap-3">
           <button
@@ -774,16 +892,36 @@ export default function CheckoutPage() {
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600">Subtotal</span>
-              <span className="text-gray-900 font-medium">₹{orderSummary.subtotal.toFixed(2)}</span>
+              <span className="text-gray-900 font-medium">{formatCurrency(orderSummary.subtotal)}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600">Delivery Fee</span>
-              <span className="text-gray-900 font-medium">₹{orderSummary.deliveryFee.toFixed(2)}</span>
+              <span className="text-gray-900 font-medium">
+                {loadingPricing ? "Calculating..." : formatCurrency(orderSummary.deliveryFee)}
+              </span>
             </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">Platform Fee</span>
+              <span className="text-gray-900 font-medium">
+                {loadingPricing ? "Calculating..." : formatCurrency(orderSummary.platformFee)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">GST & Taxes</span>
+              <span className="text-gray-900 font-medium">
+                {loadingPricing ? "Calculating..." : formatCurrency(orderSummary.tax)}
+              </span>
+            </div>
+            {orderSummary.discount > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-green-600">Discount</span>
+                <span className="text-green-600 font-medium">-{formatCurrency(orderSummary.discount)}</span>
+              </div>
+            )}
             <div className="border-t border-gray-200 pt-2 mt-2">
               <div className="flex items-center justify-between">
                 <span className="text-base font-bold text-gray-900">Total</span>
-                <span className="text-xl font-bold text-[#ff8100]">₹{orderSummary.total.toFixed(2)}</span>
+                <span className="text-xl font-bold text-[#ff8100]">{formatCurrency(orderSummary.total)}</span>
               </div>
             </div>
           </div>
@@ -846,7 +984,7 @@ export default function CheckoutPage() {
         </div>
       </div>
 
-      <div className="px-4 pb-20">
+      <div className="px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-6">
         <Button
           className="w-full bg-[#ff8100] hover:bg-[#e67300] text-white font-bold py-4 rounded-2xl text-base shadow-lg shadow-orange-200/70"
           onClick={handleProceedToPayment}
@@ -894,3 +1032,5 @@ export default function CheckoutPage() {
     </div>
   );
 }
+
+

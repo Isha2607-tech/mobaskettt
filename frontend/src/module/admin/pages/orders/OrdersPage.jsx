@@ -38,10 +38,20 @@ export default function OrdersPage({ statusKey = "all", platformOverride }) {
   const [selectedOrderForRefund, setSelectedOrderForRefund] = useState(null)
   const audioRef = useRef(null)
   const previousIncomingCountRef = useRef(null)
+  const isAudioUnlockedRef = useRef(false)
+  const pendingSoundRef = useRef(false)
+
+  const playIncomingSound = () => {
+    if (!audioRef.current) return
+    audioRef.current.currentTime = 0
+    audioRef.current.play().catch(() => {
+      pendingSoundRef.current = true
+    })
+  }
 
   const getIncomingRequestCount = (ordersList = []) => {
     return ordersList.filter((order) =>
-      order.status === "confirmed" &&
+      (order.status === "confirmed" || order.status === "pending" || order.status === "scheduled") &&
       (order.adminApprovalStatus === "pending" || !order.adminApprovalStatus)
     ).length
   }
@@ -70,10 +80,7 @@ export default function OrdersPage({ statusKey = "all", platformOverride }) {
           const incomingCount = getIncomingRequestCount(fetchedOrders)
           const previousCount = previousIncomingCountRef.current
           if ((previousCount === null && incomingCount > 0) || (previousCount !== null && incomingCount > previousCount)) {
-            if (audioRef.current) {
-              audioRef.current.currentTime = 0
-              audioRef.current.play().catch(() => {})
-            }
+            playIncomingSound()
             toast.info("New incoming order request received")
           }
           previousIncomingCountRef.current = incomingCount
@@ -100,19 +107,45 @@ export default function OrdersPage({ statusKey = "all", platformOverride }) {
   // Poll orders list and trigger sound even when tab is in background.
   useEffect(() => {
     audioRef.current = new Audio(alertSound)
+    audioRef.current.preload = "auto"
     audioRef.current.volume = 0.8
+
+    const unlockAudio = async () => {
+      if (!audioRef.current || isAudioUnlockedRef.current) return
+      try {
+        audioRef.current.muted = true
+        await audioRef.current.play()
+        audioRef.current.pause()
+        audioRef.current.currentTime = 0
+        audioRef.current.muted = false
+        isAudioUnlockedRef.current = true
+        if (pendingSoundRef.current) {
+          pendingSoundRef.current = false
+          playIncomingSound()
+        }
+      } catch {
+        // Ignore unlock failures; browser may still require direct user action.
+      }
+    }
+
+    window.addEventListener("pointerdown", unlockAudio, { once: true })
+    window.addEventListener("keydown", unlockAudio, { once: true })
 
     const pollTimer = setInterval(() => {
       fetchOrders({ showLoader: false })
     }, 10000)
 
     return () => {
+      window.removeEventListener("pointerdown", unlockAudio)
+      window.removeEventListener("keydown", unlockAudio)
       clearInterval(pollTimer)
       if (audioRef.current) {
         audioRef.current.pause()
         audioRef.current.currentTime = 0
         audioRef.current = null
       }
+      isAudioUnlockedRef.current = false
+      pendingSoundRef.current = false
     }
   }, [statusKey, platformOverride])
 

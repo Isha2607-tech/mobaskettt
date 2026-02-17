@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react"
+import { Link } from "react-router-dom"
 import { Search, Download, ChevronDown, Star, ArrowUpDown, Settings, FileText, FileSpreadsheet, Code, Check, Columns, Loader2, Eye } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
@@ -298,9 +299,9 @@ export default function DeliverymanReviews() {
                       )}
                       {visibleColumns.deliveryman && (
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <a href={`/admin/delivery-partners/${review.deliverymanId}`} className="text-sm font-medium text-blue-600 hover:text-blue-700">
+                          <Link to="/admin/delivery-partners" className="text-sm font-medium text-blue-600 hover:text-blue-700">
                             {review.deliveryman}
-                          </a>
+                          </Link>
                         </td>
                       )}
                       {visibleColumns.deliverymanId && (
@@ -312,9 +313,9 @@ export default function DeliverymanReviews() {
                       )}
                       {visibleColumns.customer && (
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <a href={`/admin/users/${review.customerId}`} className="text-sm font-medium text-blue-600 hover:text-blue-700">
+                          <Link to="/admin/customers" className="text-sm font-medium text-blue-600 hover:text-blue-700">
                             {review.customer}
-                          </a>
+                          </Link>
                         </td>
                       )}
                       {visibleColumns.review && (
@@ -445,24 +446,24 @@ export default function DeliverymanReviews() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-blue-50 rounded-lg p-4">
                   <p className="text-xs text-blue-600 mb-1">Deliveryman</p>
-                  <a 
-                    href={`/admin/delivery-partners/${selectedReview.deliverymanId}`}
+                  <Link 
+                    to="/admin/delivery-partners"
                     className="text-sm font-semibold text-blue-700 hover:text-blue-800"
                   >
                     {selectedReview.deliveryman}
-                  </a>
+                  </Link>
                   {selectedReview.deliverymanPhone && (
                     <p className="text-xs text-blue-500 mt-1">{selectedReview.deliverymanPhone}</p>
                   )}
                 </div>
                 <div className="bg-purple-50 rounded-lg p-4">
                   <p className="text-xs text-purple-600 mb-1">Customer</p>
-                  <a 
-                    href={`/admin/users/${selectedReview.customerId}`}
+                  <Link 
+                    to="/admin/customers"
                     className="text-sm font-semibold text-purple-700 hover:text-purple-800"
                   >
                     {selectedReview.customer}
-                  </a>
+                  </Link>
                   {selectedReview.customerPhone && (
                     <p className="text-xs text-purple-500 mt-1">{selectedReview.customerPhone}</p>
                   )}

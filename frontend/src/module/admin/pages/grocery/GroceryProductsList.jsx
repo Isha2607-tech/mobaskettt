@@ -3,12 +3,20 @@ import { Search, Trash2, Loader2 } from "lucide-react"
 import { adminAPI, restaurantAPI } from "@/lib/api"
 import apiClient from "@/lib/api"
 import { toast } from "sonner"
+import { usePlatform } from "../../context/PlatformContext"
 
 export default function GroceryProductsList() {
+  const { platform, switchPlatform } = usePlatform()
   const [searchQuery, setSearchQuery] = useState("")
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
+
+  useEffect(() => {
+    if (platform !== "mogrocery") {
+      switchPlatform("mogrocery")
+    }
+  }, [platform, switchPlatform])
 
   // Fetch all products from all stores (restaurants with grocery platform)
   useEffect(() => {
@@ -16,13 +24,13 @@ export default function GroceryProductsList() {
       try {
         setLoading(true)
         
-        // First, fetch all restaurants/stores
-        const restaurantsResponse = await adminAPI.getRestaurants({ limit: 1000 })
-        const restaurants = restaurantsResponse?.data?.data?.restaurants || 
-                          restaurantsResponse?.data?.restaurants || 
-                          []
+        // Fetch only grocery stores (platform scoped on backend)
+        const storesResponse = await adminAPI.getGroceryStores({ limit: 1000 })
+        const stores = storesResponse?.data?.data?.stores || 
+                       storesResponse?.data?.stores || 
+                       []
         
-        if (restaurants.length === 0) {
+        if (stores.length === 0) {
           setProducts([])
           setLoading(false)
           return
@@ -31,7 +39,7 @@ export default function GroceryProductsList() {
         // Fetch menu for each restaurant/store and extract all product items
         const allProducts = []
         
-        for (const restaurant of restaurants) {
+        for (const restaurant of stores) {
           try {
             const restaurantId = restaurant._id || restaurant.id
             const menuResponse = await restaurantAPI.getMenuByRestaurantId(restaurantId)

@@ -3,12 +3,20 @@ import { Search, Trash2, Loader2 } from "lucide-react"
 import { adminAPI, restaurantAPI } from "@/lib/api"
 import apiClient from "@/lib/api"
 import { toast } from "sonner"
+import { usePlatform } from "../../context/PlatformContext"
 
 export default function GroceryAddonsList() {
+  const { platform, switchPlatform } = usePlatform()
   const [searchQuery, setSearchQuery] = useState("")
   const [addons, setAddons] = useState([])
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
+
+  useEffect(() => {
+    if (platform !== "mogrocery") {
+      switchPlatform("mogrocery")
+    }
+  }, [platform, switchPlatform])
 
   // Fetch all addons from all stores
   useEffect(() => {
@@ -16,9 +24,9 @@ export default function GroceryAddonsList() {
       try {
         setLoading(true)
         
-        const restaurantsResponse = await adminAPI.getRestaurants({ limit: 1000 })
-        const restaurants = restaurantsResponse?.data?.data?.restaurants || 
-                          restaurantsResponse?.data?.restaurants || 
+        const storesResponse = await adminAPI.getGroceryStores({ limit: 1000 })
+        const restaurants = storesResponse?.data?.data?.stores || 
+                          storesResponse?.data?.stores || 
                           []
         
         if (restaurants.length === 0) {

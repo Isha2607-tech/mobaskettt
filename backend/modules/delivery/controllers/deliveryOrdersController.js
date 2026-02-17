@@ -50,6 +50,24 @@ const emitOrderTrackingUpdate = async (orderLike, payload = {}) => {
   }
 };
 
+const isOrderTerminalForDelivery = (order) => {
+  if (!order) return false;
+  const status = String(order.status || '').toLowerCase();
+  return status === 'cancelled' || status === 'delivered';
+};
+
+const terminalOrderActionMessage = (order, actionLabel) => {
+  const status = String(order?.status || '').toLowerCase();
+  if (status === 'cancelled') {
+    const cancelledBy = order?.cancelledBy ? ` by ${order.cancelledBy}` : '';
+    return `Order has been cancelled${cancelledBy}. Cannot ${actionLabel}.`;
+  }
+  if (status === 'delivered') {
+    return `Order is already delivered. Cannot ${actionLabel}.`;
+  }
+  return `Order is not valid to ${actionLabel}.`;
+};
+
 /**
  * Get Delivery Partner Orders
  * GET /api/delivery/orders
@@ -303,6 +321,10 @@ export const acceptOrder = asyncHandler(async (req, res) => {
     if (!order) {
       console.error(`❌ Order ${orderId} not found in database`);
       return errorResponse(res, 404, 'Order not found');
+    }
+
+    if (isOrderTerminalForDelivery(order)) {
+      return errorResponse(res, 409, terminalOrderActionMessage(order, 'accept this order'));
     }
 
     // Check if order is assigned to this delivery partner
@@ -861,6 +883,10 @@ export const confirmReachedPickup = asyncHandler(async (req, res) => {
       return errorResponse(res, 404, 'Order not found or not assigned to you');
     }
 
+    if (isOrderTerminalForDelivery(order)) {
+      return errorResponse(res, 409, terminalOrderActionMessage(order, 'mark reached pickup'));
+    }
+
     console.log(`✅ Order found: ${order.orderId}, Current phase: ${order.deliveryState?.currentPhase || 'none'}, Status: ${order.deliveryState?.status || 'none'}, Order status: ${order.status || 'none'}`);
 
     // Initialize deliveryState if it doesn't exist
@@ -1051,6 +1077,10 @@ export const confirmOrderId = asyncHandler(async (req, res) => {
     if (!order) {
       console.error(`❌ Order ${orderId} not found or not assigned to delivery ${deliveryId}`);
       return errorResponse(res, 404, 'Order not found or not assigned to you');
+    }
+
+    if (isOrderTerminalForDelivery(order)) {
+      return errorResponse(res, 409, terminalOrderActionMessage(order, 'confirm order ID'));
     }
 
     // Verify order ID matches
@@ -1356,6 +1386,10 @@ export const confirmReachedDrop = asyncHandler(async (req, res) => {
       console.error(`❌ Order ${orderId} not found or not assigned to delivery ${deliveryId}`);
       return errorResponse(res, 404, 'Order not found or not assigned to you');
     }
+
+    if (isOrderTerminalForDelivery(order)) {
+      return errorResponse(res, 409, terminalOrderActionMessage(order, 'mark reached drop'));
+    }
     
     console.log(`✅ Order found: ${order.orderId || order._id}, Status: ${order.status}, Phase: ${order.deliveryState?.currentPhase || 'N/A'}`);
 
@@ -1538,6 +1572,10 @@ export const completeDelivery = asyncHandler(async (req, res) => {
 
     if (!order) {
       return errorResponse(res, 404, 'Order not found or not assigned to you');
+    }
+
+    if (String(order.status || '').toLowerCase() === 'cancelled') {
+      return errorResponse(res, 409, terminalOrderActionMessage(order, 'complete delivery'));
     }
 
     // Check if order is already delivered/completed (idempotent - allow if already completed)
