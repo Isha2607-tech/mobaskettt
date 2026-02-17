@@ -1,16 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   X,
   ShoppingBag,
-  Users,
   Minus,
   Plus,
   ChevronRight,
-  Home,
-  Heart,
-  Menu,
-  ChefHat,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,18 +14,24 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import DeliveryScheduler from "@/components/DeliveryScheduler";
 import { useCart } from "../../user/context/CartContext";
+import api, { restaurantAPI } from "@/lib/api";
 
 export default function CartPage() {
   const navigate = useNavigate();
-  const { cart, updateQuantity, removeFromCart, total, isGroceryItem } = useCart();
+  const { cart, updateQuantity, removeFromCart, addToCart, getCartItem, isGroceryItem } = useCart();
   const [deliveryOptions, setDeliveryOptions] = useState({
     deliveryType: "now",
     deliveryDate: null,
     deliveryTimeSlot: null,
   });
+  const [addons, setAddons] = useState([]);
+  const [loadingAddons, setLoadingAddons] = useState(false);
+  const [restaurantSchedule, setRestaurantSchedule] = useState(null);
 
   // Filter food items only (exclude grocery items)
   const cartItems = cart.filter((item) => !isGroceryItem(item));
+  const restaurantId = cartItems[0]?.restaurantId || null;
+  const restaurantName = cartItems[0]?.restaurant || "Restaurant";
 
   const [discountCode, setDiscountCode] = useState("");
 
@@ -52,6 +54,65 @@ export default function CartPage() {
   };
 
   const cartTotal = calculateTotal();
+
+  useEffect(() => {
+    const fetchAddons = async () => {
+      if (!restaurantId) {
+        setAddons([]);
+        return;
+      }
+
+      try {
+        setLoadingAddons(true);
+        const response = await restaurantAPI.getAddonsByRestaurantId(String(restaurantId));
+        const list = response?.data?.data?.addons || response?.data?.addons || [];
+        setAddons(Array.isArray(list) ? list : []);
+      } catch {
+        setAddons([]);
+      } finally {
+        setLoadingAddons(false);
+      }
+    };
+
+    fetchAddons();
+  }, [restaurantId]);
+
+  useEffect(() => {
+    const fetchRestaurantSchedule = async () => {
+      if (!restaurantId) {
+        setRestaurantSchedule(null);
+        return;
+      }
+
+      try {
+        const [restaurantResponse, outletTimingsResponse] = await Promise.all([
+          restaurantAPI.getRestaurantById(String(restaurantId)),
+          api.get(`/restaurant/${String(restaurantId)}/outlet-timings`),
+        ]);
+
+        const restaurant =
+          restaurantResponse?.data?.data?.restaurant ||
+          restaurantResponse?.data?.restaurant ||
+          restaurantResponse?.data?.data ||
+          null;
+
+        const outletTimings =
+          outletTimingsResponse?.data?.data?.outletTimings?.timings ||
+          outletTimingsResponse?.data?.outletTimings?.timings ||
+          [];
+
+        setRestaurantSchedule({
+          deliveryTimings: restaurant?.deliveryTimings || null,
+          openDays: Array.isArray(restaurant?.openDays) ? restaurant.openDays : [],
+          outletTimings: Array.isArray(outletTimings) ? outletTimings : [],
+        });
+      } catch {
+        setRestaurantSchedule(null);
+      }
+    };
+
+    fetchRestaurantSchedule();
+  }, [restaurantId]);
 
   const handleCheckout = () => {
     if (cartItems.length === 0) {
@@ -156,7 +217,7 @@ export default function CartPage() {
                           <Minus className="w-4 h-4 text-gray-600" />
                         </button>
                         <span className="text-sm font-semibold text-gray-900 min-w-[30px] text-center">
-                          {String(item.quantity).padStart(2, "0")}
+                          {Number(item.quantity || 0)}
                         </span>
                         <button
                           onClick={() => handleQuantityChange(item.id, 1)}
@@ -195,9 +256,117 @@ export default function CartPage() {
             </div>
           </div>
 
+          {/* Complete your meal with add-ons */}
+          {addons.length > 0 && (
+            <div className="px-4 mb-4">
+              <div className="bg-white rounded-xl p-4 shadow-sm">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-7 h-7 rounded-full bg-orange-100 flex items-center justify-center">
+                    <Sparkles className="w-4 h-4 text-orange-600" />
+                  </div>
+                  <h3 className="text-sm font-bold text-gray-900">Complete your meal</h3>
+                </div>
+
+                {loadingAddons ? (
+                  <div className="flex gap-3 overflow-x-auto pb-1">
+                    {[1, 2, 3].map((placeholder) => (
+                      <div
+                        key={placeholder}
+                        className="min-w-[170px] rounded-xl border border-gray-200 p-3 animate-pulse"
+                      >
+                        <div className="h-20 bg-gray-200 rounded-lg mb-2" />
+                        <div className="h-3 bg-gray-200 rounded w-2/3 mb-2" />
+                        <div className="h-3 bg-gray-200 rounded w-1/3" />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex gap-3 overflow-x-auto pb-1">
+                    {addons.map((addon) => {
+                      const addonId = String(addon.id || addon._id || "");
+                      const cartAddon = getCartItem(addonId);
+                      const qty = Number(cartAddon?.quantity || 0);
+                      const addonImage =
+                        addon.image ||
+                        (Array.isArray(addon.images) ? addon.images[0] : "") ||
+                        "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300&h=200&fit=crop";
+
+                      return (
+                        <div
+                          key={addonId}
+                          className="min-w-[185px] rounded-xl border border-orange-100 bg-orange-50/40 p-2"
+                        >
+                          <img
+                            src={addonImage}
+                            alt={addon.name}
+                            className="w-full h-24 rounded-lg object-cover"
+                            onError={(event) => {
+                              event.currentTarget.src =
+                                "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300&h=200&fit=crop";
+                            }}
+                          />
+                          <div className="p-1.5">
+                            <p className="text-sm font-semibold text-gray-900 line-clamp-1">{addon.name}</p>
+                            <p className="text-xs text-gray-500 line-clamp-1">
+                              {addon.description || "Popular add-on"}
+                            </p>
+                            <div className="mt-2 flex items-center justify-between">
+                              <span className="text-sm font-bold text-gray-900">
+                                ₹{Number(addon.price || 0).toFixed(0)}
+                              </span>
+                              {qty > 0 ? (
+                                <div className="flex items-center gap-1 rounded-full border border-orange-300 bg-white px-1 py-0.5">
+                                  <button
+                                    onClick={() => updateQuantity(addonId, qty - 1)}
+                                    className="w-6 h-6 rounded-full flex items-center justify-center text-orange-600 hover:bg-orange-50"
+                                  >
+                                    <Minus className="w-3.5 h-3.5" />
+                                  </button>
+                                  <span className="text-xs font-semibold w-5 text-center">{qty}</span>
+                                  <button
+                                    onClick={() => updateQuantity(addonId, qty + 1)}
+                                    className="w-6 h-6 rounded-full flex items-center justify-center text-orange-600 hover:bg-orange-50"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() =>
+                                    addToCart({
+                                      id: addonId,
+                                      name: addon.name,
+                                      price: Number(addon.price || 0),
+                                      image: addonImage,
+                                      description: addon.description || "",
+                                      isVeg: true,
+                                      restaurant: restaurantName,
+                                      restaurantId,
+                                    })
+                                  }
+                                  className="h-8 px-3 rounded-full bg-white border border-[#ff8100] text-[#ff8100] text-xs font-bold hover:bg-orange-50"
+                                >
+                                  ADD
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Delivery Scheduler */}
           <div className="px-4 mb-4">
-            <DeliveryScheduler type="food" onScheduleChange={setDeliveryOptions} />
+            <DeliveryScheduler
+              type="food"
+              onScheduleChange={setDeliveryOptions}
+              restaurantSchedule={restaurantSchedule}
+            />
           </div>
 
           {/* Total Section */}

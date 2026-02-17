@@ -108,7 +108,7 @@ export const authAPI = {
   },
 
   // Login/Register via Firebase Google ID token
-  firebaseGoogleLogin: (idToken, role = 'restaurant') => {
+  firebaseGoogleLogin: (idToken, role = 'user') => {
     return apiClient.post(API_ENDPOINTS.AUTH.FIREBASE_GOOGLE_LOGIN, { idToken, role });
   },
 
@@ -1739,6 +1739,19 @@ export const orderAPI = {
   // Edit order cart during post-order modification window
   editOrderCart: (orderId, items) => {
     return apiClient.patch(API_ENDPOINTS.ORDER.EDIT_CART.replace(':id', orderId), { items });
+  },
+
+  // Verify additional Razorpay payment for edited order cart
+  verifyEditedOrderCartPayment: (orderId, paymentData) => {
+    return apiClient.post(
+      API_ENDPOINTS.ORDER.VERIFY_EDIT_CART_PAYMENT.replace(':id', orderId),
+      paymentData
+    );
+  },
+
+  // Switch an unpaid online order to Cash on Delivery
+  switchOrderToCash: (orderId) => {
+    return apiClient.patch(API_ENDPOINTS.ORDER.SWITCH_TO_COD.replace(':id', orderId));
   },
 };
 

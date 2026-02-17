@@ -111,6 +111,30 @@ const getMockOrderData = (orderId) => {
   return orders[orderId] || null
 }
 
+const formatPaymentModeLabel = (rawMethod) => {
+  const method = String(rawMethod || "").trim().toLowerCase()
+  if (!method) return "N/A"
+  if (method === "cash" || method === "cod" || method === "cash_on_delivery" || method === "cash on delivery") {
+    return "Cash on Delivery"
+  }
+  if (method === "razorpay") return "Razorpay"
+  if (method === "wallet") return "Wallet"
+  if (method === "upi") return "UPI"
+  if (method === "card") return "Card"
+  return String(rawMethod)
+}
+
+const formatPaymentStatusLabel = (rawMethod, rawStatus) => {
+  const method = String(rawMethod || "").trim().toLowerCase()
+  const status = String(rawStatus || "").trim().toLowerCase()
+
+  if (method === "cash" || method === "cod" || method === "cash_on_delivery" || method === "cash on delivery") {
+    return "COD"
+  }
+
+  return status === "completed" ? "PAID" : "PENDING"
+}
+
 export default function OrderDetails() {
   const navigate = useNavigate()
   const { orderId } = useParams()
@@ -161,7 +185,8 @@ export default function OrderDetails() {
               itemSubtotal: order.pricing?.subtotal || 0,
               taxes: order.pricing?.tax || 0,
               total: order.pricing?.total || 0,
-              paymentStatus: order.payment?.status === 'completed' ? 'PAID' : 'PENDING'
+              paymentStatus: formatPaymentStatusLabel(order.payment?.method || order.paymentMethod, order.payment?.status),
+              paymentMode: formatPaymentModeLabel(order.payment?.method || order.paymentMethod)
             },
             reason: order.cancellationReason || '',
             timeline: [
@@ -396,6 +421,8 @@ export default function OrderDetails() {
     doc.setFontSize(9)
     doc.setFont("helvetica", "normal")
     doc.text(`Payment Status: ${orderData.billing.paymentStatus}`, 15, yPosition)
+    yPosition += 5
+    doc.text(`Payment Mode: ${orderData.billing.paymentMode || "N/A"}`, 15, yPosition)
     yPosition += 10
 
     // Rejection/Cancellation Reason (if exists)
@@ -433,7 +460,7 @@ export default function OrderDetails() {
     doc.text("ORDER TIMELINE", 15, yPosition)
     yPosition += 8
 
-    orderData.timeline.forEach((event, index) => {
+    orderData.timeline.forEach((event) => {
       doc.setFontSize(10)
       doc.setFont("helvetica", "bold")
       
@@ -703,6 +730,10 @@ export default function OrderDetails() {
               <span className="text-sm text-gray-900">₹{orderData.billing.taxes}</span>
             </div>
             <div className="my-3"></div>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm text-gray-600">Payment mode</span>
+              <span className="text-sm text-gray-900">{orderData.billing.paymentMode || "N/A"}</span>
+            </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-gray-900">Total bill</span>

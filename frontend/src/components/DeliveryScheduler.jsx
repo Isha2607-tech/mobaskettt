@@ -1,60 +1,174 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Calendar, Clock, Truck, ChevronDown } from "lucide-react";
 import {
   format,
-  addDays,
   setHours,
   setMinutes,
   isAfter,
   addMinutes,
-  addHours,
-  startOfHour,
+  addDays,
+  isSameDay,
+  startOfDay,
 } from "date-fns";
 
-const DeliveryScheduler = ({ type = "food", onScheduleChange }) => {
+const WEEK_DAYS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+const parseTimeToMinutes = (timeText) => {
+  if (!timeText || typeof timeText !== "string") return null;
+  const normalized = timeText.trim().toUpperCase();
+  const match = normalized.match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/);
+  if (!match) return null;
+
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const meridiem = match[3] || null;
+
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
+  if (minutes < 0 || minutes > 59) return null;
+
+  if (meridiem) {
+    if (hours < 1 || hours > 12) return null;
+    if (meridiem === "PM" && hours !== 12) hours += 12;
+    if (meridiem === "AM" && hours === 12) hours = 0;
+  } else {
+    if (hours < 0 || hours > 23) return null;
+  }
+
+  return hours * 60 + minutes;
+};
+
+const formatMinutesToLabel = (totalMinutes) => {
+  const normalized = ((totalMinutes % 1440) + 1440) % 1440;
+  const hour24 = Math.floor(normalized / 60);
+  const minute = normalized % 60;
+  const date = setHours(setMinutes(new Date(), minute), hour24);
+  return format(date, "hh:mm a");
+};
+
+const toSlotValue = (startMinutes, endMinutes) => {
+  const to24 = (mins) => {
+    const normalized = ((mins % 1440) + 1440) % 1440;
+    const h = String(Math.floor(normalized / 60)).padStart(2, "0");
+    const m = String(normalized % 60).padStart(2, "0");
+    return `${h}:${m}`;
+  };
+  return `${to24(startMinutes)}-${to24(endMinutes)}`;
+};
+
+const DeliveryScheduler = ({ type = "food", onScheduleChange, restaurantSchedule = null }) => {
   const [deliveryType, setDeliveryType] = useState("now"); // 'now' | 'scheduled'
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTimeSlot, setSelectedTimeSlot] = useState("");
-  const [availableTimeSlots, setAvailableTimeSlots] = useState([]);
+  const dateInputRef = useRef(null);
+  const upcomingDates = useMemo(
+    () => Array.from({ length: 7 }, (_, index) => addDays(new Date(), index)),
+    [],
+  );
+  const selectedDayName = WEEK_DAYS[selectedDate.getDay()];
+  const selectedDayShort = format(selectedDate, "EEE").toLowerCase();
 
-  // Generate slots on mount or date change
-  useEffect(() => {
+  const resolvedWorkingHours = useMemo(() => {
+    const outletTimings = Array.isArray(restaurantSchedule?.outletTimings)
+      ? restaurantSchedule.outletTimings
+      : [];
+    const outletDay = outletTimings.find(
+      (timing) => String(timing?.day || "").toLowerCase() === selectedDayName.toLowerCase(),
+    );
+
+    if (outletDay) {
+      const openMinutes = parseTimeToMinutes(outletDay.openingTime);
+      const closeMinutes = parseTimeToMinutes(outletDay.closingTime);
+      return {
+        isOpen: Boolean(outletDay.isOpen) && openMinutes !== null && closeMinutes !== null,
+        openMinutes,
+        closeMinutes,
+      };
+    }
+
+    const openDays = Array.isArray(restaurantSchedule?.openDays)
+      ? restaurantSchedule.openDays
+      : [];
+    const hasOpenDays = openDays.length > 0;
+    const dayIsOpen = hasOpenDays
+      ? openDays.some((day) => {
+          const normalized = String(day || "").trim().toLowerCase();
+          return (
+            normalized === selectedDayName.toLowerCase() ||
+            normalized === selectedDayShort
+          );
+        })
+      : true;
+
+    const openMinutes = parseTimeToMinutes(restaurantSchedule?.deliveryTimings?.openingTime);
+    const closeMinutes = parseTimeToMinutes(restaurantSchedule?.deliveryTimings?.closingTime);
+    const hasTimings = openMinutes !== null && closeMinutes !== null;
+
+    return {
+      isOpen: dayIsOpen,
+      openMinutes: hasTimings ? openMinutes : 8 * 60,
+      closeMinutes: hasTimings ? closeMinutes : 22 * 60,
+    };
+  }, [restaurantSchedule, selectedDayName, selectedDayShort]);
+  
+  const availableTimeSlots = useMemo(() => {
     const slots = [];
     const now = new Date();
-    const isToday =
-      format(selectedDate, "yyyy-MM-dd") === format(now, "yyyy-MM-dd");
+    const isToday = isSameDay(selectedDate, now);
 
-    // Standard business hours: 8 AM to 10 PM
-    const startHour = 8;
-    const endHour = 22;
+    if (!resolvedWorkingHours.isOpen) return slots;
 
-    for (let i = startHour; i < endHour; i++) {
-      // Create slot start time for the selected date
-      let slotStart = setHours(setMinutes(new Date(selectedDate), 0), i);
-      let slotEnd = addHours(slotStart, 2); // 2-hour windows
-
-      // Validation
-      let isValid = true;
-      if (isToday) {
-        // Must be in the future
-        if (isAfter(now, slotStart)) {
-          isValid = false;
-        }
-        // For food, maybe add a buffer, e.g. 1 hour
-        if (type === 'food' && isAfter(addMinutes(now, 60), slotStart)) {
-          isValid = false;
-        }
-      }
-
-      if (isValid) {
-        slots.push({
-          label: `${format(slotStart, "hh:mm a")} to ${format(slotEnd, "hh:mm a")}`,
-          value: `${format(slotStart, "HH:mm")}-${format(slotEnd, "HH:mm")}`
-        });
-      }
+    let openingMinutes = resolvedWorkingHours.openMinutes;
+    let closingMinutes = resolvedWorkingHours.closeMinutes;
+    if (openingMinutes === null || closingMinutes === null) {
+      openingMinutes = 8 * 60;
+      closingMinutes = 22 * 60;
     }
-    setAvailableTimeSlots(slots);
-  }, [selectedDate, type]);
+    if (closingMinutes <= openingMinutes) {
+      closingMinutes += 24 * 60;
+    }
+
+    const slotDurationMinutes = 120; // 2-hour windows
+    const slotStepMinutes = 60; // 1-hour start step
+
+    const dayStart = startOfDay(selectedDate);
+    const nowWithBuffer = type === "food" ? addMinutes(now, 60) : now;
+
+    for (
+      let slotStartMinutes = openingMinutes;
+      slotStartMinutes + slotDurationMinutes <= closingMinutes;
+      slotStartMinutes += slotStepMinutes
+    ) {
+      const slotEndMinutes = slotStartMinutes + slotDurationMinutes;
+      const slotStartDate = addMinutes(dayStart, slotStartMinutes);
+
+      if (isToday && isAfter(nowWithBuffer, slotStartDate)) {
+        continue;
+      }
+
+      slots.push({
+        label: `${formatMinutesToLabel(slotStartMinutes)} - ${formatMinutesToLabel(slotEndMinutes)}`,
+        value: toSlotValue(slotStartMinutes, slotEndMinutes),
+      });
+    }
+
+    return slots;
+  }, [selectedDate, type, resolvedWorkingHours]);
+  const selectedSlotLabel =
+    availableTimeSlots.find((slot) => slot.value === selectedTimeSlot)?.label || "";
+
+  const normalizedSelectedTimeSlot = availableTimeSlots.some(
+    (slot) => slot.value === selectedTimeSlot,
+  )
+    ? selectedTimeSlot
+    : "";
 
 
   // Notify parent
@@ -62,9 +176,9 @@ const DeliveryScheduler = ({ type = "food", onScheduleChange }) => {
     onScheduleChange({
       deliveryType,
       deliveryDate: deliveryType === "scheduled" ? selectedDate : null,
-      deliveryTimeSlot: deliveryType === "scheduled" ? selectedTimeSlot : null,
+      deliveryTimeSlot: deliveryType === "scheduled" ? normalizedSelectedTimeSlot : null,
     });
-  }, [deliveryType, selectedDate, selectedTimeSlot, onScheduleChange]);
+  }, [deliveryType, selectedDate, normalizedSelectedTimeSlot, onScheduleChange]);
 
   return (
     <div className="bg-white rounded-xl p-4 shadow-sm border border-orange-50 mb-4">
@@ -136,10 +250,45 @@ const DeliveryScheduler = ({ type = "food", onScheduleChange }) => {
             <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
               <Calendar className="w-3.5 h-3.5" /> Select Date
             </p>
+            <div className="flex gap-2 overflow-x-auto pb-2 mb-3">
+              {upcomingDates.map((dateOption) => {
+                const active = isSameDay(dateOption, selectedDate);
+                return (
+                  <button
+                    key={format(dateOption, "yyyy-MM-dd")}
+                    type="button"
+                    onClick={() => setSelectedDate(dateOption)}
+                    className={`shrink-0 rounded-xl border px-3 py-2 text-left transition-colors ${
+                      active
+                        ? "border-[#ff8100] bg-orange-50 text-orange-900"
+                        : "border-gray-200 bg-white text-gray-700 hover:border-orange-300"
+                    }`}
+                  >
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                      {format(dateOption, "EEE")}
+                    </p>
+                    <p className="text-sm font-bold">{format(dateOption, "d MMM")}</p>
+                  </button>
+                );
+              })}
+            </div>
             <div className="relative">
               <button
+                type="button"
                 className="w-full flex items-center justify-between bg-orange-50/50 border border-orange-200 text-orange-900 rounded-xl px-4 py-3 shadow-sm hover:border-[#ff8100] transition-colors"
-                onClick={() => document.getElementById("scheduler-date-picker").showPicker()}
+                onClick={() => {
+                  const input = dateInputRef.current;
+                  if (!input) return;
+                  if (typeof input.showPicker === "function") {
+                    try {
+                      input.showPicker();
+                      return;
+                    } catch {
+                      // Fall back to click() when showPicker is blocked
+                    }
+                  }
+                  input.click();
+                }}
               >
                 <div className="flex items-center gap-3">
                   <div className="bg-[#ff8100] p-2 rounded-lg text-white">
@@ -155,9 +304,9 @@ const DeliveryScheduler = ({ type = "food", onScheduleChange }) => {
                 <ChevronDown size={16} className="text-orange-400" />
               </button>
               <input
-                id="scheduler-date-picker"
+                ref={dateInputRef}
                 type="date"
-                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                className="absolute -z-10 opacity-0 pointer-events-none w-0 h-0"
                 value={
                   !isNaN(selectedDate.getTime())
                     ? format(selectedDate, "yyyy-MM-dd")
@@ -165,9 +314,20 @@ const DeliveryScheduler = ({ type = "food", onScheduleChange }) => {
                 }
                 min={format(new Date(), "yyyy-MM-dd")}
                 onChange={(e) => {
-                  const date = new Date(e.target.value);
-                  if (!isNaN(date.getTime())) {
-                    setSelectedDate(date);
+                  const rawValue = e.target.value;
+                  const [year, month, day] = String(rawValue)
+                    .split("-")
+                    .map((value) => Number(value));
+                  if (
+                    Number.isInteger(year) &&
+                    Number.isInteger(month) &&
+                    Number.isInteger(day)
+                  ) {
+                    // Parse as local date to avoid UTC timezone shifts.
+                    const date = new Date(year, month - 1, day, 12, 0, 0, 0);
+                    if (!isNaN(date.getTime())) {
+                      setSelectedDate(date);
+                    }
                   }
                 }}
               />
@@ -179,19 +339,36 @@ const DeliveryScheduler = ({ type = "food", onScheduleChange }) => {
             <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
               <Clock className="w-3.5 h-3.5" /> Select Time Slot
             </p>
-            <div className="relative">
-              <select
-                value={selectedTimeSlot}
-                onChange={(e) => setSelectedTimeSlot(e.target.value)}
-                className="w-full appearance-none bg-white border border-gray-200 text-gray-900 text-sm rounded-xl p-3 shadow-sm focus:outline-none focus:border-[#ff8100] focus:ring-1 focus:ring-[#ff8100] font-medium cursor-pointer"
-              >
-                <option value="" disabled>Choose a time slot</option>
-                {availableTimeSlots.map((slot) => (
-                  <option key={slot.value} value={slot.value}>{slot.label}</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-            </div>
+            {availableTimeSlots.length === 0 ? (
+              <div className="w-full bg-gray-50 border border-gray-200 text-gray-600 text-sm rounded-xl p-3">
+                No slots available for this date
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                {availableTimeSlots.map((slot) => {
+                  const isSelected = normalizedSelectedTimeSlot === slot.value;
+                  return (
+                    <button
+                      key={slot.value}
+                      type="button"
+                      onClick={() => setSelectedTimeSlot(slot.value)}
+                      className={`w-full text-left rounded-xl px-3 py-2.5 border text-sm font-medium transition-colors ${
+                        isSelected
+                          ? "border-[#ff8100] bg-orange-50 text-orange-900"
+                          : "border-gray-200 bg-white text-gray-800 hover:border-orange-300"
+                      }`}
+                    >
+                      {slot.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {selectedSlotLabel && (
+              <p className="mt-2 text-xs font-medium text-gray-600 break-words">
+                Selected: {selectedSlotLabel}
+              </p>
+            )}
           </div>
         </div>
       )}

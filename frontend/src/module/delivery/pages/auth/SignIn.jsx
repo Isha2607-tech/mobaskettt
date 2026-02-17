@@ -7,9 +7,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import api from "@/lib/api"
+import { API_ENDPOINTS } from "@/lib/api/config"
 import { deliveryAPI } from "@/lib/api"
 import { useCompanyName } from "@/lib/hooks/useCompanyName"
 import { loadBusinessSettings } from "@/lib/utils/businessSettings"
+import PolicyModal from "@/components/legal/PolicyModal"
 
 // Common country codes
 const countryCodes = [
@@ -61,6 +64,13 @@ export default function DeliverySignIn() {
   const [error, setError] = useState("")
   const [isSending, setIsSending] = useState(false)
   const [termsUrl, setTermsUrl] = useState("")
+  const [policyModal, setPolicyModal] = useState({
+    open: false,
+    title: "Terms and Conditions",
+    loading: false,
+    content: "",
+    fallbackUrl: "",
+  })
 
   // Get selected country details dynamically
   const selectedCountry = countryCodes.find(c => c.code === formData.countryCode) || countryCodes[2] // Default to India (+91)
@@ -171,6 +181,35 @@ export default function DeliverySignIn() {
     return normalized.charAt(0).toUpperCase() + normalized.slice(1)
   }, [companyName])
 
+  const openTermsModal = async () => {
+    setPolicyModal({
+      open: true,
+      title: "Terms and Conditions",
+      loading: true,
+      content: "",
+      fallbackUrl: termsUrl || "/delivery/terms-and-conditions",
+    })
+
+    try {
+      const response = await api.get(API_ENDPOINTS.ADMIN.TERMS_PUBLIC, {
+        params: { audience: "delivery" },
+      })
+      const data = response?.data?.data || {}
+      setPolicyModal((prev) => ({
+        ...prev,
+        loading: false,
+        title: data.title || prev.title,
+        content: data.content || "<p>Content is not available right now.</p>",
+      }))
+    } catch {
+      setPolicyModal((prev) => ({
+        ...prev,
+        loading: false,
+        content: "<p>Unable to load terms right now.</p>",
+      }))
+    }
+  }
+
   return (
     <div className="max-h-screen h-screen bg-white flex flex-col">
       {/* Top Section - Logo and Badge */}
@@ -276,17 +315,24 @@ export default function DeliverySignIn() {
           {/* Terms and Conditions */}
           <p className="text-xs text-center text-gray-600 px-4">
             By continuing, you agree to our{" "}
-            <a
-              href={termsUrl || "/delivery/terms-and-conditions"}
-              target={termsUrl ? "_blank" : undefined}
-              rel={termsUrl ? "noreferrer noopener" : undefined}
+            <button
+              type="button"
+              onClick={openTermsModal}
               className="text-blue-600 hover:underline"
             >
               Terms and Conditions
-            </a>
+            </button>
           </p>
         </div>
       </div>
+      <PolicyModal
+        open={policyModal.open}
+        onOpenChange={(open) => setPolicyModal((prev) => ({ ...prev, open }))}
+        title={policyModal.title}
+        loading={policyModal.loading}
+        content={policyModal.content}
+        fallbackUrl={policyModal.fallbackUrl}
+      />
     </div>
   )
 }

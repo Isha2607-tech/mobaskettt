@@ -571,7 +571,7 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
  * POST /api/auth/firebase/google-login
  */
 export const firebaseGoogleLogin = asyncHandler(async (req, res) => {
-  const { idToken, role = 'restaurant' } = req.body;
+  const { idToken, role = 'user' } = req.body;
 
   if (!idToken) {
     return errorResponse(res, 400, 'Firebase ID token is required');
@@ -579,7 +579,7 @@ export const firebaseGoogleLogin = asyncHandler(async (req, res) => {
 
   // Validate role - admin cannot be authenticated through this endpoint
   const allowedRoles = ['user', 'restaurant', 'delivery'];
-  const userRole = role || 'restaurant';
+  const userRole = role || 'user';
   if (!allowedRoles.includes(userRole)) {
     return errorResponse(res, 400, `Invalid role. Allowed roles: ${allowedRoles.join(', ')}`);
   }
@@ -626,6 +626,7 @@ export const firebaseGoogleLogin = asyncHandler(async (req, res) => {
 
     if (user) {
       // If user exists but googleId not linked yet, link it
+      let profileUpdated = false;
       if (!user.googleId) {
         user.googleId = firebaseUid;
         user.googleEmail = email;
@@ -636,8 +637,29 @@ export const firebaseGoogleLogin = asyncHandler(async (req, res) => {
         if (!user.signupMethod) {
           user.signupMethod = 'google';
         }
-        await user.save();
+        profileUpdated = true;
         logger.info('Linked Google account to existing user', { userId: user._id, email });
+      }
+
+      // Keep key profile details in sync from Google token
+      if (!user.name && name) {
+        user.name = name.trim();
+        profileUpdated = true;
+      }
+      if (!user.googleEmail && email) {
+        user.googleEmail = email.toLowerCase().trim();
+        profileUpdated = true;
+      }
+      if (!user.profileImage && picture) {
+        user.profileImage = picture;
+        profileUpdated = true;
+      }
+      if (!user.signupMethod) {
+        user.signupMethod = 'google';
+        profileUpdated = true;
+      }
+      if (profileUpdated) {
+        await user.save();
       }
 
       // If this is a restaurant login, make sure role matches

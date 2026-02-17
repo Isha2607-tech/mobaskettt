@@ -21,6 +21,10 @@ import {
   Settings as SettingsIcon,
   Power,
   ShoppingCart,
+  MapPin,
+  LocateFixed,
+  Plus,
+  Trash2,
 } from "lucide-react";
 
 import AnimatedPage from "../../components/AnimatedPage";
@@ -38,11 +42,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { authAPI } from "@/lib/api";
+import { locationAPI } from "@/lib/api";
 import { firebaseAuth } from "@/lib/firebase";
 import { clearModuleAuth } from "@/lib/utils/auth";
+import { toast } from "sonner";
 
 export default function Profile() {
-  const { userProfile, vegMode, setVegMode } = useProfile();
+  const { userProfile, vegMode, setVegMode, addresses, addAddress, updateAddress, deleteAddress } = useProfile();
   const navigate = useNavigate();
   const companyName = useCompanyName();
 
@@ -50,6 +56,20 @@ export default function Profile() {
   const [vegModeOpen, setVegModeOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [addressDialogOpen, setAddressDialogOpen] = useState(false);
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+  const [isSavingAddress, setIsSavingAddress] = useState(false);
+  const [addressForm, setAddressForm] = useState({
+    label: "Home",
+    street: "",
+    additionalDetails: "",
+    city: "",
+    state: "",
+    zipCode: "",
+    latitude: "",
+    longitude: "",
+    isDefault: false,
+  });
 
   // Settings states
   const [appearance, setAppearance] = useState(() => {
@@ -200,11 +220,212 @@ export default function Profile() {
   const profileCompletion = calculateProfileCompletion();
   const isComplete = profileCompletion === 100;
 
+  const getAddressId = (address) => address?.id || address?._id;
+  const normalizeAddressLabel = (label) => {
+    const normalized = String(label || "").trim().toLowerCase();
+    if (normalized === "home") return "Home";
+    if (normalized === "office" || normalized === "work") return "Office";
+    return "Other";
+  };
+  const formatAddressLine = (address) =>
+    [
+      address?.street,
+      address?.additionalDetails,
+      address?.city,
+      address?.state,
+      address?.zipCode,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+  const extractAddressFromReverseGeocode = (response, latitude, longitude) => {
+    const results = response?.data?.data?.results || [];
+    const firstResult = results[0] || {};
+    const components = firstResult?.address_components || {};
+
+    const fromArray = Array.isArray(components)
+      ? {
+          city:
+            components.find((c) => c.types?.includes("locality"))?.long_name ||
+            components.find((c) => c.types?.includes("administrative_area_level_2"))?.long_name ||
+            "",
+          state:
+            components.find((c) => c.types?.includes("administrative_area_level_1"))?.long_name ||
+            "",
+          zipCode:
+            components.find((c) => c.types?.includes("postal_code"))?.long_name || "",
+        }
+      : {
+          city: components.city || "",
+          state: components.state || "",
+          zipCode: components.zipCode || components.postal_code || "",
+        };
+
+    const formattedAddress = firstResult?.formatted_address || "";
+    const parts = formattedAddress.split(",").map((item) => item.trim()).filter(Boolean);
+    const fallbackStreet = parts[0] || "";
+    const fallbackAdditional = parts.length > 1 ? parts.slice(1, Math.min(parts.length - 2, 3)).join(", ") : "";
+    const pincodeFromText =
+      formattedAddress.match(/\b\d{6}\b/)?.[0] ||
+      response?.data?.data?.formattedAddress?.match(/\b\d{6}\b/)?.[0] ||
+      "";
+
+    const pincodeFromObject =
+      firstResult?.postal_code ||
+      firstResult?.postcode ||
+      firstResult?.address?.postal_code ||
+      firstResult?.address?.postcode ||
+      response?.data?.data?.postalCode ||
+      response?.data?.data?.zipCode ||
+      "";
+
+    return {
+      street: firstResult?.street || fallbackStreet,
+      additionalDetails:
+        firstResult?.area ||
+        firstResult?.sublocality ||
+        firstResult?.neighborhood ||
+        fallbackAdditional,
+      city: fromArray.city,
+      state: fromArray.state,
+      zipCode: fromArray.zipCode || pincodeFromObject || pincodeFromText,
+      latitude: String(latitude),
+      longitude: String(longitude),
+    };
+  };
+
+  const resetAddressForm = () => {
+    setAddressForm({
+      label: "Home",
+      street: "",
+      additionalDetails: "",
+      city: "",
+      state: "",
+      zipCode: "",
+      latitude: "",
+      longitude: "",
+      isDefault: false,
+    });
+  };
+
+  const handleDetectCurrentLocation = async () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation is not supported on this device.");
+      return;
+    }
+
+    setIsDetectingLocation(true);
+    try {
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0,
+        });
+      });
+
+      const latitude = Number(position?.coords?.latitude);
+      const longitude = Number(position?.coords?.longitude);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        throw new Error("Unable to detect valid coordinates.");
+      }
+
+      const response = await locationAPI.reverseGeocode(latitude, longitude);
+      const parsed = extractAddressFromReverseGeocode(response, latitude, longitude);
+      setAddressForm((prev) => ({
+        ...prev,
+        ...parsed,
+      }));
+      toast.success("Current location detected.");
+    } catch (error) {
+      console.error("Detect location failed:", error);
+      toast.error("Unable to detect location. Please fill manually.");
+    } finally {
+      setIsDetectingLocation(false);
+    }
+  };
+
+  const handleSaveAddress = async () => {
+    const payload = {
+      label: normalizeAddressLabel(addressForm.label),
+      street: String(addressForm.street || "").trim(),
+      additionalDetails: String(addressForm.additionalDetails || "").trim(),
+      city: String(addressForm.city || "").trim(),
+      state: String(addressForm.state || "").trim(),
+      zipCode: String(addressForm.zipCode || "").trim(),
+      latitude: addressForm.latitude || undefined,
+      longitude: addressForm.longitude || undefined,
+      isDefault: Boolean(addressForm.isDefault),
+    };
+
+    if (!payload.street || !payload.city || !payload.state) {
+      toast.error("Street, city and state are required.");
+      return;
+    }
+
+    setIsSavingAddress(true);
+    try {
+      const existingByLabel = (addresses || []).find(
+        (addr) => normalizeAddressLabel(addr?.label) === payload.label,
+      );
+      if (existingByLabel) {
+        await updateAddress(getAddressId(existingByLabel), payload);
+        toast.success(`${payload.label} address updated.`);
+      } else {
+        await addAddress(payload);
+        toast.success("Address saved.");
+      }
+      setAddressDialogOpen(false);
+      resetAddressForm();
+    } catch (error) {
+      console.error("Save address failed:", error);
+      toast.error(error?.response?.data?.message || "Failed to save address.");
+    } finally {
+      setIsSavingAddress(false);
+    }
+  };
+
+  const handleSetDefaultAddress = async (address) => {
+    const id = getAddressId(address);
+    if (!id || address?.isDefault) return;
+    try {
+      await updateAddress(id, { isDefault: true });
+      toast.success("Default address updated.");
+    } catch (error) {
+      console.error("Set default address failed:", error);
+      toast.error("Failed to set default address.");
+    }
+  };
+
+  const handleDeleteAddress = async (address) => {
+    const id = getAddressId(address);
+    if (!id) return;
+    try {
+      await deleteAddress(id);
+      toast.success("Address deleted.");
+    } catch (error) {
+      console.error("Delete address failed:", error);
+      toast.error("Failed to delete address.");
+    }
+  };
+
   // Handle logout
   const handleLogout = async () => {
     if (isLoggingOut) return; // Prevent multiple clicks
 
     setIsLoggingOut(true);
+
+    const clearUserStorage = () => {
+      clearModuleAuth("user");
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("user");
+      localStorage.removeItem("userProfile");
+      localStorage.removeItem("userAddresses");
+      localStorage.removeItem("userPaymentMethods");
+      localStorage.removeItem("userFavorites");
+      localStorage.removeItem("userDishFavorites");
+      localStorage.removeItem("appzeto_user_profile");
+    };
 
     try {
       // Call backend logout API to invalidate refresh token
@@ -233,14 +454,7 @@ export default function Profile() {
         );
       }
 
-      // Clear user module authentication data using utility function
-      clearModuleAuth("user");
-
-      // Clear legacy token data for backward compatibility
-      localStorage.removeItem("accessToken");
-      localStorage.removeItem("user_authenticated");
-      localStorage.removeItem("user_user");
-      localStorage.removeItem("user");
+      clearUserStorage();
 
       // Dispatch auth change event to notify other components
       window.dispatchEvent(new Event("userAuthChanged"));
@@ -251,14 +465,7 @@ export default function Profile() {
       // Even if there's an error, we should still clear local data and logout
       console.error("Error during logout:", err);
 
-      // Clear local data anyway using utility function
-      clearModuleAuth("user");
-
-      // Clear legacy token data for backward compatibility
-      localStorage.removeItem("accessToken");
-      localStorage.removeItem("user_authenticated");
-      localStorage.removeItem("user_user");
-      localStorage.removeItem("user");
+      clearUserStorage();
       window.dispatchEvent(new Event("userAuthChanged"));
 
       // Still navigate to login page
@@ -547,6 +754,85 @@ export default function Profile() {
           </motion.div>
         </div>
 
+        {/* Saved Addresses */}
+        <div className="mb-3">
+          <div className="flex items-center justify-between gap-2 mb-2 px-1">
+            <div className="flex items-center gap-2">
+              <div className="w-1 h-4 bg-[#EF4F5F] rounded"></div>
+              <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                Saved Addresses
+              </h3>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 px-3 rounded-lg border-[#EF4F5F] text-[#EF4F5F] hover:bg-[#EF4F5F]/10"
+              onClick={() => {
+                resetAddressForm();
+                setAddressDialogOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {(addresses || []).length === 0 ? (
+              <Card className="bg-white dark:bg-[#1a1a1a] rounded-xl border-0 dark:border-gray-800 shadow-sm">
+                <CardContent className="p-4">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    No saved addresses yet. Add Home, Office or Other address.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              (addresses || []).map((address) => (
+                <Card
+                  key={getAddressId(address)}
+                  className="bg-white dark:bg-[#1a1a1a] rounded-xl border-0 dark:border-gray-800 shadow-sm"
+                >
+                  <CardContent className="p-4 flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <MapPin className="h-4 w-4 text-[#EF4F5F]" />
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                          {normalizeAddressLabel(address?.label)}
+                          {address?.isDefault ? (
+                            <span className="ml-2 text-xs text-green-600">Default</span>
+                          ) : null}
+                        </p>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        {formatAddressLine(address) || "Address details not available"}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      {!address?.isDefault ? (
+                        <button
+                          type="button"
+                          className="text-xs font-medium text-[#EF4F5F]"
+                          onClick={() => handleSetDefaultAddress(address)}
+                        >
+                          Set default
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-red-500 flex items-center gap-1"
+                        onClick={() => handleDeleteAddress(address)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Delete
+                      </button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </div>
+
         {/* Collections Section */}
         <div className="mb-3">
           <div className="flex items-center gap-2 mb-2 px-1">
@@ -830,6 +1116,125 @@ export default function Profile() {
           </div>
         </div>
       </div>
+
+      {/* Address Popup */}
+      <Dialog open={addressDialogOpen} onOpenChange={setAddressDialogOpen}>
+        <DialogContent className="max-w-sm md:max-w-md lg:max-w-lg w-[calc(100%-2rem)] rounded-2xl p-0 overflow-hidden bg-white dark:bg-[#1a1a1a] border-gray-200 dark:border-gray-800">
+          <DialogHeader className="p-5 pb-2">
+            <DialogTitle className="text-lg font-bold text-gray-900 dark:text-white">
+              Add Address
+            </DialogTitle>
+            <DialogDescription className="text-sm text-gray-500 dark:text-gray-400">
+              Detect current location or enter address manually.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-5 pb-5 space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              {["Home", "Office", "Other"].map((label) => (
+                <button
+                  key={label}
+                  type="button"
+                  className={`h-9 rounded-lg text-sm font-medium border ${
+                    addressForm.label === label
+                      ? "border-[#EF4F5F] bg-[#EF4F5F]/10 text-[#EF4F5F]"
+                      : "border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300"
+                  }`}
+                  onClick={() => setAddressForm((prev) => ({ ...prev, label }))}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-center"
+              onClick={handleDetectCurrentLocation}
+              disabled={isDetectingLocation}
+            >
+              <LocateFixed className={`h-4 w-4 mr-2 ${isDetectingLocation ? "animate-spin" : ""}`} />
+              {isDetectingLocation ? "Detecting..." : "Detect Current Location"}
+            </Button>
+
+            <input
+              className="w-full h-10 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#111] px-3 text-sm text-gray-900 dark:text-white"
+              placeholder="Street / House No."
+              value={addressForm.street}
+              onChange={(e) =>
+                setAddressForm((prev) => ({ ...prev, street: e.target.value }))
+              }
+            />
+            <input
+              className="w-full h-10 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#111] px-3 text-sm text-gray-900 dark:text-white"
+              placeholder="Area / Landmark"
+              value={addressForm.additionalDetails}
+              onChange={(e) =>
+                setAddressForm((prev) => ({
+                  ...prev,
+                  additionalDetails: e.target.value,
+                }))
+              }
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                className="w-full h-10 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#111] px-3 text-sm text-gray-900 dark:text-white"
+                placeholder="City"
+                value={addressForm.city}
+                onChange={(e) =>
+                  setAddressForm((prev) => ({ ...prev, city: e.target.value }))
+                }
+              />
+              <input
+                className="w-full h-10 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#111] px-3 text-sm text-gray-900 dark:text-white"
+                placeholder="State"
+                value={addressForm.state}
+                onChange={(e) =>
+                  setAddressForm((prev) => ({ ...prev, state: e.target.value }))
+                }
+              />
+            </div>
+            <input
+              className="w-full h-10 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#111] px-3 text-sm text-gray-900 dark:text-white"
+              placeholder="Pincode"
+              value={addressForm.zipCode}
+              onChange={(e) =>
+                setAddressForm((prev) => ({ ...prev, zipCode: e.target.value }))
+              }
+            />
+
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                type="checkbox"
+                checked={addressForm.isDefault}
+                onChange={(e) =>
+                  setAddressForm((prev) => ({ ...prev, isDefault: e.target.checked }))
+                }
+              />
+              Set as default address
+            </label>
+
+            <div className="flex items-center gap-2 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setAddressDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 bg-[#EF4F5F] hover:bg-[#d93f50] text-white"
+                onClick={handleSaveAddress}
+                disabled={isSavingAddress}
+              >
+                {isSavingAddress ? "Saving..." : "Save Address"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Veg Mode Popup */}
       <Dialog open={vegModeOpen} onOpenChange={setVegModeOpen}>

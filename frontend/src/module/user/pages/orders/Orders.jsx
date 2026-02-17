@@ -45,8 +45,11 @@ export default function Orders() {
     const now = new Date()
     const elapsedMinutes = Math.floor((now - createdAt) / (1000 * 60))
     
-    // Get max ETA (use eta.max if available, otherwise estimatedDeliveryTime)
-    const maxETA = order.eta?.max || order.estimatedDeliveryTime || 30
+    // Total ETA should include preparation + delivery time.
+    const prepMinutes = Math.max(0, Number(order.preparationTime || 0))
+    const deliveryMinutes = Math.max(0, Number(order.estimatedDeliveryTime || 0))
+    const etaMaxMinutes = Math.max(0, Number(order.eta?.max || 0))
+    const maxETA = Math.max(etaMaxMinutes, prepMinutes + deliveryMinutes, deliveryMinutes, 30)
     const remainingMinutes = Math.max(0, maxETA - elapsedMinutes)
     
     return remainingMinutes > 0 ? remainingMinutes : null
@@ -259,9 +262,14 @@ export default function Orders() {
               isRestaurantCancelled: isRestaurantCancelled,
               isUserCancelled: isUserCancelled,
               cancelledBy: order.cancelledBy,
-              eta: order.eta || { min: order.estimatedDeliveryTime || 30, max: order.estimatedDeliveryTime || 30 },
-              estimatedDeliveryTime: order.estimatedDeliveryTime || 30,
-              preparationTime: order.preparationTime || 0,
+              eta: (() => {
+                const prepMinutes = Math.max(0, Number(order.preparationTime || 0))
+                const deliveryMinutes = Math.max(0, Number(order.estimatedDeliveryTime || 0))
+                const fallbackTotal = prepMinutes + deliveryMinutes
+                return order.eta || { min: fallbackTotal || 30, max: fallbackTotal || 30 }
+              })(),
+              estimatedDeliveryTime: Number(order.estimatedDeliveryTime || 0),
+              preparationTime: Number(order.preparationTime || 0),
               deliveredAt: order.deliveredAt || null,
               deliveryPartnerName: order.deliveryPartnerId?.name || order.deliveryPartnerName || null,
               deliveryPartnerPhone: order.deliveryPartnerId?.phone || order.deliveryPartnerPhone || null,

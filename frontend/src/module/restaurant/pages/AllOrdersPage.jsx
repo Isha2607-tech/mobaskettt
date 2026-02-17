@@ -315,14 +315,22 @@ export default function AllOrdersPage() {
     
     // Get rejection/cancellation reason
     let reason = null
+    const cancelledByRaw = String(order.cancelledBy || '').toLowerCase()
+    const cancelledByLabel =
+      cancelledByRaw === 'user' || cancelledByRaw === 'customer'
+        ? 'customer'
+        : cancelledByRaw === 'admin'
+          ? 'admin'
+          : 'restaurant'
+
     if (status === 'REJECTED' && order.rejectionReason) {
       reason = `Rejected by Restaurant: ${order.rejectionReason}`
     } else if (status === 'CANCELLED' && order.cancellationReason) {
-      reason = `Cancelled by ${order.cancelledBy === 'customer' ? 'customer' : 'restaurant'}: ${order.cancellationReason}`
+      reason = `Cancelled by ${cancelledByLabel}: ${order.cancellationReason}`
     } else if (status === 'REJECTED') {
       reason = 'Rejected by Restaurant'
     } else if (status === 'CANCELLED') {
-      reason = 'Cancelled by customer'
+      reason = `Cancelled by ${cancelledByLabel}`
     }
     
     // Determine tags based on order properties

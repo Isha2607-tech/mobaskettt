@@ -407,6 +407,14 @@ export const getOrders = asyncHandler(async (req, res) => {
       const totalItemAmount = subtotal;
       // Order amount (final total)
       const orderAmount = order.pricing?.total || 0;
+      const scheduledFor = order?.scheduledDelivery?.scheduledFor ? new Date(order.scheduledDelivery.scheduledFor) : null;
+      const isScheduled = Boolean(order?.scheduledDelivery?.isScheduled && scheduledFor);
+      const scheduledDate = isScheduled
+        ? scheduledFor.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase()
+        : '';
+      const scheduledTime = isScheduled
+        ? scheduledFor.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase()
+        : '';
 
       return {
         sl: skip + index + 1,
@@ -471,7 +479,13 @@ export const getOrders = asyncHandler(async (req, res) => {
         refundStatus: refundStatusMap.get(order._id.toString()) || null,
         // 2-minute edit/cancel window for customer (MoFood and MoGrocery)
         modificationWindow: getOrderModificationWindow(order),
-        postOrderActions: order.postOrderActions || null
+        postOrderActions: order.postOrderActions || null,
+        scheduledDelivery: order.scheduledDelivery || null,
+        isScheduled,
+        scheduledFor: scheduledFor || null,
+        scheduledDate,
+        scheduledTime,
+        scheduledTimeSlot: order?.scheduledDelivery?.timeSlot || ''
       };
     });
 

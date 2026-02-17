@@ -33,6 +33,7 @@ import { useProfile } from "../../context/ProfileContext"
 import { useLocation as useUserLocation } from "../../hooks/useLocation"
 import DeliveryTrackingMap from "../../components/DeliveryTrackingMap"
 import { orderAPI, restaurantAPI } from "@/lib/api"
+import { initRazorpayPayment } from "@/lib/utils/razorpay"
 import circleIcon from "@/assets/circleicon.png"
 
 // Animated checkmark component
@@ -241,6 +242,38 @@ const toValidDeliveryPartner = (partner) => {
   }
 }
 
+const resolveRestaurantName = (apiOrder = {}) => {
+  if (typeof apiOrder?.restaurantId === "object" && apiOrder?.restaurantId?.name) {
+    return apiOrder.restaurantId.name
+  }
+  if (typeof apiOrder?.restaurant === "object" && apiOrder?.restaurant?.name) {
+    return apiOrder.restaurant.name
+  }
+  return apiOrder?.restaurantName || apiOrder?.restaurant || "Restaurant"
+}
+
+const resolveRestaurantPhone = (apiOrder = {}) => {
+  if (typeof apiOrder?.restaurantId === "object") {
+    return (
+      apiOrder.restaurantId.phone ||
+      apiOrder.restaurantId.ownerPhone ||
+      apiOrder.restaurantId.primaryContactNumber ||
+      ""
+    )
+  }
+  if (typeof apiOrder?.restaurant === "object") {
+    return (
+      apiOrder.restaurant.phone ||
+      apiOrder.restaurant.ownerPhone ||
+      apiOrder.restaurant.primaryContactNumber ||
+      ""
+    )
+  }
+  return apiOrder?.restaurantPhone || ""
+}
+
+const sanitizePhoneForTel = (phone = "") => String(phone).replace(/[^\d+]/g, "")
+
 export default function OrderTracking() {
   const { orderId } = useParams()
   const [searchParams] = useSearchParams()
@@ -372,6 +405,24 @@ export default function OrderTracking() {
     const mins = Math.floor(safeSeconds / 60)
     const secs = safeSeconds % 60
     return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+  }
+
+  const getCombinedEtaMinutes = (rawOrder) => {
+    if (!rawOrder) return null
+
+    const prepMinutes = Math.max(0, Number(rawOrder.preparationTime || 0))
+    const deliveryMinutes = Math.max(0, Number(rawOrder.estimatedDeliveryTime || 0))
+    const etaMaxMinutes = Math.max(0, Number(rawOrder.eta?.max || 0))
+    const totalEtaMinutes = Math.max(etaMaxMinutes, prepMinutes + deliveryMinutes, deliveryMinutes)
+    if (!Number.isFinite(totalEtaMinutes) || totalEtaMinutes <= 0) return null
+
+    const createdAtMs = rawOrder?.createdAt ? new Date(rawOrder.createdAt).getTime() : null
+    if (!createdAtMs || Number.isNaN(createdAtMs)) {
+      return Math.max(1, Math.round(totalEtaMinutes))
+    }
+
+    const elapsedMinutes = Math.floor((Date.now() - createdAtMs) / (1000 * 60))
+    return Math.max(1, Math.round(totalEtaMinutes - elapsedMinutes))
   }
 
   const syncModificationWindow = (rawOrder) => {
@@ -525,6 +576,8 @@ export default function OrderTracking() {
           console.log('⚠️ Context order missing restaurantId, will fetch from API');
         }
         setOrder(contextOrder)
+        const etaFromContext = getCombinedEtaMinutes(contextOrder)
+        if (etaFromContext) setEstimatedTime(etaFromContext)
         syncModificationWindow(contextOrder)
         setLoading(false)
         return
@@ -595,7 +648,8 @@ export default function OrderTracking() {
           // Transform API order to match component structure
           const transformedOrder = {
             id: apiOrder.orderId || apiOrder._id,
-            restaurant: apiOrder.restaurantName || 'Restaurant',
+            restaurant: resolveRestaurantName(apiOrder),
+            restaurantPhone: resolveRestaurantPhone(apiOrder),
             restaurantId: apiOrder.restaurantId || null, // Include restaurantId for location access
             userId: apiOrder.userId || null, // Include user data for phone number
             userName: apiOrder.userName || apiOrder.userId?.name || apiOrder.userId?.fullName || '',
@@ -626,6 +680,14 @@ export default function OrderTracking() {
             })) || [],
             total: apiOrder.pricing?.total || 0,
             status: apiOrder.status || 'pending',
+            createdAt: apiOrder.createdAt || null,
+            payment: apiOrder.payment || {
+              method: response?.data?.data?.payment?.method || null,
+              status: response?.data?.data?.payment?.status || null
+            },
+            eta: apiOrder.eta || null,
+            estimatedDeliveryTime: Number(apiOrder.estimatedDeliveryTime || 0),
+            preparationTime: Number(apiOrder.preparationTime || 0),
             adminApproval: apiOrder.adminApproval || null,
             note: apiOrder.note || "",
             deliveryPartner: toValidDeliveryPartner(apiOrder.deliveryPartnerId),
@@ -637,6 +699,8 @@ export default function OrderTracking() {
           }
           
           setOrder(transformedOrder)
+          const etaFromOrder = getCombinedEtaMinutes(transformedOrder)
+          if (etaFromOrder) setEstimatedTime(etaFromOrder)
           setOrderStatus(deriveUiOrderStatus(apiOrder.status, apiOrder))
           syncModificationWindow(apiOrder)
         } else {
@@ -726,6 +790,8 @@ export default function OrderTracking() {
           return {
             ...prev,
             id: apiOrder.orderId || apiOrder._id,
+            restaurant: resolveRestaurantName(apiOrder) || prev.restaurant,
+            restaurantPhone: resolveRestaurantPhone(apiOrder) || prev.restaurantPhone,
             status: apiOrder.status ?? prev.status,
             deliveryState: apiOrder.deliveryState ?? prev.deliveryState,
             deliveryPartner: toValidDeliveryPartner(apiOrder.deliveryPartnerId) || prev.deliveryPartner,
@@ -981,6 +1047,58 @@ export default function OrderTracking() {
 
       const response = await orderAPI.editOrderCart(orderId, payloadItems)
       if (response?.data?.success) {
+        const responseData = response?.data?.data || {}
+        const requiresAdditionalPayment = Boolean(responseData?.requiresAdditionalPayment)
+
+        if (requiresAdditionalPayment) {
+          const razorpay = responseData?.razorpay || {}
+          const additionalAmount = Number(responseData?.additionalAmount || 0)
+
+          if (!razorpay?.orderId || !razorpay?.key) {
+            throw new Error("Additional payment initialization failed.")
+          }
+
+          await new Promise((resolve, reject) => {
+            initRazorpayPayment({
+              key: razorpay.key,
+              amount: razorpay.amount,
+              currency: razorpay.currency || "INR",
+              order_id: razorpay.orderId,
+              name: "MoBasket",
+              description: `Additional payment for edited order ${order?.id || orderId}`.trim(),
+              prefill: {
+                name: profile?.fullName || profile?.name || "",
+                email: profile?.email || "",
+                contact: (profile?.phone || "").replace(/\D/g, "").slice(-10),
+              },
+              notes: {
+                orderId: String(order?.id || orderId || ""),
+                purpose: "order_edit_additional_payment",
+              },
+              handler: async (paymentResponse) => {
+                try {
+                  await orderAPI.verifyEditedOrderCartPayment(orderId, {
+                    razorpayOrderId: paymentResponse.razorpay_order_id,
+                    razorpayPaymentId: paymentResponse.razorpay_payment_id,
+                    razorpaySignature: paymentResponse.razorpay_signature,
+                  })
+                  resolve()
+                } catch (verifyError) {
+                  reject(verifyError)
+                }
+              },
+              onClose: () => reject(new Error("Payment cancelled")),
+              onError: (paymentError) => reject(paymentError),
+            })
+          })
+
+          toast.success(`Additional payment successful (₹${additionalAmount.toFixed(2)}). Order updated.`)
+          setShowEditDialog(false)
+          setAvailableEditMenuItems([])
+          await handleRefresh()
+          return
+        }
+
         toast.success("Order updated successfully")
         setShowEditDialog(false)
         setAvailableEditMenuItems([])
@@ -989,7 +1107,13 @@ export default function OrderTracking() {
         toast.error(response?.data?.message || "Failed to edit order")
       }
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Failed to edit order")
+      const backendMessage = err?.response?.data?.message
+      const localMessage = err?.message
+      if (localMessage === "Payment cancelled") {
+        toast.info("Payment cancelled. Edited items were not applied.")
+      } else {
+        toast.error(backendMessage || localMessage || "Failed to edit order")
+      }
     } finally {
       setIsEditingOrder(false)
     }
@@ -1078,7 +1202,8 @@ export default function OrderTracking() {
         
         const transformedOrder = {
           id: apiOrder.orderId || apiOrder._id,
-          restaurant: apiOrder.restaurantName || 'Restaurant',
+          restaurant: resolveRestaurantName(apiOrder),
+          restaurantPhone: resolveRestaurantPhone(apiOrder),
           restaurantId: apiOrder.restaurantId || null, // Include restaurantId for location access
           userId: apiOrder.userId || null, // Include user data for phone number
           userName: apiOrder.userName || apiOrder.userId?.name || apiOrder.userId?.fullName || '',
@@ -1109,6 +1234,14 @@ export default function OrderTracking() {
           })) || [],
           total: apiOrder.pricing?.total || 0,
           status: apiOrder.status || 'pending',
+          createdAt: apiOrder.createdAt || null,
+          payment: apiOrder.payment || {
+            method: response?.data?.data?.payment?.method || null,
+            status: response?.data?.data?.payment?.status || null
+          },
+          eta: apiOrder.eta || null,
+          estimatedDeliveryTime: Number(apiOrder.estimatedDeliveryTime || 0),
+          preparationTime: Number(apiOrder.preparationTime || 0),
           adminApproval: apiOrder.adminApproval || null,
           note: apiOrder.note || "",
           deliveryPartner: toValidDeliveryPartner(apiOrder.deliveryPartnerId),
@@ -1119,6 +1252,8 @@ export default function OrderTracking() {
           modificationWindow: apiOrder.modificationWindow || null
         }
         setOrder(transformedOrder)
+        const etaFromOrder = getCombinedEtaMinutes(transformedOrder)
+        if (etaFromOrder) setEstimatedTime(etaFromOrder)
         setOrderStatus(deriveUiOrderStatus(apiOrder.status, apiOrder))
         syncModificationWindow(apiOrder)
       }
@@ -1513,6 +1648,9 @@ export default function OrderTracking() {
             </div>
             <div className="flex-1">
               <p className="font-semibold text-gray-900">{order.restaurant}</p>
+              {order?.restaurantPhone ? (
+                <p className="text-xs text-gray-500">{order.restaurantPhone}</p>
+              ) : null}
               <p className="text-sm text-gray-500">{order.address?.city || 'Local Area'}</p>
             </div>
             <motion.button 
@@ -1522,10 +1660,12 @@ export default function OrderTracking() {
                 const restaurantPhone =
                   order?.restaurantId?.phone ||
                   order?.restaurantId?.ownerPhone ||
+                  order?.restaurantId?.primaryContactNumber ||
                   order?.restaurantPhone ||
                   ""
-                if (restaurantPhone) {
-                  window.location.href = `tel:${restaurantPhone}`
+                const dialNumber = sanitizePhoneForTel(restaurantPhone)
+                if (dialNumber) {
+                  window.location.href = `tel:${dialNumber}`
                 } else {
                   toast.error("Restaurant phone number not available")
                 }

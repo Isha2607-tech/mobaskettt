@@ -972,7 +972,7 @@ export default function ItemDetailsPage() {
               className="w-full px-4 py-3 border border-gray-300 rounded-lg text-left flex items-center justify-between bg-white hover:bg-gray-50 transition-colors"
             >
               <span className="text-sm text-gray-900">
-                {category} ({subCategory})
+                {category}
               </span>
               <ChevronDown className="w-5 h-5 text-gray-500" />
             </button>

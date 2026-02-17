@@ -38,12 +38,79 @@ export const calculateCancellationRefund = async (orderId, cancellationReason) =
       throw new Error('Order is not cancelled');
     }
 
+    const cancellationStage = getCancellationStage(order);
+    const normalizedPaymentMethod = String(order?.payment?.method || '').toLowerCase().trim();
+    const normalizedPaymentStatus = String(order?.payment?.status || '').toLowerCase().trim();
+    const isPaidOnline =
+      ['razorpay', 'upi', 'card'].includes(normalizedPaymentMethod) &&
+      normalizedPaymentStatus === 'completed';
+    const isPaidWallet =
+      normalizedPaymentMethod === 'wallet' &&
+      normalizedPaymentStatus === 'completed';
+
     const settlement = await OrderSettlement.findOne({ orderId });
     if (!settlement) {
-      throw new Error('Settlement not found');
+      // Settlement may not exist yet for early-stage cancellations (auto-reject/COD/unpaid online).
+      // Return a safe preview instead of throwing.
+      const pricing = order?.pricing || {};
+      const subtotal = Number(pricing.subtotal || 0);
+      const discount = Number(pricing.discount || 0);
+      const deliveryFee = Number(pricing.deliveryFee || 0);
+      const platformFee = Number(pricing.platformFee || 0);
+      const total = Number(pricing.total || 0);
+
+      let refundAmount = 0;
+      let restaurantCompensation = 0;
+
+      if (isPaidOnline || isPaidWallet) {
+        switch (cancellationStage) {
+          case 'pre_accept':
+            refundAmount = total;
+            break;
+          case 'post_accept_pre_cook':
+            refundAmount = Math.max(0, subtotal - discount + deliveryFee);
+            break;
+          case 'post_cook':
+            refundAmount = Math.max(0, deliveryFee + (platformFee * 0.5));
+            break;
+          case 'post_pickup':
+          default:
+            refundAmount = 0;
+            restaurantCompensation = 0;
+        }
+      }
+
+      try {
+        await AuditLog.createLog({
+          entityType: 'order',
+          entityId: orderId,
+          action: 'cancellation_refund_calculated',
+          actionType: 'refund',
+          performedBy: {
+            type: 'system',
+            name: 'System'
+          },
+          transactionDetails: {
+            amount: refundAmount,
+            type: 'refund',
+            status: 'pending',
+            orderId: orderId
+          },
+          description: `Cancellation refund preview calculated without settlement for order ${order.orderId}. Stage: ${cancellationStage}, Refund: ₹${refundAmount}, Restaurant Compensation: ₹${restaurantCompensation}.`
+        });
+      } catch (auditError) {
+        console.warn('Failed to create refund preview audit log:', auditError?.message);
+      }
+
+      return {
+        cancellationStage,
+        refundAmount,
+        restaurantCompensation,
+        settlement: null,
+        settlementMissing: true
+      };
     }
 
-    const cancellationStage = getCancellationStage(order);
     const userPayment = settlement.userPayment;
 
     let refundAmount = 0;

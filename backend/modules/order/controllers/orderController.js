@@ -17,6 +17,7 @@ import etaWebSocketService from '../services/etaWebSocketService.js';
 import OrderEvent from '../models/OrderEvent.js';
 import UserWallet from '../../user/models/UserWallet.js';
 import Menu from '../../restaurant/models/Menu.js';
+import User from '../../auth/models/User.js';
 
 const logger = winston.createLogger({
   level: 'info',
@@ -30,14 +31,36 @@ const logger = winston.createLogger({
 
 const ORDER_MODIFICATION_WINDOW_MS = 2 * 60 * 1000;
 
+const getDefaultPendingCartEdit = () => ({
+  items: [],
+  subtotal: 0,
+  total: 0,
+  additionalAmount: 0,
+  razorpayOrderId: '',
+  createdAt: null
+});
+
+const ensurePostOrderActionsShape = (order) => {
+  if (!order.postOrderActions || typeof order.postOrderActions !== 'object') {
+    order.postOrderActions = {};
+  }
+
+  if (
+    !order.postOrderActions.pendingCartEdit ||
+    typeof order.postOrderActions.pendingCartEdit !== 'object'
+  ) {
+    order.postOrderActions.pendingCartEdit = getDefaultPendingCartEdit();
+  }
+
+  return order.postOrderActions;
+};
+
 const startOrderModificationWindow = (order) => {
   const startAt = new Date();
   const expiresAt = new Date(startAt.getTime() + ORDER_MODIFICATION_WINDOW_MS);
-  order.postOrderActions = {
-    ...(order.postOrderActions || {}),
-    modificationWindowStartAt: startAt,
-    modificationWindowExpiresAt: expiresAt
-  };
+  const postOrderActions = ensurePostOrderActionsShape(order);
+  postOrderActions.modificationWindowStartAt = startAt;
+  postOrderActions.modificationWindowExpiresAt = expiresAt;
   return { startAt, expiresAt };
 };
 
@@ -81,6 +104,48 @@ const sanitizeEditedItems = (items) =>
     description: item.description || '',
     isVeg: item.isVeg !== false
   }));
+
+const normalizeAddressLabel = (label) => {
+  const normalized = String(label || '').trim().toLowerCase();
+  if (normalized === 'home') return 'Home';
+  if (normalized === 'office' || normalized === 'work') return 'Office';
+  return 'Other';
+};
+
+const normalizeOrderAddress = (address = {}) => {
+  if (!address || typeof address !== 'object') return null;
+
+  const latitude =
+    Number(address?.latitude) ||
+    Number(address?.lat) ||
+    Number(address?.location?.latitude) ||
+    Number(address?.location?.lat) ||
+    Number(address?.location?.coordinates?.[1]) ||
+    null;
+  const longitude =
+    Number(address?.longitude) ||
+    Number(address?.lng) ||
+    Number(address?.location?.longitude) ||
+    Number(address?.location?.lng) ||
+    Number(address?.location?.coordinates?.[0]) ||
+    null;
+
+  const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude);
+
+  return {
+    label: normalizeAddressLabel(address.label),
+    street: address.street || '',
+    additionalDetails: address.additionalDetails || '',
+    city: address.city || '',
+    state: address.state || '',
+    zipCode: address.zipCode || '',
+    formattedAddress: address.formattedAddress || '',
+    location: {
+      type: 'Point',
+      coordinates: hasCoordinates ? [longitude, latitude] : [0, 0]
+    }
+  };
+};
 
 const getMenuItemFinalPrice = (menuItem = {}) => {
   const basePrice = Number(menuItem.price || 0);
@@ -236,6 +301,16 @@ const calculateUpdatedTotals = (order, items) => {
   };
 };
 
+const applyEditedCartToOrder = (order, sanitizedItems, totals) => {
+  order.items = sanitizedItems;
+  order.pricing.subtotal = totals.subtotal;
+  order.pricing.total = totals.total;
+  const postOrderActions = ensurePostOrderActionsShape(order);
+  postOrderActions.lastCartEditedAt = new Date();
+  postOrderActions.cartEditCount = Number(postOrderActions.cartEditCount || 0) + 1;
+  postOrderActions.pendingCartEdit = getDefaultPendingCartEdit();
+};
+
 const generateUniqueOrderId = async () => {
   // Retry a few times in case of rare ID collisions on unique index.
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -347,6 +422,25 @@ export const createOrder = async (req, res) => {
       };
     })();
 
+    // Ensure user has mandatory profile details before placing order
+    const userProfile = await User.findById(userId).select('phone addresses').lean();
+    const userPhone = String(userProfile?.phone || '').trim();
+    const savedAddressesCount = Array.isArray(userProfile?.addresses) ? userProfile.addresses.length : 0;
+
+    if (!userPhone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please add your phone number in profile before placing an order.'
+      });
+    }
+
+    if (savedAddressesCount === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please add at least one saved address in profile before placing an order.'
+      });
+    }
+
     // Validate required fields
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
@@ -355,7 +449,8 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    if (!address) {
+    const normalizedAddress = normalizeOrderAddress(address);
+    if (!normalizedAddress) {
       return res.status(400).json({
         success: false,
         message: 'Delivery address is required'
@@ -578,7 +673,7 @@ export const createOrder = async (req, res) => {
     const pricing = await calculateOrderPricing({
       items,
       restaurantId: assignedRestaurantId,
-      deliveryAddress: address,
+      deliveryAddress: normalizedAddress,
       couponCode,
       deliveryFleet: deliveryFleet || 'standard',
       userId
@@ -608,7 +703,7 @@ export const createOrder = async (req, res) => {
       restaurantId: assignedRestaurantId,
       restaurantName: assignedRestaurantName,
       items,
-      address,
+      address: normalizedAddress,
       pricing: {
         ...pricing,
         couponCode: persistedCouponCode
@@ -661,10 +756,10 @@ export const createOrder = async (req, res) => {
         }
         : null;
 
-      const userLocation = address.location?.coordinates
+      const userLocation = normalizedAddress.location?.coordinates
         ? {
-          latitude: address.location.coordinates[1],
-          longitude: address.location.coordinates[0]
+          latitude: normalizedAddress.location.coordinates[1],
+          longitude: normalizedAddress.location.coordinates[0]
         }
         : null;
 
@@ -1053,6 +1148,183 @@ export const createOrder = async (req, res) => {
       success: false,
       message: 'Failed to create order',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Switch an existing unpaid online order to Cash on Delivery
+ */
+export const switchOrderToCash = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order ID is required'
+      });
+    }
+
+    let order = null;
+    if (mongoose.Types.ObjectId.isValid(id) && String(id).length === 24) {
+      order = await Order.findOne({ _id: id, userId });
+    }
+    if (!order) {
+      order = await Order.findOne({ orderId: id, userId });
+    }
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    if (order.status === 'cancelled' || order.status === 'delivered') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot switch payment mode for this order'
+      });
+    }
+
+    const currentMethod = String(order.payment?.method || '').toLowerCase().trim();
+    const currentStatus = String(order.payment?.status || '').toLowerCase().trim();
+    const isOnlineMethod = ['razorpay', 'card', 'upi'].includes(currentMethod);
+
+    if (currentMethod === 'cash') {
+      return res.json({
+        success: true,
+        data: {
+          order: {
+            id: order._id.toString(),
+            orderId: order.orderId,
+            status: order.status,
+            total: order.pricing?.total || 0,
+            modificationWindow: getOrderModificationWindow(order),
+            scheduledDelivery: order.scheduledDelivery
+          }
+        }
+      });
+    }
+
+    if (!isOnlineMethod && currentMethod !== '') {
+      return res.status(400).json({
+        success: false,
+        message: 'Only unpaid online orders can be switched to COD'
+      });
+    }
+
+    if (currentStatus === 'completed') {
+      return res.status(400).json({
+        success: false,
+        message: 'Order is already paid online and cannot be switched to COD'
+      });
+    }
+
+    order.payment.method = 'cash';
+    order.payment.status = 'pending';
+    order.payment.razorpayOrderId = undefined;
+    order.payment.razorpayPaymentId = undefined;
+    order.payment.razorpaySignature = undefined;
+    order.payment.transactionId = undefined;
+
+    const isFutureScheduledOrder = Boolean(
+      order?.scheduledDelivery?.isScheduled &&
+      order?.scheduledDelivery?.scheduledFor &&
+      new Date(order.scheduledDelivery.scheduledFor).getTime() > Date.now()
+    );
+
+    if (!isFutureScheduledOrder && order.status === 'pending') {
+      order.status = 'confirmed';
+      order.tracking.confirmed = {
+        status: true,
+        timestamp: new Date()
+      };
+      startOrderModificationWindow(order);
+    }
+
+    await saveOrderWithIdRetry(order);
+
+    try {
+      const existingPayment = await Payment.findOne({ orderId: order._id });
+      if (existingPayment) {
+        existingPayment.method = 'cash';
+        existingPayment.status = 'pending';
+        existingPayment.logs = [
+          ...(existingPayment.logs || []),
+          {
+            action: 'pending',
+            timestamp: new Date(),
+            details: {
+              previousStatus: currentStatus || 'pending',
+              newStatus: 'pending',
+              note: 'Payment mode switched to cash on delivery'
+            }
+          }
+        ];
+        await existingPayment.save();
+      } else {
+        const payment = new Payment({
+          paymentId: `PAY-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          orderId: order._id,
+          userId,
+          amount: order.pricing?.total || 0,
+          currency: 'INR',
+          method: 'cash',
+          status: 'pending',
+          logs: [{
+            action: 'pending',
+            timestamp: new Date(),
+            details: {
+              previousStatus: 'new',
+              newStatus: 'pending',
+              note: 'Cash on delivery order created from online cancel flow'
+            }
+          }]
+        });
+        await payment.save();
+      }
+    } catch (paymentError) {
+      logger.error('Error updating payment record during COD switch:', {
+        error: paymentError.message,
+        stack: paymentError.stack
+      });
+    }
+
+    if (!isFutureScheduledOrder) {
+      try {
+        await notifyRestaurantNewOrder(order, order.restaurantId, 'cash');
+      } catch (notifyError) {
+        logger.error('Error notifying restaurant for COD switched order:', {
+          error: notifyError.message,
+          stack: notifyError.stack
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        order: {
+          id: order._id.toString(),
+          orderId: order.orderId,
+          status: order.status,
+          total: order.pricing?.total || 0,
+          modificationWindow: getOrderModificationWindow(order),
+          scheduledDelivery: order.scheduledDelivery
+        }
+      }
+    });
+  } catch (error) {
+    logger.error(`Error switching order to COD: ${error.message}`, {
+      error: error.message,
+      stack: error.stack
+    });
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to switch order to COD'
     });
   }
 };
@@ -1669,21 +1941,98 @@ export const editOrderCart = async (req, res) => {
     const sanitizedItems = sanitizeEditedItems(nextItems);
     const totals = calculateUpdatedTotals(order, sanitizedItems);
 
-    order.items = sanitizedItems;
-    order.pricing.subtotal = totals.subtotal;
-    order.pricing.total = totals.total;
-    order.postOrderActions = {
-      ...(order.postOrderActions || {}),
-      lastCartEditedAt: new Date(),
-      cartEditCount: Number(order.postOrderActions?.cartEditCount || 0) + 1
-    };
+    const previousTotal = Number(order.pricing?.total || 0);
+    const additionalAmount = Number(Math.max(0, totals.total - previousTotal).toFixed(2));
+    const isOnlineCompletedPayment =
+      String(order.payment?.method || '').toLowerCase() === 'razorpay' &&
+      String(order.payment?.status || '').toLowerCase() === 'completed';
 
+    if (isOnlineCompletedPayment && additionalAmount > 0) {
+      const receiptRaw = `${order.orderId}-E-${Date.now()}`;
+      const receipt = receiptRaw.slice(0, 40);
+
+      let razorpayOrder = null;
+      try {
+        razorpayOrder = await createRazorpayOrder({
+          amount: Math.round(additionalAmount * 100),
+          currency: 'INR',
+          receipt,
+          notes: {
+            orderId: order.orderId,
+            orderMongoId: order._id.toString(),
+            userId: userId.toString(),
+            purpose: 'order_edit_additional_payment'
+          }
+        });
+      } catch (razorpayError) {
+        logger.error(`Error creating additional Razorpay order for edit: ${razorpayError.message}`, {
+          orderId: order.orderId,
+          userId: userId.toString(),
+          additionalAmount
+        });
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to initialize additional payment for updated order items'
+        });
+      }
+
+      let razorpayKeyId = null;
+      try {
+        const credentials = await getRazorpayCredentials();
+        razorpayKeyId = credentials?.keyId || process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_API_KEY;
+      } catch {
+        razorpayKeyId = process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_API_KEY;
+      }
+
+      order.postOrderActions = {
+        ...(order.postOrderActions || {}),
+        pendingCartEdit: {
+          items: sanitizedItems,
+          subtotal: totals.subtotal,
+          total: totals.total,
+          additionalAmount,
+          razorpayOrderId: razorpayOrder?.id || '',
+          createdAt: new Date()
+        }
+      };
+      await order.save();
+
+      return res.json({
+        success: true,
+        message: 'Additional payment required to confirm edited order items',
+        data: {
+          requiresAdditionalPayment: true,
+          additionalAmount,
+          order: {
+            id: order._id.toString(),
+            orderId: order.orderId,
+            status: order.status,
+            pricing: {
+              previousTotal: Number(previousTotal.toFixed(2)),
+              nextTotal: totals.total,
+              additionalAmount
+            },
+            modificationWindow: getOrderModificationWindow(order)
+          },
+          razorpay: razorpayOrder ? {
+            orderId: razorpayOrder.id,
+            amount: razorpayOrder.amount,
+            currency: razorpayOrder.currency,
+            key: razorpayKeyId
+          } : null
+        }
+      });
+    }
+
+    applyEditedCartToOrder(order, sanitizedItems, totals);
     await order.save();
 
     return res.json({
       success: true,
       message: 'Order cart updated successfully',
       data: {
+        requiresAdditionalPayment: false,
+        additionalAmount: 0,
         order: {
           id: order._id.toString(),
           orderId: order.orderId,
@@ -1702,6 +2051,147 @@ export const editOrderCart = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to edit order cart'
+    });
+  }
+};
+
+/**
+ * Verify additional payment for edited cart and apply pending edited items
+ * POST /api/order/:id/edit-cart/verify-payment
+ */
+export const verifyEditedOrderCartPayment = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
+
+    if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required payment verification fields'
+      });
+    }
+
+    let order = null;
+    if (mongoose.Types.ObjectId.isValid(id) && id.length === 24) {
+      order = await Order.findOne({ _id: id, userId });
+    }
+    if (!order) {
+      order = await Order.findOne({ orderId: id, userId });
+    }
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    const modificationWindow = getOrderModificationWindow(order);
+    if (!modificationWindow.isOpen) {
+      return res.status(400).json({
+        success: false,
+        message: `Cart edit payment window expired at ${modificationWindow.expiresAt?.toISOString() || 'N/A'}.`
+      });
+    }
+
+    const pendingCartEdit = order.postOrderActions?.pendingCartEdit;
+    if (!pendingCartEdit || !Array.isArray(pendingCartEdit.items) || pendingCartEdit.items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No pending edited cart payment found for this order'
+      });
+    }
+
+    if (String(pendingCartEdit.razorpayOrderId || '') !== String(razorpayOrderId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment order mismatch for edited cart'
+      });
+    }
+
+    const isValid = await verifyPayment(razorpayOrderId, razorpayPaymentId, razorpaySignature);
+    if (!isValid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid payment signature'
+      });
+    }
+
+    const additionalAmount = Number(pendingCartEdit.additionalAmount || 0);
+    const payment = new Payment({
+      paymentId: `PAY-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      orderId: order._id,
+      userId,
+      amount: additionalAmount,
+      currency: 'INR',
+      method: 'razorpay',
+      status: 'completed',
+      razorpay: {
+        orderId: razorpayOrderId,
+        paymentId: razorpayPaymentId,
+        signature: razorpaySignature
+      },
+      transactionId: razorpayPaymentId,
+      completedAt: new Date(),
+      logs: [{
+        action: 'completed',
+        timestamp: new Date(),
+        details: {
+          razorpayOrderId,
+          razorpayPaymentId,
+          purpose: 'order_edit_additional_payment',
+          orderId: order.orderId
+        },
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent')
+      }]
+    });
+    await payment.save();
+
+    const sanitizedItems = sanitizeEditedItems(pendingCartEdit.items || []);
+    const totals = {
+      subtotal: Number(pendingCartEdit.subtotal || order.pricing?.subtotal || 0),
+      total: Number(pendingCartEdit.total || order.pricing?.total || 0)
+    };
+    applyEditedCartToOrder(order, sanitizedItems, totals);
+
+    order.payment.status = 'completed';
+    order.payment.method = order.payment?.method || 'razorpay';
+    order.payment.razorpayOrderId = razorpayOrderId;
+    order.payment.razorpayPaymentId = razorpayPaymentId;
+    order.payment.razorpaySignature = razorpaySignature;
+    order.payment.transactionId = razorpayPaymentId;
+
+    await order.save();
+
+    return res.json({
+      success: true,
+      message: 'Additional payment successful. Order updated successfully',
+      data: {
+        order: {
+          id: order._id.toString(),
+          orderId: order.orderId,
+          status: order.status,
+          items: order.items,
+          pricing: order.pricing,
+          modificationWindow: getOrderModificationWindow(order)
+        },
+        payment: {
+          id: payment._id.toString(),
+          paymentId: payment.paymentId,
+          status: payment.status
+        }
+      }
+    });
+  } catch (error) {
+    logger.error(`Error verifying edited cart payment: ${error.message}`, {
+      error: error.message,
+      stack: error.stack
+    });
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to verify edited cart payment'
     });
   }
 };

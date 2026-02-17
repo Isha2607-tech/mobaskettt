@@ -117,7 +117,7 @@ const paymentSchema = new mongoose.Schema({
   logs: [{
     action: {
       type: String,
-      enum: ['initiated', 'processing', 'completed', 'failed', 'refunded', 'cancelled']
+      enum: ['pending', 'initiated', 'processing', 'completed', 'failed', 'refunded', 'cancelled']
     },
     timestamp: {
       type: Date,

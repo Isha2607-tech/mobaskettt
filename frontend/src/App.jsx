@@ -109,6 +109,7 @@ import DeliveryOTP from "@/module/delivery/pages/auth/OTP";
 import DeliverySignupStep1 from "@/module/delivery/pages/auth/SignupStep1";
 import DeliverySignupStep2 from "@/module/delivery/pages/auth/SignupStep2";
 import DeliveryWelcome from "@/module/delivery/pages/auth/Welcome";
+import DeliveryTermsAndConditions from "@/module/delivery/pages/TermsAndConditions";
 import TermsPublic from "@/module/user/pages/legal/TermsPublic";
 import PrivacyPublic from "@/module/user/pages/legal/PrivacyPublic";
 import ContentPolicyPublic from "@/module/user/pages/legal/ContentPolicyPublic";
@@ -1082,6 +1083,7 @@ export default function App() {
         <Route path="/delivery/sign-in" element={<DeliverySignIn />} />
         <Route path="/delivery/signup" element={<DeliverySignup />} />
         <Route path="/delivery/otp" element={<DeliveryOTP />} />
+        <Route path="/delivery/terms-and-conditions" element={<DeliveryTermsAndConditions />} />
         <Route
           path="/delivery/welcome"
           element={

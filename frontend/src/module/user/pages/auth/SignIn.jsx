@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { Link, useNavigate, useSearchParams } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { Mail, Phone, AlertCircle, Loader2 } from "lucide-react"
 import AnimatedPage from "../../components/AnimatedPage"
 import { Button } from "@/components/ui/button"
@@ -12,11 +12,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { authAPI } from "@/lib/api"
+import api, { authAPI } from "@/lib/api"
+import { API_ENDPOINTS } from "@/lib/api/config"
 import { firebaseAuth, googleProvider, ensureFirebaseInitialized } from "@/lib/firebase"
 import { setAuthData } from "@/lib/utils/auth"
 import { loadBusinessSettings } from "@/lib/utils/businessSettings"
 import loginBanner from "@/assets/loginbanner.png"
+import PolicyModal from "@/components/legal/PolicyModal"
 
 // Common country codes
 const countryCodes = [
@@ -66,6 +68,13 @@ export default function SignIn() {
     termsOfServiceUrl: "",
     privacyPolicyUrl: "",
     contentPolicyUrl: "",
+  })
+  const [policyModal, setPolicyModal] = useState({
+    open: false,
+    title: "",
+    loading: false,
+    content: "",
+    fallbackUrl: "",
   })
   const redirectHandledRef = useRef(false)
 
@@ -628,34 +637,38 @@ export default function SignIn() {
     redirectHandledRef.current = false // Reset flag when starting new sign-in
 
     try {
-      // Ensure Firebase is initialized before use
       ensureFirebaseInitialized()
 
-      // Validate Firebase Auth instance
       if (!firebaseAuth) {
         throw new Error("Firebase Auth is not initialized. Please check your Firebase configuration.")
       }
 
-      const { signInWithRedirect } = await import("firebase/auth")
+      const { signInWithPopup, signInWithRedirect } = await import("firebase/auth")
 
-      // Log current origin for debugging
-      console.log("🚀 Starting Google sign-in redirect...", {
-        origin: window.location.origin,
-        hostname: window.location.hostname,
-        pathname: window.location.pathname
-      })
+      try {
+        const popupResult = await signInWithPopup(firebaseAuth, googleProvider)
+        if (popupResult?.user) {
+          await processSignedInUser(popupResult.user, "google-popup")
+          return
+        }
+      } catch (popupError) {
+        const popupCode = popupError?.code || ""
+        const shouldFallbackToRedirect =
+          popupCode === "auth/popup-blocked" ||
+          popupCode === "auth/popup-closed-by-user" ||
+          popupCode === "auth/cancelled-popup-request" ||
+          popupCode === "auth/operation-not-supported-in-this-environment"
 
-      // Use redirect directly to avoid COOP issues
-      // The redirect result will be handled by the useEffect hook above
-      await signInWithRedirect(firebaseAuth, googleProvider)
+        if (!shouldFallbackToRedirect) {
+          throw popupError
+        }
 
-      // Note: signInWithRedirect will cause a full page redirect to Google
-      // After user authenticates, they'll be redirected back to this page
-      // The useEffect hook will handle the result when the page loads again
-      console.log("✅ Redirect initiated, user will be redirected to Google...")
-      // Don't set loading to false here - page will redirect
+        console.warn("Popup sign-in failed, falling back to redirect:", popupCode)
+        await signInWithRedirect(firebaseAuth, googleProvider)
+        return
+      }
     } catch (error) {
-      console.error("❌ Google sign-in redirect error:", error)
+      console.error("Google sign-in error:", error)
       console.error("Error code:", error?.code)
       console.error("Error message:", error?.message)
       setIsLoading(false)
@@ -698,27 +711,56 @@ export default function SignIn() {
     setAuthMethod(authMethod === "email" ? "phone" : "email")
   }
 
-  const renderPolicyLink = (label, url, fallbackPath) => {
-    if (url) {
-      return (
-        <a
-          href={url}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="underline hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-        >
-          {label}
-        </a>
-      )
+  const openPolicyModal = async (type) => {
+    const modalTitleByType = {
+      terms: "Terms of Service",
+      privacy: "Privacy Policy",
+      content: "Content Policy",
     }
 
+    setPolicyModal({
+      open: true,
+      title: modalTitleByType[type] || "Policy",
+      loading: true,
+      content: "",
+      fallbackUrl: type === "content" ? policyLinks.contentPolicyUrl : "",
+    })
+
+    if (type === "content") {
+      setPolicyModal((prev) => ({ ...prev, loading: false }))
+      return
+    }
+
+    try {
+      const endpoint = type === "terms" ? API_ENDPOINTS.ADMIN.TERMS_PUBLIC : API_ENDPOINTS.ADMIN.PRIVACY_PUBLIC
+      const response = await api.get(endpoint, {
+        params: type === "terms" ? { audience: "user" } : undefined,
+      })
+      const data = response?.data?.data || {}
+      setPolicyModal((prev) => ({
+        ...prev,
+        loading: false,
+        title: data.title || prev.title,
+        content: data.content || "<p>Content is not available right now.</p>",
+      }))
+    } catch {
+      setPolicyModal((prev) => ({
+        ...prev,
+        loading: false,
+        content: "<p>Unable to load content right now.</p>",
+      }))
+    }
+  }
+
+  const renderPolicyLink = (label, type) => {
     return (
-      <Link
-        to={fallbackPath}
+      <button
+        type="button"
+        onClick={() => openPolicyModal(type)}
         className="underline hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
       >
         {label}
-      </Link>
+      </button>
     )
   }
 
@@ -915,15 +957,15 @@ export default function SignIn() {
             </p>
             <div className="leading-5">
               <span className="text-[#E23744] font-medium">
-                {renderPolicyLink("Terms of Service", policyLinks.termsOfServiceUrl, "/legal/terms")}
+                {renderPolicyLink("Terms of Service", "terms")}
               </span>
               <span className="mx-1 text-gray-500">|</span>
               <span>
-                {renderPolicyLink("Privacy Policy", policyLinks.privacyPolicyUrl, "/legal/privacy")}
+                {renderPolicyLink("Privacy Policy", "privacy")}
               </span>
               <span className="mx-1 text-gray-500">|</span>
               <span>
-                {renderPolicyLink("Content Policy", policyLinks.contentPolicyUrl, "/legal/content-policy")}
+                {renderPolicyLink("Content Policy", "content")}
               </span>
             </div>
           </div>
@@ -982,6 +1024,14 @@ export default function SignIn() {
 
         </div>
       </div>
+      <PolicyModal
+        open={policyModal.open}
+        onOpenChange={(open) => setPolicyModal((prev) => ({ ...prev, open }))}
+        title={policyModal.title}
+        loading={policyModal.loading}
+        content={policyModal.content}
+        fallbackUrl={policyModal.fallbackUrl}
+      />
     </AnimatedPage>
   )
 }

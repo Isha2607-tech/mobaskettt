@@ -12,6 +12,11 @@ const termsAndConditionSchema = new mongoose.Schema(
       required: true,
       default: ''
     },
+    visibleOn: {
+      type: [String],
+      enum: ['user', 'restaurant', 'delivery'],
+      default: ['user', 'restaurant', 'delivery']
+    },
     isActive: {
       type: Boolean,
       default: true

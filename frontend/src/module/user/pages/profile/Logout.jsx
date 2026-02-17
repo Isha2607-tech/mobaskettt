@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useState } from "react";
 import { authAPI } from "@/lib/api";
 import { firebaseAuth } from "@/lib/firebase";
+import { clearModuleAuth } from "@/lib/utils/auth";
 
 export default function Logout() {
   const navigate = useNavigate();
@@ -15,6 +16,20 @@ export default function Logout() {
   const handleLogout = async () => {
     setIsLoggingOut(true);
     setError("");
+
+    const clearUserStorage = () => {
+      clearModuleAuth("user");
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("user");
+      localStorage.removeItem("userProfile");
+      localStorage.removeItem("userAddresses");
+      localStorage.removeItem("userPaymentMethods");
+      localStorage.removeItem("userFavorites");
+      localStorage.removeItem("userDishFavorites");
+      localStorage.removeItem("appzeto_user_profile");
+      localStorage.removeItem("mobasket_preference");
+      sessionStorage.removeItem("userAuthData");
+    };
 
     try {
       // Call backend logout API to invalidate refresh token
@@ -43,14 +58,7 @@ export default function Logout() {
         );
       }
 
-      // Clear all authentication data from localStorage
-      localStorage.removeItem("accessToken");
-      localStorage.removeItem("user_authenticated");
-      localStorage.removeItem("user_user");
-      localStorage.removeItem("mobasket_preference");
-
-      // Clear sessionStorage
-      sessionStorage.removeItem("userAuthData");
+      clearUserStorage();
 
       // Dispatch auth change event to notify other components
       window.dispatchEvent(new Event("userAuthChanged"));
@@ -63,12 +71,7 @@ export default function Logout() {
       // Even if there's an error, we should still clear local data and logout
       console.error("Error during logout:", err);
 
-      // Clear local data anyway
-      localStorage.removeItem("accessToken");
-      localStorage.removeItem("user_authenticated");
-      localStorage.removeItem("user_user");
-      localStorage.removeItem("mobasket_preference");
-      sessionStorage.removeItem("userAuthData");
+      clearUserStorage();
       window.dispatchEvent(new Event("userAuthChanged"));
 
       setError(

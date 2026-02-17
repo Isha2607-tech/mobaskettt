@@ -183,7 +183,17 @@ export default function OrdersTable({
                 )}
                 {visibleColumns.orderDate && (
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-sm font-medium text-slate-700">{order.date}, {order.time}</span>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-slate-700">{order.date}, {order.time}</span>
+                      {(order.isScheduled || order.status === "scheduled" || order.orderStatus === "Scheduled") && (
+                        <span className="text-xs text-blue-700 mt-0.5">
+                          Scheduled: {order.scheduledDate || (order.scheduledFor ? new Date(order.scheduledFor).toLocaleDateString("en-GB") : "N/A")}
+                          {order.scheduledTime || order.scheduledTimeSlot
+                            ? `, ${order.scheduledTime || order.scheduledTimeSlot}`
+                            : ""}
+                        </span>
+                      )}
+                    </div>
                   </td>
                 )}
                 {visibleColumns.customer && (
@@ -327,7 +337,7 @@ export default function OrdersTable({
                       {enableApprovalActions &&
                         typeof onAcceptOrder === "function" &&
                         typeof onRejectOrder === "function" &&
-                        order.status === "confirmed" &&
+                        (order.status === "confirmed" || order.status === "scheduled") &&
                         (order.adminApprovalStatus === "pending" || !order.adminApprovalStatus) && (
                           <>
                             <button

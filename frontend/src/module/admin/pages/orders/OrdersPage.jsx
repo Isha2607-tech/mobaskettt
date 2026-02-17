@@ -389,7 +389,7 @@ export default function OrdersPage({ statusKey = "all", platformOverride }) {
         onRefund={handleRefund}
         onAcceptOrder={handleApproveOrderRequest}
         onRejectOrder={handleRejectOrderRequest}
-        enableApprovalActions={statusKey === "all"}
+        enableApprovalActions={statusKey === "all" || statusKey === "scheduled"}
       />
     </div>
   )

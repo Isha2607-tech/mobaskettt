@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
@@ -7,6 +7,10 @@ import loginBanner2 from "@/assets/restaurant/loginbanner2.png"
 import loginBanner3 from "@/assets/restaurant/loginbanner3.png"
 import loginBanner4 from "@/assets/restaurant/loginbanner4.png"
 import { useCompanyName } from "@/lib/hooks/useCompanyName"
+import api from "@/lib/api"
+import { API_ENDPOINTS } from "@/lib/api/config"
+import { loadBusinessSettings } from "@/lib/utils/businessSettings"
+import PolicyModal from "@/components/legal/PolicyModal"
 
 // Carousel data with images and taglines
 const carouselData = [
@@ -33,6 +37,7 @@ const carouselData = [
 ]
 
 export default function RestaurantWelcome() {
+  const companyName = useCompanyName()
   const navigate = useNavigate()
   const [currentIndex, setCurrentIndex] = useState(0)
   const [direction, setDirection] = useState(0) // 1 for next, -1 for previous
@@ -104,6 +109,16 @@ export default function RestaurantWelcome() {
   // Handle mouse events for desktop testing
   const [mouseStart, setMouseStart] = useState(null)
   const [mouseEnd, setMouseEnd] = useState(null)
+  const [policyLinks, setPolicyLinks] = useState({
+    contentPolicyUrl: "",
+  })
+  const [policyModal, setPolicyModal] = useState({
+    open: false,
+    title: "",
+    loading: false,
+    content: "",
+    fallbackUrl: "",
+  })
 
   const onMouseDown = (e) => {
     setMouseEnd(null)
@@ -178,6 +193,78 @@ export default function RestaurantWelcome() {
     return () => clearInterval(interval)
   }, [carouselData.length])
 
+  useEffect(() => {
+    const loadPolicyUrls = async () => {
+      try {
+        const settings = await loadBusinessSettings()
+        setPolicyLinks({
+          contentPolicyUrl: settings?.policyLinks?.contentPolicyUrl || "",
+        })
+      } catch {
+        // Keep fallback values
+      }
+    }
+
+    loadPolicyUrls()
+  }, [])
+
+  const displayCompanyName = useMemo(() => {
+    const normalized = (companyName || "MoBasket").trim()
+    if (!normalized) return "MoBasket"
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+  }, [companyName])
+
+  const openPolicyModal = async (type) => {
+    const modalTitleByType = {
+      terms: "Terms of Service",
+      privacy: "Privacy Policy",
+      content: "Code of Conduct",
+    }
+
+    setPolicyModal({
+      open: true,
+      title: modalTitleByType[type] || "Policy",
+      loading: true,
+      content: "",
+      fallbackUrl: type === "content" ? policyLinks.contentPolicyUrl : "",
+    })
+
+    if (type === "content") {
+      setPolicyModal((prev) => ({ ...prev, loading: false }))
+      return
+    }
+
+    try {
+      const endpoint = type === "terms" ? API_ENDPOINTS.ADMIN.TERMS_PUBLIC : API_ENDPOINTS.ADMIN.PRIVACY_PUBLIC
+      const response = await api.get(endpoint, {
+        params: type === "terms" ? { audience: "restaurant" } : undefined,
+      })
+      const data = response?.data?.data || {}
+      setPolicyModal((prev) => ({
+        ...prev,
+        loading: false,
+        title: data.title || prev.title,
+        content: data.content || "<p>Content is not available right now.</p>",
+      }))
+    } catch {
+      setPolicyModal((prev) => ({
+        ...prev,
+        loading: false,
+        content: "<p>Unable to load content right now.</p>",
+      }))
+    }
+  }
+
+  const renderPolicyLink = (label, type) => (
+    <button
+      type="button"
+      onClick={() => openPolicyModal(type)}
+      className="underline"
+    >
+      {label}
+    </button>
+  )
+
   return (
     <div className="h-screen w-full flex flex-col bg-black overflow-hidden">
       {/* Carousel Section - 70% height */}
@@ -236,7 +323,7 @@ export default function RestaurantWelcome() {
               textStroke: "0.5px white"
             }}
           >
-            {companyName.toLowerCase()}
+            {displayCompanyName.toLowerCase()}
           </h1>
         
                       <div className="w-12 h-[0.1px] bg-white mt-0 mb-3" />
@@ -308,11 +395,23 @@ export default function RestaurantWelcome() {
           <p className="text-white/70 text-xs md:text-sm">
             By continuing, you agree to our
           </p>
-          <p className="text-white/70 text-xs md:text-sm underline mt-1">
-            Terms of Service | Privacy Policy | Code of Conduct
-          </p>
+          <div className="text-white/70 text-xs md:text-sm mt-1 flex justify-center items-center gap-2 flex-wrap">
+            {renderPolicyLink("Terms of Service", "terms")}
+            <span>|</span>
+            {renderPolicyLink("Privacy Policy", "privacy")}
+            <span>|</span>
+            {renderPolicyLink("Code of Conduct", "content")}
+          </div>
         </div>
       </div>
+      <PolicyModal
+        open={policyModal.open}
+        onOpenChange={(open) => setPolicyModal((prev) => ({ ...prev, open }))}
+        title={policyModal.title}
+        loading={policyModal.loading}
+        content={policyModal.content}
+        fallbackUrl={policyModal.fallbackUrl}
+      />
     </div>
   )
 }

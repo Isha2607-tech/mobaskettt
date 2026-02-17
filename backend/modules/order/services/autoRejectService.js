@@ -69,15 +69,26 @@ export async function processAutoRejectOrders() {
 
           // Calculate refund amount but don't process automatically
           // Admin will process refund manually via refund button
-          try {
-            await calculateCancellationRefund(
-              currentOrder._id,
-              'Order not accepted within time limit. Restaurant did not respond in time.'
-            );
-            console.log(`✅ Cancellation refund calculated for order ${currentOrder.orderId} - awaiting admin approval`);
-          } catch (refundError) {
-            console.error(`❌ Error calculating cancellation refund for order ${currentOrder.orderId}:`, refundError);
-            // Don't fail order cancellation if refund calculation fails
+          const paymentMethod = String(currentOrder?.payment?.method || '').toLowerCase().trim();
+          const paymentStatus = String(currentOrder?.payment?.status || '').toLowerCase().trim();
+          const isPaidOnline =
+            ['razorpay', 'upi', 'card'].includes(paymentMethod) && paymentStatus === 'completed';
+          const isPaidWallet =
+            paymentMethod === 'wallet' && paymentStatus === 'completed';
+
+          if (isPaidOnline || isPaidWallet) {
+            try {
+              await calculateCancellationRefund(
+                currentOrder._id,
+                'Order not accepted within time limit. Restaurant did not respond in time.'
+              );
+              console.log(`✅ Cancellation refund calculated for order ${currentOrder.orderId} - awaiting admin approval`);
+            } catch (refundError) {
+              console.error(`❌ Error calculating cancellation refund for order ${currentOrder.orderId}:`, refundError);
+              // Don't fail order cancellation if refund calculation fails
+            }
+          } else {
+            console.log(`ℹ️ Skipping refund calculation for order ${currentOrder.orderId} (payment method: ${paymentMethod || 'unknown'}, status: ${paymentStatus || 'unknown'})`);
           }
 
           // Notify about status update

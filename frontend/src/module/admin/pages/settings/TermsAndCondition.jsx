@@ -3,13 +3,21 @@ import { toast } from "sonner"
 import api from "@/lib/api"
 import { API_ENDPOINTS } from "@/lib/api/config"
 import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
+
+const AUDIENCE_OPTIONS = [
+  { value: "user", label: "User Login (/auth/sign-in)" },
+  { value: "restaurant", label: "Restaurant Login (/restaurant/login)" },
+  { value: "delivery", label: "Delivery Login (/delivery/sign-in)" }
+]
 
 export default function TermsAndCondition() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [termsData, setTermsData] = useState({
     title: 'Terms of Service',
-    content: ''
+    content: '',
+    visibleOn: ['user', 'restaurant', 'delivery']
   })
 
   useEffect(() => {
@@ -58,7 +66,10 @@ export default function TermsAndCondition() {
         const textContent = htmlToText(content)
         setTermsData({
           ...response.data.data,
-          content: textContent
+          content: textContent,
+          visibleOn: Array.isArray(response.data.data.visibleOn) && response.data.data.visibleOn.length > 0
+            ? response.data.data.visibleOn
+            : ['user', 'restaurant', 'delivery']
         })
       }
     } catch (error) {
@@ -81,7 +92,8 @@ export default function TermsAndCondition() {
       
       const response = await api.put(API_ENDPOINTS.ADMIN.TERMS, {
         title: termsData.title,
-        content: htmlContent
+        content: htmlContent,
+        visibleOn: termsData.visibleOn
       })
       if (response.data.success) {
         toast.success('Terms of service updated successfully')
@@ -90,7 +102,10 @@ export default function TermsAndCondition() {
         const textContent = htmlToText(content)
         setTermsData({
           ...response.data.data,
-          content: textContent
+          content: textContent,
+          visibleOn: Array.isArray(response.data.data.visibleOn) && response.data.data.visibleOn.length > 0
+            ? response.data.data.visibleOn
+            : ['user', 'restaurant', 'delivery']
         })
       }
     } catch (error) {
@@ -123,6 +138,29 @@ export default function TermsAndCondition() {
 
         {/* Text Area */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+          <div className="mb-5">
+            <p className="text-sm font-semibold text-slate-900 mb-3">Show Terms Popup On</p>
+            <div className="grid gap-3">
+              {AUDIENCE_OPTIONS.map((option) => (
+                <label key={option.value} className="flex items-center gap-3 text-sm text-slate-700 cursor-pointer">
+                  <Checkbox
+                    checked={termsData.visibleOn.includes(option.value)}
+                    onCheckedChange={(checked) => {
+                      const isChecked = Boolean(checked)
+                      setTermsData((prev) => {
+                        const nextVisibleOn = isChecked
+                          ? Array.from(new Set([...prev.visibleOn, option.value]))
+                          : prev.visibleOn.filter((item) => item !== option.value)
+                        return { ...prev, visibleOn: nextVisibleOn }
+                      })
+                    }}
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
           <Textarea
             value={termsData.content}
             onChange={(e) => setTermsData(prev => ({ ...prev, content: e.target.value }))}

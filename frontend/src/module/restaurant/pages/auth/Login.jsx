@@ -11,9 +11,12 @@ import {
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { restaurantAPI } from "@/lib/api"
+import api from "@/lib/api"
+import { API_ENDPOINTS } from "@/lib/api/config"
 import { firebaseAuth, googleProvider } from "@/lib/firebase"
 import { useCompanyName } from "@/lib/hooks/useCompanyName"
 import { loadBusinessSettings } from "@/lib/utils/businessSettings"
+import PolicyModal from "@/components/legal/PolicyModal"
 
 // Common country codes
 const countryCodes = [
@@ -96,6 +99,13 @@ export default function RestaurantLogin() {
     termsOfServiceUrl: "",
     privacyPolicyUrl: "",
     contentPolicyUrl: "",
+  })
+  const [policyModal, setPolicyModal] = useState({
+    open: false,
+    title: "",
+    loading: false,
+    content: "",
+    fallbackUrl: "",
   })
 
   useEffect(() => {
@@ -382,15 +392,56 @@ export default function RestaurantLogin() {
     return normalized.charAt(0).toUpperCase() + normalized.slice(1)
   }, [companyName])
 
-  const renderPolicyLink = (label, url) => {
-    if (!url) {
-      return <span className="text-gray-400 cursor-not-allowed">{label}</span>
+  const openPolicyModal = async (type) => {
+    const modalTitleByType = {
+      terms: "Terms of Service",
+      privacy: "Privacy Policy",
+      content: "Code of Conduct",
     }
 
+    setPolicyModal({
+      open: true,
+      title: modalTitleByType[type] || "Policy",
+      loading: true,
+      content: "",
+      fallbackUrl: type === "content" ? policyLinks.contentPolicyUrl : "",
+    })
+
+    if (type === "content") {
+      setPolicyModal((prev) => ({ ...prev, loading: false }))
+      return
+    }
+
+    try {
+      const endpoint = type === "terms" ? API_ENDPOINTS.ADMIN.TERMS_PUBLIC : API_ENDPOINTS.ADMIN.PRIVACY_PUBLIC
+      const response = await api.get(endpoint, {
+        params: type === "terms" ? { audience: "restaurant" } : undefined,
+      })
+      const data = response?.data?.data || {}
+      setPolicyModal((prev) => ({
+        ...prev,
+        loading: false,
+        title: data.title || prev.title,
+        content: data.content || "<p>Content is not available right now.</p>",
+      }))
+    } catch {
+      setPolicyModal((prev) => ({
+        ...prev,
+        loading: false,
+        content: "<p>Unable to load content right now.</p>",
+      }))
+    }
+  }
+
+  const renderPolicyLink = (label, type) => {
     return (
-      <a href={url} className="underline hover:text-gray-800 transition-colors">
+      <button
+        type="button"
+        onClick={() => openPolicyModal(type)}
+        className="underline hover:text-gray-800 transition-colors"
+      >
         {label}
-      </a>
+      </button>
     )
   }
 
@@ -613,14 +664,22 @@ export default function RestaurantLogin() {
             By continuing, you agree to our
           </p>
           <div className="text-xs text-center text-gray-600 mt-1 flex justify-center gap-2 flex-wrap">
-            {renderPolicyLink("Terms of Service", policyLinks.termsOfServiceUrl)}
+            {renderPolicyLink("Terms of Service", "terms")}
             <span>•</span>
-            {renderPolicyLink("Privacy Policy", policyLinks.privacyPolicyUrl)}
+            {renderPolicyLink("Privacy Policy", "privacy")}
             <span>•</span>
-            {renderPolicyLink("Code of Conduct", policyLinks.contentPolicyUrl)}
+            {renderPolicyLink("Code of Conduct", "content")}
           </div>
         </div>
       </div>
+      <PolicyModal
+        open={policyModal.open}
+        onOpenChange={(open) => setPolicyModal((prev) => ({ ...prev, open }))}
+        title={policyModal.title}
+        loading={policyModal.loading}
+        content={policyModal.content}
+        fallbackUrl={policyModal.fallbackUrl}
+      />
     </div>
   )
 }

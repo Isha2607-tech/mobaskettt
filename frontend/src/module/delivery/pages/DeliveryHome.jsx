@@ -1716,9 +1716,14 @@ export default function DeliveryHome() {
             console.log('📍 Map not initialized yet, will initialize with GPS location')
             // Map will be initialized in the map initialization useEffect with this location
           } else if (window.deliveryMapInstance) {
-            // Map already initialized - recenter and update marker
-            window.deliveryMapInstance.setCenter({ lat: smoothedLocation[0], lng: smoothedLocation[1] })
-            window.deliveryMapInstance.setZoom(18)
+            // Map already initialized - keep route context for active order, else rider-centric view.
+            const fitted = selectedRestaurantRef.current
+              ? fitMapToActiveRoute(window.deliveryMapInstance)
+              : false
+            if (!fitted) {
+              window.deliveryMapInstance.setCenter({ lat: smoothedLocation[0], lng: smoothedLocation[1] })
+              window.deliveryMapInstance.setZoom(18)
+            }
             createOrUpdateBikeMarker(smoothedLocation[0], smoothedLocation[1], heading, !isUserPanningRef.current)
             updateRoutePolyline()
             console.log('📍 Map recentered to GPS location')
@@ -1761,8 +1766,13 @@ export default function DeliveryHome() {
                       
                       // Recenter map if already initialized, otherwise it will initialize when location is set
                       if (window.deliveryMapInstance) {
-                        window.deliveryMapInstance.setCenter({ lat, lng })
-                        window.deliveryMapInstance.setZoom(18)
+                        const fitted = selectedRestaurantRef.current
+                          ? fitMapToActiveRoute(window.deliveryMapInstance)
+                          : false
+                        if (!fitted) {
+                          window.deliveryMapInstance.setCenter({ lat, lng })
+                          window.deliveryMapInstance.setZoom(18)
+                        }
                         console.log('📍 Recentered map to GPS location')
                         
                         // Update bike marker
@@ -7788,6 +7798,58 @@ export default function DeliveryHome() {
     });
   };
 
+  const fitMapToActiveRoute = useCallback((mapInstance = null) => {
+    if (!window.google || !window.google.maps) return false;
+
+    const map = mapInstance || window.deliveryMapInstance;
+    if (!map) return false;
+
+    const currentDirections = directionsResponseRef.current;
+    const primaryBounds = currentDirections?.routes?.[0]?.bounds;
+    if (primaryBounds && isBoundsReasonable(primaryBounds)) {
+      map.fitBounds(primaryBounds, { padding: 100 });
+      return true;
+    }
+
+    const bounds = new window.google.maps.LatLngBounds();
+    let pointCount = 0;
+    const extendBounds = (lat, lng) => {
+      const parsedLat = Number(lat);
+      const parsedLng = Number(lng);
+      if (!Number.isFinite(parsedLat) || !Number.isFinite(parsedLng)) return;
+      bounds.extend({ lat: parsedLat, lng: parsedLng });
+      pointCount += 1;
+    };
+
+    const fallbackPath = routePolylineRef.current?.getPath?.();
+    if (fallbackPath && typeof fallbackPath.forEach === "function") {
+      fallbackPath.forEach((point) => extendBounds(point.lat(), point.lng()));
+    } else if (Array.isArray(routePolyline) && routePolyline.length > 1) {
+      routePolyline.forEach((coord) => {
+        if (Array.isArray(coord) && coord.length >= 2) {
+          extendBounds(coord[0], coord[1]);
+        }
+      });
+    }
+
+    if (Array.isArray(riderLocation) && riderLocation.length === 2) {
+      extendBounds(riderLocation[0], riderLocation[1]);
+    }
+
+    const activeOrder = selectedRestaurantRef.current;
+    if (activeOrder) {
+      extendBounds(activeOrder?.lat, activeOrder?.lng);
+      extendBounds(activeOrder?.customerLat, activeOrder?.customerLng);
+    }
+
+    if (pointCount >= 2 && isBoundsReasonable(bounds)) {
+      map.fitBounds(bounds, { padding: 100 });
+      return true;
+    }
+
+    return false;
+  }, [riderLocation, routePolyline]);
+
   // Google Maps marker functions - Zomato style exact location tracking
   const createOrUpdateBikeMarker = async (latitude, longitude, heading = null, shouldCenterMap = true) => {
     if (!window.google || !window.google.maps || !window.deliveryMapInstance) {
@@ -7859,8 +7921,13 @@ export default function DeliveryHome() {
         marker: bikeMarkerRef.current
       });
       
-      // Center map on bike location initially - preserve current zoom if user has zoomed in
-      if (shouldCenterMap) {
+      // Keep full active route visible when navigation is active.
+      if (shouldCenterMap && selectedRestaurantRef.current) {
+        const fitted = fitMapToActiveRoute(map);
+        if (!fitted) {
+          map.setCenter(position);
+        }
+      } else if (shouldCenterMap) {
         const currentZoom = map.getZoom();
         map.setCenter(position);
         // Only set zoom to 18 if current zoom is less than 18 (don't reduce user's zoom)
@@ -7921,10 +7988,17 @@ export default function DeliveryHome() {
       // Ensure z-index is high
       bikeMarkerRef.current.setZIndex(1000);
       
-      // Auto-center map on bike location (like Zomato) - only if user hasn't manually panned
+      // Auto-center map on bike location when idle; keep full route visible for active orders.
       if (shouldCenterMap && !isUserPanningRef.current) {
-        // Smooth pan to bike location
-        map.panTo(position);
+        if (selectedRestaurantRef.current) {
+          const fitted = fitMapToActiveRoute(map);
+          if (!fitted) {
+            map.panTo(position);
+          }
+        } else {
+          // Smooth pan to bike location
+          map.panTo(position);
+        }
       }
       
       // Double-check marker is still on map after update
@@ -8798,9 +8872,20 @@ export default function DeliveryHome() {
                     
                     // Update bike marker (only if online - blue dot नहीं, bike icon)
                     if (window.deliveryMapInstance) {
+                      // Recenter button should reset manual pan lock and reframe route like Google Maps.
+                      isUserPanningRef.current = false
                       // Always show bike marker on map (both offline and online)
-                      // Center map automatically (Zomato style) unless user is panning
-                      createOrUpdateBikeMarker(latitude, longitude, heading, !isUserPanningRef.current)
+                      // Active order: fit full route, otherwise center rider.
+                      if (selectedRestaurantRef.current) {
+                        const fitted = fitMapToActiveRoute(window.deliveryMapInstance)
+                        if (!fitted) {
+                          window.deliveryMapInstance.panTo({ lat: latitude, lng: longitude })
+                          if ((window.deliveryMapInstance.getZoom?.() || 0) < 16) {
+                            window.deliveryMapInstance.setZoom(16)
+                          }
+                        }
+                      }
+                      createOrUpdateBikeMarker(latitude, longitude, heading, true)
                       updateRoutePolyline()
                     }
                     

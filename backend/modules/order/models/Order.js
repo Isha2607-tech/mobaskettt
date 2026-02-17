@@ -306,6 +306,32 @@ const orderSchema = new mongoose.Schema({
     cartEditCount: {
       type: Number,
       default: 0
+    },
+    pendingCartEdit: {
+      items: {
+        type: [orderItemSchema],
+        default: []
+      },
+      subtotal: {
+        type: Number,
+        default: 0
+      },
+      total: {
+        type: Number,
+        default: 0
+      },
+      additionalAmount: {
+        type: Number,
+        default: 0
+      },
+      razorpayOrderId: {
+        type: String,
+        default: ''
+      },
+      createdAt: {
+        type: Date,
+        default: null
+      }
     }
   },
   // Customer Review and Rating

@@ -385,6 +385,8 @@ export const API_ENDPOINTS = {
     CALCULATE: '/order/calculate',
     CANCEL: '/order/:id/cancel',
     EDIT_CART: '/order/:id/edit-cart',
+    VERIFY_EDIT_CART_PAYMENT: '/order/:id/edit-cart/verify-payment',
+    SWITCH_TO_COD: '/order/:id/switch-to-cod',
   },
   // Payment endpoints
   PAYMENT: {

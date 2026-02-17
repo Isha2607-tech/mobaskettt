@@ -32,7 +32,7 @@ const genderOptions = [
 // Load profile data from localStorage
 const loadProfileFromStorage = () => {
   try {
-    const stored = localStorage.getItem('appzeto_user_profile')
+    const stored = localStorage.getItem('userProfile')
     if (stored) {
       return JSON.parse(stored)
     }
@@ -45,7 +45,7 @@ const loadProfileFromStorage = () => {
 // Save profile data to localStorage
 const saveProfileToStorage = (data) => {
   try {
-    localStorage.setItem('appzeto_user_profile', JSON.stringify(data))
+    localStorage.setItem('userProfile', JSON.stringify(data))
   } catch (error) {
     console.error('Error saving profile to localStorage:', error)
   }
@@ -57,7 +57,7 @@ export default function EditProfile() {
   
   // Load from localStorage or use context
   const storedProfile = loadProfileFromStorage()
-  const initialProfile = storedProfile || userProfile || {}
+  const initialProfile = userProfile || storedProfile || {}
   
   const initialFormData = {
     name: initialProfile.name ?? "",
@@ -88,7 +88,7 @@ export default function EditProfile() {
   // Update form data when profile changes
   useEffect(() => {
     const storedProfile = loadProfileFromStorage()
-    const profile = storedProfile || userProfile || {}
+    const profile = userProfile || storedProfile || {}
     const newFormData = {
       name: profile.name ?? "",
       mobile: profile.mobile ?? profile.phone ?? "",

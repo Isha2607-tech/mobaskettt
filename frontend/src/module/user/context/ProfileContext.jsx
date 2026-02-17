@@ -4,7 +4,22 @@ import { authAPI, userAPI } from "@/lib/api"
 const ProfileContext = createContext(null)
 
 export function ProfileProvider({ children }) {
+  const resetUserState = () => {
+    localStorage.removeItem("userProfile")
+    localStorage.removeItem("userAddresses")
+    localStorage.removeItem("userPaymentMethods")
+    localStorage.removeItem("userFavorites")
+    localStorage.removeItem("userDishFavorites")
+    localStorage.removeItem("appzeto_user_profile")
+  }
+
   const [userProfile, setUserProfile] = useState(() => {
+    const isAuthenticated = localStorage.getItem("user_authenticated") === "true" ||
+      localStorage.getItem("user_accessToken")
+    if (!isAuthenticated) {
+      return null
+    }
+
     // First, try to get from localStorage (user_user from auth)
     const userStr = localStorage.getItem("user_user")
     if (userStr) {
@@ -94,6 +109,10 @@ export function ProfileProvider({ children }) {
 
   // Save to localStorage whenever userProfile, addresses or paymentMethods change
   useEffect(() => {
+    if (!userProfile) {
+      localStorage.removeItem("userProfile")
+      return
+    }
     localStorage.setItem("userProfile", JSON.stringify(userProfile))
   }, [userProfile])
 
@@ -125,6 +144,9 @@ export function ProfileProvider({ children }) {
                              localStorage.getItem("user_accessToken")
       
       if (!isAuthenticated) {
+        setUserProfile(null)
+        setAddresses([])
+        resetUserState()
         setLoading(false)
         return
       }
@@ -162,15 +184,21 @@ export function ProfileProvider({ children }) {
           }
         }
       } catch (error) {
-        // Silently handle error - use existing profile from localStorage
         console.error("Error fetching user profile:", error)
-        // Try to load from localStorage as fallback
-        const saved = localStorage.getItem("userAddresses")
-        if (saved) {
-          try {
-            setAddresses(JSON.parse(saved))
-          } catch (e) {
-            console.error("Error parsing saved addresses:", e)
+        const status = error?.response?.status
+        if (status === 401 || status === 403) {
+          setUserProfile(null)
+          setAddresses([])
+          resetUserState()
+        } else {
+          // Try to load from localStorage as fallback for transient failures
+          const saved = localStorage.getItem("userAddresses")
+          if (saved) {
+            try {
+              setAddresses(JSON.parse(saved))
+            } catch (e) {
+              console.error("Error parsing saved addresses:", e)
+            }
           }
         }
       } finally {

@@ -155,42 +155,41 @@ export default function Wallet() {
         {/* Wallet Content - Only show if not loading and no error */}
         {!loading && !error && (
           <>
-            {/* Wallet Info Section - Desktop: Side by side, Mobile: Stacked */}
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 md:gap-8 lg:gap-10">
-              {/* Left: Wallet Icon & Info */}
-              <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6 lg:gap-8 flex-1">
-                {/* Wallet Icon */}
-                <div className="relative flex-shrink-0">
-                  <div className="w-20 h-20 md:w-24 md:h-24 lg:w-28 lg:h-28 xl:w-32 xl:h-32 bg-gradient-to-br from-[#EF4F5F] via-[#EF4F5F] to-[#EF4F5F] rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg transform rotate-[-5deg]">
-                    <div className="w-16 h-16 md:w-20 md:h-20 lg:w-24 lg:h-24 xl:w-28 xl:h-28 bg-white/10 rounded-lg md:rounded-xl flex items-center justify-center backdrop-blur-sm border border-white/20">
-                      <IndianRupee className="h-10 w-10 md:h-12 md:w-12 lg:h-14 lg:w-14 xl:h-16 xl:w-16 text-white" strokeWidth={2.5} />
+            {/* Wallet Info Section */}
+            <div className="space-y-5 md:space-y-6">
+              <div className="relative rounded-2xl bg-white dark:bg-[#1a1a1a] border border-gray-100 dark:border-gray-800 p-4 md:p-6">
+                {/* Top Banner */}
+                <div className="relative mb-8 md:mb-10">
+                  <div className="h-16 md:h-[72px] lg:h-20 rounded-2xl bg-[#EF4F5F]/20 dark:bg-[#EF4F5F]/25 flex items-center justify-center pl-20 md:pl-24 pr-4 transform rotate-[-3deg] origin-left">
+                    <h2 className="text-xl md:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white text-center">
+                      {companyName} Money
+                    </h2>
+                  </div>
+
+                  {/* Wallet Icon */}
+                  <div className="absolute -left-1 top-1/2 -translate-y-1/2">
+                    <div className="w-16 h-16 md:w-[72px] md:h-[72px] lg:w-20 lg:h-20 bg-gradient-to-br from-[#EF4F5F] via-[#EF4F5F] to-[#EF4F5F] rounded-xl flex items-center justify-center shadow-lg transform rotate-[-5deg]">
+                      <div className="w-12 h-12 md:w-14 md:h-14 lg:w-16 lg:h-16 bg-white/10 rounded-lg flex items-center justify-center backdrop-blur-sm border border-white/20">
+                        <IndianRupee className="h-8 w-8 md:h-9 md:w-9 lg:h-10 lg:w-10 text-white" strokeWidth={2.5} />
+                      </div>
                     </div>
                   </div>
-                  {/* 3D effect shadow */}
-                  <div className="absolute inset-0 bg-[#EF4F5F] rounded-xl md:rounded-2xl transform rotate-[-5deg] translate-y-1 -z-10 opacity-25"></div>
                 </div>
 
-                {/* Wallet Details */}
-                <div className="flex flex-col md:items-start items-center text-center md:text-left">
-                  <h2 className="text-xl md:text-2xl lg:text-3xl xl:text-4xl font-bold text-gray-900 dark:text-white mb-2 md:mb-3">{companyName} Money</h2>
-
-                  {/* Current Balance */}
-                  <div className="mb-2 md:mb-3">
-                    <p className="text-gray-500 dark:text-gray-400 text-xs md:text-sm lg:text-base mb-1">Current Balance</p>
-                    <p className="text-2xl md:text-3xl lg:text-4xl xl:text-5xl 2xl:text-6xl font-bold text-gray-900 dark:text-white">{formatAmount(currentBalance)}</p>
-                  </div>
-
-                  {/* Subtitle */}
-                  <p className="text-gray-500 dark:text-gray-400 text-xs md:text-sm lg:text-base text-center md:text-left max-w-md">
+                {/* Current Balance */}
+                <div className="text-center">
+                  <p className="text-gray-500 dark:text-gray-400 text-xs md:text-sm lg:text-base mb-1">Current Balance</p>
+                  <p className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white">{formatAmount(currentBalance)}</p>
+                  <p className="mt-2 text-gray-500 dark:text-gray-400 text-xs md:text-sm lg:text-base">
                     Add money to enjoy one-tap, seamless payments
                   </p>
                 </div>
               </div>
 
-              {/* Right: Add Money Button */}
-              <div className="flex-shrink-0 w-full md:w-auto">
+              {/* Add Money Button */}
+              <div className="w-full">
                 <Button
-                  className="w-full md:w-auto md:min-w-[200px] lg:min-w-[240px] h-12 md:h-14 lg:h-16 bg-[#EF4F5F] hover:bg-[#EF4F5F]/90 dark:bg-[#EF4F5F] dark:hover:bg-[#EF4F5F]/90 text-white font-semibold text-sm md:text-base lg:text-lg rounded-xl transition-all duration-200 flex items-center justify-center gap-2"
+                  className="w-full h-12 md:h-14 lg:h-16 bg-[#EF4F5F] hover:bg-[#EF4F5F]/90 dark:bg-[#EF4F5F] dark:hover:bg-[#EF4F5F]/90 text-white font-semibold text-sm md:text-base lg:text-lg rounded-xl transition-all duration-200 flex items-center justify-center gap-2"
                   onClick={() => setAddMoneyModalOpen(true)}
                 >
                   <Plus className="h-4 w-4 md:h-5 md:w-5 lg:h-6 lg:w-6" />

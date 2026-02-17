@@ -105,6 +105,20 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order }) {
                 </p>
                 <p className="text-sm font-medium text-slate-900">{order.date}{order.time ? `, ${order.time}` : ""}</p>
               </div>
+              {(order.isScheduled || order.status === "scheduled" || order.orderStatus === "Scheduled") && (
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                    <Clock className="w-4 h-4" />
+                    Scheduled For
+                  </p>
+                  <p className="text-sm font-medium text-blue-700">
+                    {order.scheduledDate || (order.scheduledFor ? new Date(order.scheduledFor).toLocaleDateString("en-GB") : "N/A")}
+                    {(order.scheduledTime || order.scheduledTimeSlot)
+                      ? `, ${order.scheduledTime || order.scheduledTimeSlot}`
+                      : ""}
+                  </p>
+                </div>
+              )}
               {order.estimatedDeliveryTime && (
                 <div className="space-y-1">
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
@@ -445,4 +459,3 @@ export default function ViewOrderDialog({ isOpen, onOpenChange, order }) {
     </Dialog>
   )
 }
-

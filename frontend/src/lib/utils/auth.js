@@ -193,6 +193,29 @@ export function setAuthData(module, token, user) {
     const authKey = `${module}_authenticated`;
     const userKey = `${module}_user`;
 
+    if (module === "user") {
+      const getUserIdentifier = (value) =>
+        value?._id || value?.id || value?.phone || value?.email || null;
+
+      let previousUser = null;
+      try {
+        previousUser = JSON.parse(localStorage.getItem("user_user") || "null");
+      } catch (parseError) {
+        previousUser = null;
+      }
+
+      const previousId = getUserIdentifier(previousUser);
+      const nextId = getUserIdentifier(user);
+      if (previousId && nextId && previousId !== nextId) {
+        localStorage.removeItem("userProfile");
+        localStorage.removeItem("userAddresses");
+        localStorage.removeItem("userPaymentMethods");
+        localStorage.removeItem("userFavorites");
+        localStorage.removeItem("userDishFavorites");
+        localStorage.removeItem("appzeto_user_profile");
+      }
+    }
+
     localStorage.setItem(tokenKey, token);
     localStorage.setItem(authKey, 'true');
     

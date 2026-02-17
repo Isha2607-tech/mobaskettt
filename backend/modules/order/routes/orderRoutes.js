@@ -6,7 +6,9 @@ import {
   getOrderDetails,
   calculateOrder,
   cancelOrder,
-  editOrderCart
+  editOrderCart,
+  verifyEditedOrderCartPayment,
+  switchOrderToCash
 } from '../controllers/orderController.js';
 import { authenticate, optionalAuthenticate } from '../../auth/middleware/auth.js';
 
@@ -34,6 +36,8 @@ router.get('/:id', getOrderDetails);
 // Cancel order
 router.patch('/:id/cancel', cancelOrder);
 router.patch('/:id/edit-cart', editOrderCart);
+router.post('/:id/edit-cart/verify-payment', verifyEditedOrderCartPayment);
+router.patch('/:id/switch-to-cod', switchOrderToCash);
 
 export default router;
 

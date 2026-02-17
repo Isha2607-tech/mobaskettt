@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -10,6 +10,10 @@ import {
   Heart,
   Menu,
   ChefHat,
+  Plus,
+  Minus,
+  Sparkles,
+  LocateFixed,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -17,19 +21,37 @@ import { useCart } from "../../user/context/CartContext";
 import { useProfile } from "../../user/context/ProfileContext";
 import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
 import { useZone } from "../../user/hooks/useZone";
-import { orderAPI } from "@/lib/api";
+import { locationAPI, orderAPI, restaurantAPI } from "@/lib/api";
 import { initRazorpayPayment } from "@/lib/utils/razorpay";
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { cart, clearCart, isGroceryItem } = useCart();
-  const { getDefaultAddress, userProfile } = useProfile();
+  const { cart, clearCart, isGroceryItem, addToCart, updateQuantity, getCartItem } = useCart();
+  const { getDefaultAddress, userProfile, addresses, addAddress } = useProfile();
   const { location: liveLocation } = useUserLocation();
   const { zoneId } = useZone(liveLocation, "mofood");
 
   const [paymentMethod, setPaymentMethod] = useState("card");
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [addons, setAddons] = useState([]);
+  const [loadingAddons, setLoadingAddons] = useState(false);
+  const [pendingOnlineOrder, setPendingOnlineOrder] = useState(null);
+  const [selectedAddress, setSelectedAddress] = useState(null);
+  const [showAddAddressForm, setShowAddAddressForm] = useState(false);
+  const [isDetectingAddress, setIsDetectingAddress] = useState(false);
+  const [isSavingAddress, setIsSavingAddress] = useState(false);
+  const [newAddress, setNewAddress] = useState({
+    label: "Home",
+    street: "",
+    additionalDetails: "",
+    city: "",
+    state: "",
+    zipCode: "",
+    latitude: "",
+    longitude: "",
+    isDefault: false,
+  });
 
   const deliveryType =
     location.state?.deliveryType === "scheduled" ? "scheduled" : "now";
@@ -42,29 +64,187 @@ export default function CheckoutPage() {
     () => cart.filter((item) => !isGroceryItem(item)),
     [cart, isGroceryItem],
   );
+  const restaurantId = foodItems[0]?.restaurantId || null;
+  const restaurantName = foodItems[0]?.restaurant || "Restaurant";
 
-  const selectedAddress = useMemo(() => {
+  useEffect(() => {
     const defaultAddress = getDefaultAddress();
-    if (defaultAddress) return defaultAddress;
-
-    if (liveLocation?.latitude && liveLocation?.longitude) {
-      return {
-        label: "Home",
-        street: liveLocation.street || liveLocation.address || "",
-        additionalDetails: liveLocation.area || "",
-        city: liveLocation.city || "",
-        state: liveLocation.state || "",
-        zipCode: liveLocation.postalCode || liveLocation.zipCode || "",
-        formattedAddress:
-          liveLocation.formattedAddress || liveLocation.address || "",
-        location: {
-          coordinates: [liveLocation.longitude, liveLocation.latitude],
-        },
-      };
+    const selectedId = selectedAddress?.id || selectedAddress?._id;
+    if (selectedId && Array.isArray(addresses) && addresses.length > 0) {
+      const stillExists = addresses.find((a) => (a.id || a._id) === selectedId);
+      if (stillExists) {
+        setSelectedAddress(stillExists);
+        return;
+      }
     }
 
-    return null;
-  }, [getDefaultAddress, liveLocation]);
+    if (defaultAddress) {
+      setSelectedAddress(defaultAddress);
+      return;
+    }
+
+    setSelectedAddress(null);
+  }, [addresses, getDefaultAddress]);
+
+  const resetNewAddressForm = () => {
+    setNewAddress({
+      label: "Home",
+      street: "",
+      additionalDetails: "",
+      city: "",
+      state: "",
+      zipCode: "",
+      latitude: "",
+      longitude: "",
+      isDefault: false,
+    });
+  };
+
+  const formatAddressLine = (address) =>
+    [
+      address?.street,
+      address?.additionalDetails,
+      address?.city,
+      address?.state,
+      address?.zipCode,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+  const extractDetectedAddress = (response, latitude, longitude) => {
+    const results = response?.data?.data?.results || [];
+    const firstResult = results[0] || {};
+    const components = firstResult?.address_components || {};
+
+    const fromArray = Array.isArray(components)
+      ? {
+          city:
+            components.find((c) => c.types?.includes("locality"))?.long_name ||
+            components.find((c) => c.types?.includes("administrative_area_level_2"))?.long_name ||
+            "",
+          state:
+            components.find((c) => c.types?.includes("administrative_area_level_1"))?.long_name ||
+            "",
+          zipCode:
+            components.find((c) => c.types?.includes("postal_code"))?.long_name || "",
+        }
+      : {
+          city: components.city || "",
+          state: components.state || "",
+          zipCode: components.zipCode || components.postal_code || "",
+        };
+
+    const formattedAddress = firstResult?.formatted_address || "";
+    const pincodeFromText =
+      formattedAddress.match(/\b\d{6}\b/)?.[0] ||
+      response?.data?.data?.formattedAddress?.match(/\b\d{6}\b/)?.[0] ||
+      "";
+    const parts = formattedAddress.split(",").map((part) => part.trim()).filter(Boolean);
+
+    return {
+      street: firstResult?.street || parts[0] || "",
+      additionalDetails:
+        firstResult?.area ||
+        firstResult?.sublocality ||
+        firstResult?.neighborhood ||
+        (parts.length > 1 ? parts.slice(1, Math.min(parts.length - 2, 3)).join(", ") : ""),
+      city: fromArray.city,
+      state: fromArray.state,
+      zipCode: fromArray.zipCode || pincodeFromText,
+      latitude: String(latitude),
+      longitude: String(longitude),
+    };
+  };
+
+  const handleDetectCurrentLocationForAddress = async () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation is not supported on this device.");
+      return;
+    }
+
+    setIsDetectingAddress(true);
+    try {
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0,
+        });
+      });
+
+      const latitude = Number(position?.coords?.latitude);
+      const longitude = Number(position?.coords?.longitude);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        throw new Error("Unable to detect valid coordinates.");
+      }
+
+      const response = await locationAPI.reverseGeocode(latitude, longitude);
+      const detected = extractDetectedAddress(response, latitude, longitude);
+      setNewAddress((prev) => ({ ...prev, ...detected }));
+      toast.success("Address auto-filled from current location.");
+    } catch (error) {
+      console.error("Checkout address detection failed:", error);
+      toast.error("Unable to detect location. Fill address manually.");
+    } finally {
+      setIsDetectingAddress(false);
+    }
+  };
+
+  const handleSaveNewAddress = async () => {
+    const payload = {
+      label: newAddress.label,
+      street: String(newAddress.street || "").trim(),
+      additionalDetails: String(newAddress.additionalDetails || "").trim(),
+      city: String(newAddress.city || "").trim(),
+      state: String(newAddress.state || "").trim(),
+      zipCode: String(newAddress.zipCode || "").trim(),
+      latitude: newAddress.latitude || undefined,
+      longitude: newAddress.longitude || undefined,
+      isDefault: Boolean(newAddress.isDefault),
+    };
+
+    if (!payload.street || !payload.city || !payload.state) {
+      toast.error("Street, city and state are required.");
+      return;
+    }
+
+    setIsSavingAddress(true);
+    try {
+      const created = await addAddress(payload);
+      if (created) {
+        setSelectedAddress(created);
+      }
+      setShowAddAddressForm(false);
+      resetNewAddressForm();
+      toast.success("Address added successfully.");
+    } catch (error) {
+      console.error("Add checkout address failed:", error);
+      toast.error(error?.response?.data?.message || "Failed to add address.");
+    } finally {
+      setIsSavingAddress(false);
+    }
+  };
+
+  useEffect(() => {
+    const fetchAddons = async () => {
+      if (!restaurantId) {
+        setAddons([]);
+        return;
+      }
+      try {
+        setLoadingAddons(true);
+        const response = await restaurantAPI.getAddonsByRestaurantId(String(restaurantId));
+        const list = response?.data?.data?.addons || response?.data?.addons || [];
+        setAddons(Array.isArray(list) ? list : []);
+      } catch {
+        setAddons([]);
+      } finally {
+        setLoadingAddons(false);
+      }
+    };
+
+    fetchAddons();
+  }, [restaurantId]);
 
   const orderSummary = useMemo(() => {
     const subtotal = foodItems.reduce(
@@ -98,6 +278,12 @@ export default function CheckoutPage() {
       isVeg: item.isVeg !== false,
     }));
 
+  const buildCartSignature = (items) =>
+    (items || [])
+      .map((item) => `${String(item.itemId)}:${Number(item.quantity || 0)}`)
+      .sort()
+      .join("|");
+
   const buildScheduledFor = () => {
     if (deliveryType !== "scheduled" || !deliveryDate || !deliveryTimeSlot) {
       return null;
@@ -127,6 +313,19 @@ export default function CheckoutPage() {
       return;
     }
 
+    const sanitizedPhone = String(userProfile?.phone || "").replace(/\D/g, "");
+    if (!sanitizedPhone || sanitizedPhone.length < 10) {
+      toast.error("Please add your phone number in profile before ordering.");
+      navigate("/profile/edit");
+      return;
+    }
+
+    if (!Array.isArray(addresses) || addresses.length === 0) {
+      toast.error("Please add a saved address before ordering.");
+      setShowAddAddressForm(true);
+      return;
+    }
+
     if (!selectedAddress) {
       toast.error("Please add/select a delivery address first.");
       return;
@@ -144,8 +343,6 @@ export default function CheckoutPage() {
       }
     }
 
-    const restaurantId = foodItems[0]?.restaurantId;
-    const restaurantName = foodItems[0]?.restaurant || "Restaurant";
     if (!restaurantId) {
       toast.error("Restaurant not found for cart items.");
       return;
@@ -154,11 +351,29 @@ export default function CheckoutPage() {
     setIsPlacingOrder(true);
     try {
       const items = buildOrderItems();
+      const currentCartSignature = buildCartSignature(items);
       const invalidItem = items.find(
         (i) => !i.itemId || !i.name || !Number.isFinite(i.price) || i.quantity <= 0,
       );
       if (invalidItem) {
         throw new Error("Cart item data is invalid. Please refresh and try again.");
+      }
+
+      if (
+        paymentMethod === "cash" &&
+        pendingOnlineOrder?.id &&
+        pendingOnlineOrder?.restaurantId === String(restaurantId) &&
+        pendingOnlineOrder?.cartSignature === currentCartSignature
+      ) {
+        const switched = await orderAPI.switchOrderToCash(pendingOnlineOrder.id);
+        const switchedOrder = switched?.data?.data?.order;
+        if (switchedOrder?.orderId || switchedOrder?.id) {
+          clearCart("mofood");
+          setPendingOnlineOrder(null);
+          toast.success("Payment mode changed to Cash on Delivery.");
+          navigate(`/orders/${switchedOrder.orderId || switchedOrder.id}?confirmed=true`);
+          return;
+        }
       }
 
       const pricingResponse = await orderAPI.calculateOrder({
@@ -206,6 +421,13 @@ export default function CheckoutPage() {
         throw new Error("Online payment initialization failed.");
       }
 
+      setPendingOnlineOrder({
+        id: order?.id,
+        orderId: order?.orderId,
+        restaurantId: String(restaurantId || ""),
+        cartSignature: currentCartSignature,
+      });
+
       await new Promise((resolve, reject) => {
         initRazorpayPayment({
           key: razorpay.key,
@@ -231,6 +453,7 @@ export default function CheckoutPage() {
                 razorpaySignature: response.razorpay_signature,
               });
               clearCart("mofood");
+              setPendingOnlineOrder(null);
               toast.success("Payment successful. Order confirmed.");
               navigate(`/orders/${orderIdentifier}?confirmed=true`);
               resolve();
@@ -249,20 +472,28 @@ export default function CheckoutPage() {
         });
       });
     } catch (error) {
-      console.error("Checkout order creation failed:", error);
-      toast.error(error?.response?.data?.message || error?.message || "Failed to place order");
+      const isPaymentCancelled =
+        String(error?.message || "").toLowerCase().includes("payment cancelled");
+      console.error("Checkout order creation failed:", {
+        message: error?.message,
+        status: error?.response?.status,
+        response: error?.response?.data,
+      });
+      if (!isPaymentCancelled) {
+        toast.error(error?.response?.data?.message || error?.message || "Failed to place order");
+      }
     } finally {
       setIsPlacingOrder(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#f6e9dc] pb-24">
-      <div className="bg-white sticky top-0 z-50 rounded-b-3xl">
+    <div className="min-h-screen bg-[#fff7ed] pb-24">
+      <div className="bg-white/90 backdrop-blur sticky top-0 z-50 border-b border-orange-100">
         <div className="px-4 py-3 flex items-center gap-3">
           <button
             onClick={() => navigate(-1)}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            className="p-2 hover:bg-orange-50 rounded-full transition-colors"
           >
             <ArrowLeft className="w-5 h-5 text-gray-800" />
           </button>
@@ -271,21 +502,146 @@ export default function CheckoutPage() {
       </div>
 
       <div className="px-4 py-4">
-        <div className="bg-white rounded-xl p-4 shadow-sm">
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-orange-100">
           <div className="flex items-start gap-3">
-            <div className="bg-[#ff8100] rounded-lg p-2">
+            <div className="bg-[#ff8100] rounded-xl p-2">
               <MapPin className="w-5 h-5 text-white" />
             </div>
             <div className="flex-1">
               <h3 className="text-sm font-bold text-gray-900 mb-1">Delivery Address</h3>
               <p className="text-xs text-gray-600">{orderSummary.deliveryAddress}</p>
+              <div className="mt-3 space-y-2">
+                {Array.isArray(addresses) && addresses.length > 0 ? (
+                  addresses.map((address) => {
+                    const addressId = address.id || address._id;
+                    const selectedId = selectedAddress?.id || selectedAddress?._id;
+                    const isSelected = selectedId && addressId && String(selectedId) === String(addressId);
+                    return (
+                      <button
+                        key={String(addressId)}
+                        type="button"
+                        onClick={() => setSelectedAddress(address)}
+                        className={`w-full text-left rounded-xl border px-3 py-2 transition-colors ${
+                          isSelected
+                            ? "border-[#ff8100] bg-orange-50"
+                            : "border-gray-200 bg-white"
+                        }`}
+                      >
+                        <p className="text-xs font-semibold text-gray-900">
+                          {address.label || "Address"} {address.isDefault ? "(Default)" : ""}
+                        </p>
+                        <p className="text-xs text-gray-600">{formatAddressLine(address)}</p>
+                      </button>
+                    );
+                  })
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => setShowAddAddressForm((prev) => !prev)}
+                  className="text-xs font-semibold text-[#ff8100]"
+                >
+                  {showAddAddressForm ? "Close Add Address" : "+ Add New Address"}
+                </button>
+
+                {showAddAddressForm ? (
+                  <div className="rounded-xl border border-gray-200 p-3 space-y-2 bg-gray-50">
+                    <div className="grid grid-cols-3 gap-2">
+                      {["Home", "Office", "Other"].map((label) => (
+                        <button
+                          key={label}
+                          type="button"
+                          onClick={() => setNewAddress((prev) => ({ ...prev, label }))}
+                          className={`h-8 rounded-lg text-xs font-semibold border ${
+                            newAddress.label === label
+                              ? "border-[#ff8100] bg-orange-100 text-[#ff8100]"
+                              : "border-gray-200 bg-white text-gray-700"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleDetectCurrentLocationForAddress}
+                      disabled={isDetectingAddress}
+                      className="h-8 w-full rounded-lg border border-gray-200 bg-white text-xs font-semibold text-gray-700 flex items-center justify-center gap-1"
+                    >
+                      <LocateFixed className={`w-3.5 h-3.5 ${isDetectingAddress ? "animate-spin" : ""}`} />
+                      {isDetectingAddress ? "Detecting..." : "Detect Current Location"}
+                    </button>
+
+                    <input
+                      type="text"
+                      value={newAddress.street}
+                      onChange={(e) => setNewAddress((prev) => ({ ...prev, street: e.target.value }))}
+                      placeholder="Street / House No."
+                      className="h-8 w-full rounded-lg border border-gray-200 px-2 text-xs"
+                    />
+                    <input
+                      type="text"
+                      value={newAddress.additionalDetails}
+                      onChange={(e) =>
+                        setNewAddress((prev) => ({ ...prev, additionalDetails: e.target.value }))
+                      }
+                      placeholder="Area / Landmark"
+                      className="h-8 w-full rounded-lg border border-gray-200 px-2 text-xs"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        value={newAddress.city}
+                        onChange={(e) => setNewAddress((prev) => ({ ...prev, city: e.target.value }))}
+                        placeholder="City"
+                        className="h-8 w-full rounded-lg border border-gray-200 px-2 text-xs"
+                      />
+                      <input
+                        type="text"
+                        value={newAddress.state}
+                        onChange={(e) => setNewAddress((prev) => ({ ...prev, state: e.target.value }))}
+                        placeholder="State"
+                        className="h-8 w-full rounded-lg border border-gray-200 px-2 text-xs"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      value={newAddress.zipCode}
+                      onChange={(e) => setNewAddress((prev) => ({ ...prev, zipCode: e.target.value }))}
+                      placeholder="Pincode"
+                      className="h-8 w-full rounded-lg border border-gray-200 px-2 text-xs"
+                    />
+
+                    <label className="flex items-center gap-2 text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={newAddress.isDefault}
+                        onChange={(e) =>
+                          setNewAddress((prev) => ({ ...prev, isDefault: e.target.checked }))
+                        }
+                      />
+                      Set as default
+                    </label>
+
+                    <Button
+                      type="button"
+                      className="w-full h-8 text-xs bg-[#ff8100] hover:bg-[#e67300] text-white"
+                      onClick={handleSaveNewAddress}
+                      disabled={isSavingAddress}
+                    >
+                      {isSavingAddress ? "Saving..." : "Save Address"}
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       <div className="px-4 mb-4">
-        <div className="bg-white rounded-xl p-4 shadow-sm">
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-orange-100">
           <h3 className="text-sm font-bold text-gray-900 mb-3">Order Items</h3>
           <div className="space-y-3">
             {orderSummary.items.map((item) => (
@@ -298,7 +654,7 @@ export default function CheckoutPage() {
                   <p className="text-xs text-gray-500">Quantity: {item.quantity}</p>
                 </div>
                 <p className="text-sm font-bold text-gray-900">
-                  Rs {(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}
+                  ₹{(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}
                 </p>
               </div>
             ))}
@@ -306,22 +662,128 @@ export default function CheckoutPage() {
         </div>
       </div>
 
+      {addons.length > 0 && (
+        <div className="px-4 mb-4">
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-orange-100">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center">
+                <Sparkles className="w-4 h-4 text-orange-600" />
+              </div>
+              <h3 className="text-sm font-bold text-gray-900">Complete your meal</h3>
+            </div>
+
+            {loadingAddons ? (
+              <div className="flex gap-3 overflow-x-auto pb-1">
+                {[1, 2, 3].map((placeholder) => (
+                  <div
+                    key={placeholder}
+                    className="min-w-[170px] rounded-2xl border border-gray-200 p-3 animate-pulse"
+                  >
+                    <div className="h-20 bg-gray-200 rounded-xl mb-2" />
+                    <div className="h-3 bg-gray-200 rounded w-2/3 mb-2" />
+                    <div className="h-3 bg-gray-200 rounded w-1/3" />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex gap-3 overflow-x-auto pb-1">
+                {addons.map((addon) => {
+                  const addonId = String(addon.id || addon._id || "");
+                  const cartAddon = getCartItem(addonId);
+                  const qty = Number(cartAddon?.quantity || 0);
+                  const addonImage =
+                    addon.image ||
+                    (Array.isArray(addon.images) ? addon.images[0] : "") ||
+                    "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300&h=200&fit=crop";
+
+                  return (
+                    <div
+                      key={addonId}
+                      className="min-w-[190px] rounded-2xl border border-orange-100 bg-gradient-to-b from-orange-50/60 to-white p-2"
+                    >
+                      <img
+                        src={addonImage}
+                        alt={addon.name}
+                        className="w-full h-24 rounded-xl object-cover"
+                        onError={(event) => {
+                          event.currentTarget.src =
+                            "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300&h=200&fit=crop";
+                        }}
+                      />
+                      <div className="p-1.5">
+                        <p className="text-sm font-semibold text-gray-900 line-clamp-1">
+                          {addon.name}
+                        </p>
+                        <p className="text-xs text-gray-500 line-clamp-1">
+                          {addon.description || "Popular add-on"}
+                        </p>
+                        <div className="mt-2 flex items-center justify-between">
+                          <span className="text-sm font-bold text-gray-900">
+                            ₹{Number(addon.price || 0).toFixed(0)}
+                          </span>
+
+                          {qty > 0 ? (
+                            <div className="flex items-center gap-1 rounded-full border border-orange-300 bg-white px-1 py-0.5">
+                              <button
+                                onClick={() => updateQuantity(addonId, qty - 1)}
+                                className="w-6 h-6 rounded-full flex items-center justify-center text-orange-600 hover:bg-orange-50"
+                              >
+                                <Minus className="w-3.5 h-3.5" />
+                              </button>
+                              <span className="text-xs font-semibold w-5 text-center">{qty}</span>
+                              <button
+                                onClick={() => updateQuantity(addonId, qty + 1)}
+                                className="w-6 h-6 rounded-full flex items-center justify-center text-orange-600 hover:bg-orange-50"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() =>
+                                addToCart({
+                                  id: addonId,
+                                  name: addon.name,
+                                  price: Number(addon.price || 0),
+                                  image: addonImage,
+                                  description: addon.description || "",
+                                  isVeg: true,
+                                  restaurant: restaurantName,
+                                  restaurantId,
+                                })
+                              }
+                              className="h-8 px-3 rounded-full bg-white border border-[#ff8100] text-[#ff8100] text-xs font-bold hover:bg-orange-50"
+                            >
+                              ADD
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="px-4 mb-4">
-        <div className="bg-white rounded-xl p-4 shadow-sm">
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-orange-100">
           <h3 className="text-sm font-bold text-gray-900 mb-3">Order Summary</h3>
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600">Subtotal</span>
-              <span className="text-gray-900 font-medium">Rs {orderSummary.subtotal.toFixed(2)}</span>
+              <span className="text-gray-900 font-medium">₹{orderSummary.subtotal.toFixed(2)}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600">Delivery Fee</span>
-              <span className="text-gray-900 font-medium">Rs {orderSummary.deliveryFee.toFixed(2)}</span>
+              <span className="text-gray-900 font-medium">₹{orderSummary.deliveryFee.toFixed(2)}</span>
             </div>
             <div className="border-t border-gray-200 pt-2 mt-2">
               <div className="flex items-center justify-between">
                 <span className="text-base font-bold text-gray-900">Total</span>
-                <span className="text-xl font-bold text-[#ff8100]">Rs {orderSummary.total.toFixed(2)}</span>
+                <span className="text-xl font-bold text-[#ff8100]">₹{orderSummary.total.toFixed(2)}</span>
               </div>
             </div>
           </div>
@@ -329,9 +791,9 @@ export default function CheckoutPage() {
       </div>
 
       <div className="px-4 mb-4">
-        <div className="bg-white rounded-xl p-4 shadow-sm">
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-orange-100">
           <div className="flex items-center gap-3">
-            <div className="bg-[#ff8100] rounded-lg p-2">
+            <div className="bg-[#ff8100] rounded-xl p-2">
               <Clock className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -343,7 +805,7 @@ export default function CheckoutPage() {
       </div>
 
       <div className="px-4 mb-4">
-        <div className="bg-white rounded-xl p-4 shadow-sm">
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-orange-100">
           <h3 className="text-sm font-bold text-gray-900 mb-3">Payment Method</h3>
           <div className="space-y-2">
             <button
@@ -386,7 +848,7 @@ export default function CheckoutPage() {
 
       <div className="px-4 pb-20">
         <Button
-          className="w-full bg-[#ff8100] hover:bg-[#e67300] text-white font-bold py-4 rounded-xl text-base"
+          className="w-full bg-[#ff8100] hover:bg-[#e67300] text-white font-bold py-4 rounded-2xl text-base shadow-lg shadow-orange-200/70"
           onClick={handleProceedToPayment}
           disabled={isPlacingOrder}
         >
