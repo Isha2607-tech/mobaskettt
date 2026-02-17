@@ -57,9 +57,9 @@ export default function AddToCartAnimation({
 
   const resolvedPlatform = platform || (linkTo.startsWith('/grocery') ? 'mogrocery' : 'mofood');
   const isGroceryMode = resolvedPlatform === 'mogrocery';
-  const animationItems = isGroceryMode ? groceryItems : foodItems.length ? foodItems : items;
-  const animationItemCount = isGroceryMode ? groceryItemCount : foodItemCount || itemCount;
-  const animationTotal = isGroceryMode ? groceryTotal : foodTotal || total;
+  const animationItems = isGroceryMode ? groceryItems : foodItems;
+  const animationItemCount = isGroceryMode ? groceryItemCount : foodItemCount;
+  const animationTotal = isGroceryMode ? groceryTotal : foodTotal;
   const animationLastAddEvent = isGroceryMode ? lastAddEventGrocery : (lastAddEventFood || lastAddEvent);
   const animationLastRemoveEvent = isGroceryMode ? lastRemoveEventGrocery : (lastRemoveEventFood || lastRemoveEvent);
 
@@ -75,7 +75,12 @@ export default function AddToCartAnimation({
   const shouldHidePill = hideOnPages && (iscartPage || isOrderPage || isAccountPage);
 
   // On restaurant/food pages: don't show View cart when cart has grocery items (keep carts separate)
-  const shouldHideForGroceryCart = hideWhenGroceryCart && Array.isArray(groceryCart) && groceryCart.length > 0;
+  const shouldHideForGroceryCart =
+    hideWhenGroceryCart &&
+    !isGroceryMode &&
+    Array.isArray(groceryCart) &&
+    groceryCart.length > 0 &&
+    animationItemCount === 0;
 
   // Handle removal animation when product is removed
   useEffect(() => {

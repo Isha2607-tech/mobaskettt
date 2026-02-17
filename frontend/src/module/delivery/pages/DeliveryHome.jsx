@@ -6510,6 +6510,8 @@ export default function DeliveryHome() {
           return;
         }
 
+        let latestOrder = null
+
         // Verify order still exists in database before restoring
         try {
           console.log('🔍 Verifying order exists in database:', orderId);
@@ -6522,10 +6524,11 @@ export default function DeliveryHome() {
             return;
           }
 
-          const order = orderResponse.data.data;
+          const order = orderResponse.data.data?.order || orderResponse.data.data;
+          latestOrder = order;
           
           // Check if order is cancelled or deleted
-          if (order.status === 'cancelled' || order.status === 'delivered') {
+          if (order.status === 'cancelled' || order.status === 'delivered' || order.status === 'completed') {
             console.log(`⚠️ Order is ${order.status}, removing from localStorage`);
             localStorage.removeItem('deliveryActiveOrder');
             setSelectedRestaurant(null);
@@ -6558,10 +6561,66 @@ export default function DeliveryHome() {
           return;
         }
 
-        // Restore selectedRestaurant state
-        if (activeOrderData.restaurantInfo) {
-          setSelectedRestaurant(activeOrderData.restaurantInfo);
-          console.log('✅ Restored selectedRestaurant from localStorage');
+        // Restore selectedRestaurant state using latest backend order (fallback to localStorage)
+        if (activeOrderData.restaurantInfo || latestOrder) {
+          const savedRestaurant = activeOrderData.restaurantInfo || {}
+          const order = latestOrder || {}
+          const restaurant = order?.restaurantId && typeof order.restaurantId === 'object'
+            ? order.restaurantId
+            : {}
+          const restaurantCoords = restaurant?.location?.coordinates || []
+          const customerCoords = order?.address?.location?.coordinates || []
+
+          const restoredRestaurant = {
+            ...savedRestaurant,
+            id: order?._id || order?.id || savedRestaurant?.id,
+            orderId: order?.orderId || savedRestaurant?.orderId || orderId,
+            name: order?.restaurantName || restaurant?.name || savedRestaurant?.name,
+            address:
+              restaurant?.location?.formattedAddress ||
+              restaurant?.location?.address ||
+              restaurant?.address ||
+              order?.restaurantAddress ||
+              savedRestaurant?.address,
+            lat: Number.isFinite(Number(restaurantCoords?.[1]))
+              ? Number(restaurantCoords[1])
+              : savedRestaurant?.lat,
+            lng: Number.isFinite(Number(restaurantCoords?.[0]))
+              ? Number(restaurantCoords[0])
+              : savedRestaurant?.lng,
+            customerName: order?.userId?.name || savedRestaurant?.customerName,
+            customerAddress:
+              order?.address?.formattedAddress ||
+              savedRestaurant?.customerAddress,
+            customerLat: Number.isFinite(Number(customerCoords?.[1]))
+              ? Number(customerCoords[1])
+              : savedRestaurant?.customerLat,
+            customerLng: Number.isFinite(Number(customerCoords?.[0]))
+              ? Number(customerCoords[0])
+              : savedRestaurant?.customerLng,
+            orderStatus: order?.status || savedRestaurant?.orderStatus || savedRestaurant?.status,
+            status: order?.status || savedRestaurant?.status || savedRestaurant?.orderStatus,
+            deliveryState: order?.deliveryState || savedRestaurant?.deliveryState,
+            deliveryPhase:
+              order?.deliveryState?.currentPhase ||
+              savedRestaurant?.deliveryPhase ||
+              savedRestaurant?.deliveryState?.currentPhase,
+          }
+
+          setSelectedRestaurant(restoredRestaurant);
+          selectedRestaurantRef.current = restoredRestaurant;
+          console.log('✅ Restored selectedRestaurant from backend order state');
+
+          try {
+            localStorage.setItem('deliveryActiveOrder', JSON.stringify({
+              ...activeOrderData,
+              orderId: restoredRestaurant.id || restoredRestaurant.orderId || orderId,
+              restaurantInfo: restoredRestaurant,
+              acceptedAt: activeOrderData.acceptedAt || new Date().toISOString()
+            }))
+          } catch (storageError) {
+            console.warn('⚠️ Failed to persist refreshed active order:', storageError)
+          }
         }
 
         // Wait for map to be ready
