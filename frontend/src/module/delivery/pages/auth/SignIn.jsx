@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import {
   Select,
@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/select"
 import { deliveryAPI } from "@/lib/api"
 import { useCompanyName } from "@/lib/hooks/useCompanyName"
+import { loadBusinessSettings } from "@/lib/utils/businessSettings"
 
 // Common country codes
 const countryCodes = [
@@ -34,15 +35,32 @@ const countryCodes = [
   { code: "+46", country: "SE", flag: "🇸🇪" },
 ]
 
+const getInitialFormData = () => {
+  const fallback = { phone: "", countryCode: "+91" }
+  try {
+    const raw = sessionStorage.getItem("deliveryAuthData")
+    if (!raw) return fallback
+    const saved = JSON.parse(raw)
+    if (saved?.module !== "delivery" || saved?.method !== "phone" || !saved?.phone) {
+      return fallback
+    }
+    const match = String(saved.phone).trim().match(/^(\+\d+)\s*(.*)$/)
+    return {
+      countryCode: match?.[1] || "+91",
+      phone: (match?.[2] || "").replace(/\D/g, "").slice(0, 15),
+    }
+  } catch {
+    return fallback
+  }
+}
+
 export default function DeliverySignIn() {
   const companyName = useCompanyName()
   const navigate = useNavigate()
-  const [formData, setFormData] = useState({
-    phone: "",
-    countryCode: "+91",
-  })
+  const [formData, setFormData] = useState(getInitialFormData)
   const [error, setError] = useState("")
   const [isSending, setIsSending] = useState(false)
+  const [termsUrl, setTermsUrl] = useState("")
 
   // Get selected country details dynamically
   const selectedCountry = countryCodes.find(c => c.code === formData.countryCode) || countryCodes[2] // Default to India (+91)
@@ -56,6 +74,10 @@ export default function DeliverySignIn() {
 
     if (digitsOnly.length < 7) {
       return "Phone number must be at least 7 digits"
+    }
+
+    if (digitsOnly.length > 15) {
+      return "Phone number must be at most 15 digits"
     }
 
     // India-specific validation
@@ -117,7 +139,7 @@ export default function DeliverySignIn() {
     const value = e.target.value.replace(/\D/g, "")
     setFormData({
       ...formData,
-      phone: value,
+      phone: value.slice(0, 15),
     })
   }
 
@@ -130,14 +152,33 @@ export default function DeliverySignIn() {
 
   const isValid = !validatePhone(formData.phone, formData.countryCode)
 
+  useEffect(() => {
+    const loadPolicyLinks = async () => {
+      try {
+        const settings = await loadBusinessSettings()
+        setTermsUrl(settings?.policyLinks?.termsOfServiceUrl || "")
+      } catch {
+        // Keep fallback behavior
+      }
+    }
+
+    loadPolicyLinks()
+  }, [])
+
+  const displayCompanyName = useMemo(() => {
+    const normalized = (companyName || "MoBasket").trim()
+    if (!normalized) return "MoBasket"
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+  }, [companyName])
+
   return (
     <div className="max-h-screen h-screen bg-white flex flex-col">
       {/* Top Section - Logo and Badge */}
       <div className="flex flex-col items-center pt-8 pb-6 px-6">
         {/* Appzeto Logo */}
         <div>
-          <h1 className="text-3xl text-black font-extrabold italic lowercase tracking-tight">
-            {companyName.toLowerCase()}
+          <h1 className="text-3xl text-black font-extrabold italic tracking-tight">
+            {displayCompanyName}
           </h1>
         </div>
         
@@ -235,7 +276,12 @@ export default function DeliverySignIn() {
           {/* Terms and Conditions */}
           <p className="text-xs text-center text-gray-600 px-4">
             By continuing, you agree to our{" "}
-            <a href="#" className="text-blue-600 hover:underline">
+            <a
+              href={termsUrl || "/delivery/terms-and-conditions"}
+              target={termsUrl ? "_blank" : undefined}
+              rel={termsUrl ? "noreferrer noopener" : undefined}
+              className="text-blue-600 hover:underline"
+            >
               Terms and Conditions
             </a>
           </p>

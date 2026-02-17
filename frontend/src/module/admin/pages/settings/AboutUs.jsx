@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
-import api, { adminAPI } from "@/lib/api"
+import api from "@/lib/api"
 import { API_ENDPOINTS } from "@/lib/api/config"
-import { Heart, Users, Shield, Clock, Star, Award, Plus, X, GripVertical } from "lucide-react"
+import { Heart, Users, Shield, Clock, Star, Award, Plus, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -40,6 +40,7 @@ const colorOptions = [
 ]
 
 export default function AboutUs() {
+  const companyName = useCompanyName()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [aboutData, setAboutData] = useState({

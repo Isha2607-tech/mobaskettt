@@ -225,6 +225,22 @@ const SectionItem = ({ icon: Icon, title, subtitle, onClick, showArrow = true, r
   </motion.button>
 )
 
+const toValidDeliveryPartner = (partner) => {
+  if (!partner || typeof partner !== "object") return null
+
+  const name = (partner.name || partner.fullName || "").trim()
+  const phone = (partner.phone || partner.mobile || "").trim()
+
+  if (!name || !phone) return null
+
+  return {
+    name,
+    phone,
+    avatar: partner.avatar || null,
+    availability: partner.availability || null
+  }
+}
+
 export default function OrderTracking() {
   const { orderId } = useParams()
   const [searchParams] = useSearchParams()
@@ -325,13 +341,7 @@ export default function OrderTracking() {
   }
 
   const riderInfo = useMemo(() => {
-    const partner = order?.deliveryPartner || order?.deliveryPartnerId
-    if (!partner || typeof partner !== "object") return null
-
-    return {
-      name: partner.name || partner.fullName || "Delivery Partner",
-      phone: partner.phone || partner.mobile || null
-    }
+    return toValidDeliveryPartner(order?.deliveryPartner || order?.deliveryPartnerId)
   }, [order?.deliveryPartner, order?.deliveryPartnerId])
 
   const isRiderAccepted = useMemo(() => {
@@ -346,8 +356,7 @@ export default function OrderTracking() {
         phase === "en_route_to_pickup" ||
         phase === "at_pickup" ||
         phase === "en_route_to_delivery" ||
-        status === "out_for_delivery" ||
-        status === "ready"
+        status === "out_for_delivery"
       )
     )
   }, [order?.deliveryState?.currentPhase, order?.deliveryState?.status, order?.status, riderInfo])
@@ -619,12 +628,7 @@ export default function OrderTracking() {
             status: apiOrder.status || 'pending',
             adminApproval: apiOrder.adminApproval || null,
             note: apiOrder.note || "",
-            deliveryPartner: apiOrder.deliveryPartnerId ? {
-              name: apiOrder.deliveryPartnerId.name || 'Delivery Partner',
-              phone: apiOrder.deliveryPartnerId.phone || null,
-              avatar: apiOrder.deliveryPartnerId.avatar || null,
-              availability: apiOrder.deliveryPartnerId.availability || null
-            } : null,
+            deliveryPartner: toValidDeliveryPartner(apiOrder.deliveryPartnerId),
             deliveryPartnerId: apiOrder.deliveryPartnerId?._id || apiOrder.deliveryPartnerId || apiOrder.assignmentInfo?.deliveryPartnerId || null,
             assignmentInfo: apiOrder.assignmentInfo || null,
             tracking: apiOrder.tracking || {},
@@ -724,12 +728,7 @@ export default function OrderTracking() {
             id: apiOrder.orderId || apiOrder._id,
             status: apiOrder.status ?? prev.status,
             deliveryState: apiOrder.deliveryState ?? prev.deliveryState,
-            deliveryPartner: apiOrder.deliveryPartnerId ? {
-              name: apiOrder.deliveryPartnerId.name || 'Delivery Partner',
-              phone: apiOrder.deliveryPartnerId.phone || null,
-              avatar: apiOrder.deliveryPartnerId.avatar || null,
-              availability: apiOrder.deliveryPartnerId.availability || null
-            } : prev.deliveryPartner,
+            deliveryPartner: toValidDeliveryPartner(apiOrder.deliveryPartnerId) || prev.deliveryPartner,
             deliveryPartnerId: apiOrder.deliveryPartnerId?._id || apiOrder.deliveryPartnerId || prev.deliveryPartnerId
           };
         });
@@ -1112,12 +1111,7 @@ export default function OrderTracking() {
           status: apiOrder.status || 'pending',
           adminApproval: apiOrder.adminApproval || null,
           note: apiOrder.note || "",
-          deliveryPartner: apiOrder.deliveryPartnerId ? {
-            name: apiOrder.deliveryPartnerId.name || 'Delivery Partner',
-            phone: apiOrder.deliveryPartnerId.phone || null,
-            avatar: apiOrder.deliveryPartnerId.avatar || null,
-            availability: apiOrder.deliveryPartnerId.availability || null
-          } : null,
+          deliveryPartner: toValidDeliveryPartner(apiOrder.deliveryPartnerId),
           deliveryPartnerId: apiOrder.deliveryPartnerId?._id || apiOrder.deliveryPartnerId || apiOrder.assignmentInfo?.deliveryPartnerId || null,
           assignmentInfo: apiOrder.assignmentInfo || null,
           deliveryState: apiOrder.deliveryState || null,
@@ -1447,6 +1441,7 @@ export default function OrderTracking() {
               defaultAddress?.phone ||
               'Phone number not available'
             }
+            onClick={() => navigate("/profile/edit")}
             rightContent={
               <span className="text-green-600 font-medium text-sm">Edit</span>
             }
@@ -1493,6 +1488,7 @@ export default function OrderTracking() {
               
               return 'Add delivery address'
             })()}
+            onClick={() => navigate("/profile/shipping")}
             rightContent={
               <span className="text-green-600 font-medium text-sm">Edit</span>
             }
@@ -1522,6 +1518,18 @@ export default function OrderTracking() {
             <motion.button 
               className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center"
               whileTap={{ scale: 0.9 }}
+              onClick={() => {
+                const restaurantPhone =
+                  order?.restaurantId?.phone ||
+                  order?.restaurantId?.ownerPhone ||
+                  order?.restaurantPhone ||
+                  ""
+                if (restaurantPhone) {
+                  window.location.href = `tel:${restaurantPhone}`
+                } else {
+                  toast.error("Restaurant phone number not available")
+                }
+              }}
             >
               <Phone className="w-5 h-5 text-green-700" />
             </motion.button>

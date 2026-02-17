@@ -8,6 +8,7 @@ import { useCompanyName } from "@/lib/hooks/useCompanyName"
 export default function RestaurantGoogleCallback() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const companyName = useCompanyName()
   const [status, setStatus] = useState("loading") // "loading", "success", "error"
   const [error, setError] = useState("")
   const [provider, setProvider] = useState("google")
@@ -49,7 +50,7 @@ export default function RestaurantGoogleCallback() {
         let user
         try {
           user = JSON.parse(decodeURIComponent(userParam))
-        } catch (parseError) {
+        } catch {
           setStatus("error")
           setError("Invalid user data received. Please try again.")
           return

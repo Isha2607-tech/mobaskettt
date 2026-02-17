@@ -17,6 +17,11 @@ export const getBusinessSettingsPublic = asyncHandler(async (req, res) => {
       companyName: settings?.companyName || 'Appzeto Food',
       logo: settings?.logo || { url: '', publicId: '' },
       favicon: settings?.favicon || { url: '', publicId: '' },
+      policyLinks: settings?.policyLinks || {
+        termsOfServiceUrl: '',
+        privacyPolicyUrl: '',
+        contentPolicyUrl: ''
+      },
     });
   } catch (error) {
     console.error('Error fetching public business settings:', error);
@@ -25,6 +30,11 @@ export const getBusinessSettingsPublic = asyncHandler(async (req, res) => {
       companyName: 'Appzeto Food',
       logo: { url: '', publicId: '' },
       favicon: { url: '', publicId: '' },
+      policyLinks: {
+        termsOfServiceUrl: '',
+        privacyPolicyUrl: '',
+        contentPolicyUrl: ''
+      },
     });
   }
 });
@@ -57,6 +67,9 @@ export const updateBusinessSettings = asyncHandler(async (req, res) => {
       address,
       state,
       pincode,
+      termsOfServiceUrl,
+      privacyPolicyUrl,
+      contentPolicyUrl,
       maintenanceMode
     } = req.body;
 
@@ -83,6 +96,16 @@ export const updateBusinessSettings = asyncHandler(async (req, res) => {
     if (address !== undefined) settings.address = address;
     if (state !== undefined) settings.state = state;
     if (pincode !== undefined) settings.pincode = pincode;
+    if (!settings.policyLinks) {
+      settings.policyLinks = {
+        termsOfServiceUrl: '',
+        privacyPolicyUrl: '',
+        contentPolicyUrl: ''
+      };
+    }
+    if (termsOfServiceUrl !== undefined) settings.policyLinks.termsOfServiceUrl = termsOfServiceUrl;
+    if (privacyPolicyUrl !== undefined) settings.policyLinks.privacyPolicyUrl = privacyPolicyUrl;
+    if (contentPolicyUrl !== undefined) settings.policyLinks.contentPolicyUrl = contentPolicyUrl;
     if (maintenanceMode !== undefined) {
       settings.maintenanceMode.isEnabled = maintenanceMode.isEnabled || false;
       if (maintenanceMode.startDate) {

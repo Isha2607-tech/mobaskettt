@@ -69,6 +69,7 @@ export default function HubMenu() {
   const [uploadingAddonImages, setUploadingAddonImages] = useState(false)
   const [editingAddon, setEditingAddon] = useState(null) // Store addon being edited
   const addonFileInputRef = useRef(null)
+  const hasInitializedExpandedGroups = useRef(false)
 
   // Restaurant info - fetch from backend
   const restaurantName = restaurantData?.name || ""
@@ -588,12 +589,14 @@ export default function HubMenu() {
   //   }
   // }, [menuGroups, loadingMenu])
 
-  // Expand all groups by default on mount
+  // Expand all groups only on first menu load.
+  // This keeps manual collapse/expand state stable (including "collapse all").
   useEffect(() => {
-    if (expandedGroups.size === 0 && menuData.length > 0) {
-      setExpandedGroups(new Set(menuData.map(g => g.id)))
+    if (!hasInitializedExpandedGroups.current && menuData.length > 0) {
+      setExpandedGroups(new Set(menuData.map((g) => g.id)))
+      hasInitializedExpandedGroups.current = true
     }
-  }, [menuData, expandedGroups])
+  }, [menuData])
 
   // Prevent body scroll when popups are open
   useEffect(() => {
@@ -788,29 +791,38 @@ export default function HubMenu() {
       return
     }
 
-    // Update all foods in this category
-    const allFoods = getAllFoods()
-    const updatedFoods = allFoods.map(food => {
-      if (food.category === selectedCategory.name) {
-        return { ...food, category: newCategoryName }
-      }
-      return food
-    })
+    // Rename the section and keep item.category values in sync.
+    setMenuData((prev) =>
+      prev.map((section) => {
+        const shouldRenameSection =
+          section.id === selectedCategory.id ||
+          section.name === selectedCategory.name
 
-    // Save updated foods
-    try {
-      localStorage.setItem('restaurant_foods', JSON.stringify(updatedFoods))
-      window.dispatchEvent(new CustomEvent('foodsChanged'))
-      window.dispatchEvent(new Event('storage'))
-    } catch (error) {
-      console.error('Error updating category:', error)
-      alert('Error updating category name')
-      return
-    }
+        const patchItems = (items = []) =>
+          items.map((item) =>
+            item.category === selectedCategory.name
+              ? { ...item, category: newCategoryName }
+              : item
+          )
+
+        return {
+          ...section,
+          name: shouldRenameSection ? newCategoryName : section.name,
+          items: patchItems(section.items),
+          subsections: Array.isArray(section.subsections)
+            ? section.subsections.map((subsection) => ({
+                ...subsection,
+                items: patchItems(subsection.items),
+              }))
+            : section.subsections,
+        }
+      })
+    )
 
     setIsEditCategoryOpen(false)
     setSelectedCategory(null)
     setEditCategoryName("")
+    toast.success("Category name updated")
   }
 
   // Sub-category handlers
@@ -2168,12 +2180,27 @@ export default function HubMenu() {
                     className="hidden"
                     id="addon-image-upload"
                   />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handleAddonImageAdd}
+                    className="hidden"
+                    id="addon-camera-upload"
+                  />
                   <label
                     htmlFor="addon-image-upload"
                     className="flex items-center justify-center gap-2 px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-green-500 hover:bg-green-50 transition-colors"
                   >
                     <Camera className="h-5 w-5 text-gray-500" />
                     <span className="text-sm font-medium text-gray-700">Add Images</span>
+                  </label>
+                  <label
+                    htmlFor="addon-camera-upload"
+                    className="mt-2 flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg cursor-pointer hover:border-green-500 hover:bg-green-50 transition-colors"
+                  >
+                    <Camera className="h-5 w-5 text-gray-500" />
+                    <span className="text-sm font-medium text-gray-700">Use Camera</span>
                   </label>
                   <p className="text-xs text-gray-500 mt-1">Add multiple images (PNG, JPG, WEBP - max 5MB each)</p>
                 </div>

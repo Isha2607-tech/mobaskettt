@@ -1622,7 +1622,7 @@ const DeliveryTrackingMap = ({
   }, []);
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div className="delivery-tracking-map" style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
     </div>
   );

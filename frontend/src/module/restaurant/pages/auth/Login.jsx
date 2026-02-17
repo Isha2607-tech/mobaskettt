@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowLeft, Mail, ChevronDown, Phone } from "lucide-react"
+import { Mail, ChevronDown, Phone } from "lucide-react"
 import { setAuthData } from "@/lib/utils/auth"
 import {
   Select,
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { restaurantAPI } from "@/lib/api"
 import { firebaseAuth, googleProvider } from "@/lib/firebase"
 import { useCompanyName } from "@/lib/hooks/useCompanyName"
+import { loadBusinessSettings } from "@/lib/utils/businessSettings"
 
 // Common country codes
 const countryCodes = [
@@ -41,11 +42,45 @@ const countryCodes = [
 export default function RestaurantLogin() {
   const companyName = useCompanyName()
   const navigate = useNavigate()
-  const [loginMethod, setLoginMethod] = useState("phone") // "phone" or "email"
-  const [formData, setFormData] = useState({
-    phone: "",
-    countryCode: "+91",
-    email: "",
+  const [loginMethod, setLoginMethod] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem("restaurantAuthData")
+      if (!raw) return "phone"
+      const saved = JSON.parse(raw)
+      return saved?.method === "email" ? "email" : "phone"
+    } catch {
+      return "phone"
+    }
+  }) // "phone" or "email"
+  const [formData, setFormData] = useState(() => {
+    const fallback = {
+      phone: "",
+      countryCode: "+91",
+      email: "",
+    }
+    try {
+      const raw = sessionStorage.getItem("restaurantAuthData")
+      if (!raw) return fallback
+      const saved = JSON.parse(raw)
+      if (saved?.module !== "restaurant") return fallback
+
+      if (saved?.method === "email" && saved?.email) {
+        return { ...fallback, email: String(saved.email).trim() }
+      }
+
+      if (saved?.method === "phone" && saved?.phone) {
+        const match = String(saved.phone).trim().match(/^(\+\d+)\s*(.*)$/)
+        return {
+          ...fallback,
+          countryCode: match?.[1] || "+91",
+          phone: (match?.[2] || "").replace(/\D/g, "").slice(0, 15),
+        }
+      }
+
+      return fallback
+    } catch {
+      return fallback
+    }
   })
   const [errors, setErrors] = useState({
     phone: "",
@@ -57,6 +92,30 @@ export default function RestaurantLogin() {
   })
   const [isSending, setIsSending] = useState(false)
   const [apiError, setApiError] = useState("")
+  const [policyLinks, setPolicyLinks] = useState({
+    termsOfServiceUrl: "",
+    privacyPolicyUrl: "",
+    contentPolicyUrl: "",
+  })
+
+  useEffect(() => {
+    const loadPolicyUrls = async () => {
+      try {
+        const settings = await loadBusinessSettings()
+        if (settings?.policyLinks) {
+          setPolicyLinks({
+            termsOfServiceUrl: settings.policyLinks.termsOfServiceUrl || "",
+            privacyPolicyUrl: settings.policyLinks.privacyPolicyUrl || "",
+            contentPolicyUrl: settings.policyLinks.contentPolicyUrl || "",
+          })
+        }
+      } catch {
+        // Keep default empty links when settings are unavailable
+      }
+    }
+
+    loadPolicyUrls()
+  }, [])
 
   // Get selected country details dynamically
   const selectedCountry = countryCodes.find(c => c.code === formData.countryCode) || countryCodes[2] // Default to India (+91)
@@ -202,12 +261,12 @@ export default function RestaurantLogin() {
       setIsSending(true)
 
       // Call backend API to send OTP via email
-      await restaurantAPI.sendOTP(null, "login", formData.email)
+      await restaurantAPI.sendOTP(null, "login", formData.email.trim())
 
       // Store auth data in sessionStorage for OTP page
       const authData = {
         method: "email",
-        email: formData.email,
+        email: formData.email.trim(),
         isSignUp: false,
         module: "restaurant",
       }
@@ -277,7 +336,7 @@ export default function RestaurantLogin() {
     const value = e.target.value.replace(/\D/g, "")
     const newFormData = {
       ...formData,
-      phone: value,
+      phone: value.slice(0, 15),
     }
     setFormData(newFormData)
     
@@ -317,23 +376,28 @@ export default function RestaurantLogin() {
 
   const isValidPhone = !errors.phone && formData.phone.trim().length > 0
   const isValidEmail = !errors.email && formData.email.trim().length > 0
+  const displayCompanyName = useMemo(() => {
+    const normalized = (companyName || "MoBasket").trim()
+    if (!normalized) return "MoBasket"
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+  }, [companyName])
+
+  const renderPolicyLink = (label, url) => {
+    if (!url) {
+      return <span className="text-gray-400 cursor-not-allowed">{label}</span>
+    }
+
+    return (
+      <a href={url} className="underline hover:text-gray-800 transition-colors">
+        {label}
+      </a>
+    )
+  }
 
   return (
     <div className="max-h-screen h-screen bg-white flex flex-col">
-      {/* Header with Back Button */}
-      <div className="relative flex items-center justify-center py-4 px-4 mt-2">
-        
-        <button
-          onClick={() => navigate("/restaurant/welcome")}
-          className="absolute left-4 top-4"
-          aria-label="Go back"
-        >
-          <ArrowLeft className="h-5 w-5 text-black" />
-        </button>
-      </div>
-
       {/* Top Section - Logo and Badge */}
-      <div className="flex flex-col items-center pt-8 pb-8 px-6">
+      <div className="flex flex-col items-center pt-12 pb-8 px-6">
         {/* Appzeto Logo */}
         <div>
           <h1 
@@ -344,7 +408,7 @@ export default function RestaurantLogin() {
             }}
           >
           
-            {companyName.toLowerCase()}
+            {displayCompanyName}
           </h1>
         </div>
         
@@ -363,8 +427,8 @@ export default function RestaurantLogin() {
           <div className="text-center">
             <p className="text-base text-gray-700 leading-relaxed">
               {loginMethod === "email" 
-                ? "Enter your registered email and we will send an OTP to continue"
-                : "Enter your registered phone number and we will send an OTP to continue"
+                ? "Login with email OTP. Enter your registered email to continue."
+                : "Login with mobile OTP. Enter your registered phone number to continue."
               }
             </p>
           </div>
@@ -548,9 +612,13 @@ export default function RestaurantLogin() {
           <p className="text-xs text-center text-gray-600 leading-relaxed">
             By continuing, you agree to our
           </p>
-          <p className="text-xs text-center text-gray-600 underline mt-1">
-            Terms of Service | Privacy Policy | Code of Conduct
-          </p>
+          <div className="text-xs text-center text-gray-600 mt-1 flex justify-center gap-2 flex-wrap">
+            {renderPolicyLink("Terms of Service", policyLinks.termsOfServiceUrl)}
+            <span>•</span>
+            {renderPolicyLink("Privacy Policy", policyLinks.privacyPolicyUrl)}
+            <span>•</span>
+            {renderPolicyLink("Code of Conduct", policyLinks.contentPolicyUrl)}
+          </div>
         </div>
       </div>
     </div>

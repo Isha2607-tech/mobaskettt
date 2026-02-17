@@ -118,8 +118,41 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
     })
   }
   
-  // Get menu data based on platform - mofood uses original sidebarMenuData (unchanged), mogrocery uses separate menu
-  const menuData = platform === "mogrocery" ? mogroceryMenuData : sidebarMenuData
+  // Get menu data based on platform
+  const rawMenuData = platform === "mogrocery" ? mogroceryMenuData : sidebarMenuData
+  const menuData = useMemo(() => {
+    return rawMenuData.map((entry) => {
+      if (entry.type !== "section" || !Array.isArray(entry.items)) {
+        return entry
+      }
+
+      const items = entry.items.map((item) => {
+        if (
+          item.type === "expandable" &&
+          item.label === "Pages & Social Media" &&
+          Array.isArray(item.subItems)
+        ) {
+          const hasTerms = item.subItems.some(
+            (sub) => sub.path === "/admin/pages-social-media/terms"
+          )
+
+          if (hasTerms) return item
+
+          return {
+            ...item,
+            subItems: [
+              { label: "Terms of Service", path: "/admin/pages-social-media/terms" },
+              ...item.subItems,
+            ],
+          }
+        }
+
+        return item
+      })
+
+      return { ...entry, items }
+    })
+  }, [rawMenuData])
 
   // Load business settings logo
   useEffect(() => {

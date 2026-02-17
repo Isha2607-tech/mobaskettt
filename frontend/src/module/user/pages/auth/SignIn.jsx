@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { useNavigate, useSearchParams } from "react-router-dom"
+import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { Mail, Phone, AlertCircle, Loader2 } from "lucide-react"
 import AnimatedPage from "../../components/AnimatedPage"
 import { Button } from "@/components/ui/button"
@@ -15,6 +15,7 @@ import {
 import { authAPI } from "@/lib/api"
 import { firebaseAuth, googleProvider, ensureFirebaseInitialized } from "@/lib/firebase"
 import { setAuthData } from "@/lib/utils/auth"
+import { loadBusinessSettings } from "@/lib/utils/businessSettings"
 import loginBanner from "@/assets/loginbanner.png"
 
 // Common country codes
@@ -61,6 +62,11 @@ export default function SignIn() {
   })
   const [isLoading, setIsLoading] = useState(false)
   const [apiError, setApiError] = useState("")
+  const [policyLinks, setPolicyLinks] = useState({
+    termsOfServiceUrl: "",
+    privacyPolicyUrl: "",
+    contentPolicyUrl: "",
+  })
   const redirectHandledRef = useRef(false)
 
   // Helper function to process signed-in user
@@ -431,6 +437,58 @@ export default function SignIn() {
     }
   }, [navigate, searchParams])
 
+  useEffect(() => {
+    const loadPolicyLinks = async () => {
+      try {
+        const settings = await loadBusinessSettings()
+        if (settings?.policyLinks) {
+          setPolicyLinks({
+            termsOfServiceUrl: settings.policyLinks.termsOfServiceUrl || "",
+            privacyPolicyUrl: settings.policyLinks.privacyPolicyUrl || "",
+            contentPolicyUrl: settings.policyLinks.contentPolicyUrl || "",
+          })
+        }
+      } catch {
+        // Keep links empty when settings are unavailable
+      }
+    }
+
+    loadPolicyLinks()
+  }, [])
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("userAuthData")
+      if (!raw) return
+
+      const saved = JSON.parse(raw)
+      if (saved?.module !== "user") return
+
+      if (saved.method === "email" && saved.email) {
+        setAuthMethod("email")
+        setFormData((prev) => ({
+          ...prev,
+          email: saved.email,
+          name: saved.name || prev.name,
+        }))
+      } else if (saved.method === "phone" && saved.phone) {
+        const match = String(saved.phone).trim().match(/^(\+\d+)\s*(.*)$/)
+        const countryCode = match?.[1] || "+91"
+        const phone = match?.[2] || String(saved.phone).replace(/^\+\d+\s*/, "")
+
+        setAuthMethod("phone")
+        setFormData((prev) => ({
+          ...prev,
+          countryCode,
+          phone,
+          name: saved.name || prev.name,
+        }))
+      }
+    } catch {
+      // Ignore parse errors and keep default form state
+    }
+  }, [])
+
   // Get selected country details dynamically
   const selectedCountry = countryCodes.find(c => c.code === formData.countryCode) || countryCodes[2] // Default to India (+91)
 
@@ -475,7 +533,8 @@ export default function SignIn() {
   }
 
   const handleChange = (e) => {
-    const { name, value } = e.target
+    const { name } = e.target
+    const value = name === "phone" ? e.target.value.replace(/\D/g, "") : e.target.value
     setFormData({
       ...formData,
       [name]: value,
@@ -639,8 +698,32 @@ export default function SignIn() {
     setAuthMethod(authMethod === "email" ? "phone" : "email")
   }
 
+  const renderPolicyLink = (label, url, fallbackPath) => {
+    if (url) {
+      return (
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="underline hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+        >
+          {label}
+        </a>
+      )
+    }
+
+    return (
+      <Link
+        to={fallbackPath}
+        className="underline hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+      >
+        {label}
+      </Link>
+    )
+  }
+
   return (
-    <AnimatedPage className="max-h-screen flex flex-col bg-white dark:bg-[#0a0a0a] overflow-hidden !pb-0 md:flex-row md:overflow-hidden">
+    <AnimatedPage className="h-screen flex flex-col bg-white dark:bg-[#0a0a0a] overflow-hidden !pb-0 md:flex-row md:overflow-hidden">
 
       {/* Mobile: Top Section - Banner Image */}
       {/* Desktop: Left Section - Banner Image */}
@@ -825,6 +908,26 @@ export default function SignIn() {
             </Button>
           </form>
 
+          {/* Legal Disclaimer - keep visible near primary action */}
+          <div className="text-center text-xs md:text-sm text-gray-700 dark:text-gray-300">
+            <p className="mb-1 md:mb-2">
+              By continuing, you agree to our
+            </p>
+            <div className="leading-5">
+              <span className="text-[#E23744] font-medium">
+                {renderPolicyLink("Terms of Service", policyLinks.termsOfServiceUrl, "/legal/terms")}
+              </span>
+              <span className="mx-1 text-gray-500">|</span>
+              <span>
+                {renderPolicyLink("Privacy Policy", policyLinks.privacyPolicyUrl, "/legal/privacy")}
+              </span>
+              <span className="mx-1 text-gray-500">|</span>
+              <span>
+                {renderPolicyLink("Content Policy", policyLinks.contentPolicyUrl, "/legal/content-policy")}
+              </span>
+            </div>
+          </div>
+
           {/* Or Separator */}
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
@@ -877,19 +980,6 @@ export default function SignIn() {
             </button>
           </div>
 
-          {/* Legal Disclaimer */}
-          <div className="text-center text-xs md:text-sm text-gray-500 dark:text-gray-400 pt-4 md:pt-6">
-            <p className="mb-1 md:mb-2">
-              By continuing, you agree to our
-            </p>
-            <div className="flex justify-center gap-2 flex-wrap">
-              <a href="#" className="underline hover:text-gray-700 dark:hover:text-gray-300 transition-colors">Terms of Service</a>
-              <span>•</span>
-              <a href="#" className="underline hover:text-gray-700 dark:hover:text-gray-300 transition-colors">Privacy Policy</a>
-              <span>•</span>
-              <a href="#" className="underline hover:text-gray-700 dark:hover:text-gray-300 transition-colors">Content Policy</a>
-            </div>
-          </div>
         </div>
       </div>
     </AnimatedPage>

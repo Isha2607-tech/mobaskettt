@@ -221,22 +221,22 @@
 
 /* Smooth animations - removed to avoid interference with rotation */
 
-/* Hide Google Maps footer elements (Keyboard shortcuts, Map data, Terms) */
-.gm-style-cc,
-.gm-style-cc a,
-a[href*="keyboard"],
-a[href*="terms"],
-.gm-style-mtc,
-.gm-style-mtc div {
+/* Hide Google Maps footer elements only inside delivery tracking map */
+.delivery-tracking-map .gm-style-cc,
+.delivery-tracking-map .gm-style-cc a,
+.delivery-tracking-map a[href*="keyboard"],
+.delivery-tracking-map a[href*="terms"],
+.delivery-tracking-map .gm-style-mtc,
+.delivery-tracking-map .gm-style-mtc div {
   display: none !important;
 }
 
 /* Hide Google logo and attribution */
-.gm-style-cc,
-.gm-style-cc div,
-a[href*="google.com/maps"],
-.gm-bundled-control,
-.gm-bundled-control-on-top {
+.delivery-tracking-map .gm-style-cc,
+.delivery-tracking-map .gm-style-cc div,
+.delivery-tracking-map a[href*="google.com/maps"],
+.delivery-tracking-map .gm-bundled-control,
+.delivery-tracking-map .gm-bundled-control-on-top {
   display: none !important;
 }
 

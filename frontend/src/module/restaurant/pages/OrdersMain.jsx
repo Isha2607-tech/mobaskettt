@@ -14,6 +14,18 @@ import { jsPDF } from "jspdf"
 import autoTable from "jspdf-autotable"
 
 const STORAGE_KEY = "restaurant_online_status"
+const ACTIVE_FILTER_STORAGE_KEY = "restaurant_orders_active_filter"
+
+const isCodLikePaymentMethod = (value) => {
+  const method = String(value || "").toLowerCase().trim()
+  return (
+    method === "cash" ||
+    method === "cod" ||
+    method === "cash_on_delivery" ||
+    method.includes("cash") ||
+    method.includes("cod")
+  )
+}
 
 // Top filter tabs
 const filterTabs = [
@@ -451,7 +463,14 @@ function CancelledOrders({ onSelectOrder }) {
 
 export default function OrdersMain() {
   const navigate = useNavigate()
-  const [activeFilter, setActiveFilter] = useState("preparing")
+  const [activeFilter, setActiveFilter] = useState(() => {
+    try {
+      const saved = localStorage.getItem(ACTIVE_FILTER_STORAGE_KEY)
+      return filterTabs.some((tab) => tab.id === saved) ? saved : "preparing"
+    } catch {
+      return "preparing"
+    }
+  })
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
@@ -486,6 +505,14 @@ export default function OrdersMain() {
     isLoading: true
   })
   const [isReverifying, setIsReverifying] = useState(false)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ACTIVE_FILTER_STORAGE_KEY, activeFilter)
+    } catch {
+      // Ignore storage errors and continue using in-memory state.
+    }
+  }, [activeFilter])
 
   // Restaurant notifications hook for real-time orders
   const { newOrder, clearNewOrder, isConnected } = useRestaurantNotifications()
@@ -1128,7 +1155,7 @@ export default function OrdersMain() {
       case "out-for-delivery":
         return <OutForDeliveryOrders onSelectOrder={handleSelectOrder} />
       case "scheduled":
-        return <EmptyState message="Scheduled orders will appear here" />
+        return <ScheduledOrders onSelectOrder={handleSelectOrder} />
       case "completed":
         return <CompletedOrders onSelectOrder={handleSelectOrder} />
       case "cancelled":
@@ -1506,11 +1533,10 @@ export default function OrdersMain() {
                     </span>
                   </div>
 
-                  {/* Payment method: treat cash/cod (any case) as COD */}
+                  {/* Payment method */}
                   {(() => {
                     const raw = (popupOrder || newOrder)?.paymentMethod ?? (popupOrder || newOrder)?.payment?.method;
-                    const m = raw != null ? String(raw).toLowerCase().trim() : '';
-                    const isCod = m === 'cash' || m === 'cod';
+                    const isCod = isCodLikePaymentMethod(raw);
                     return (
                       <div className="mb-4 flex items-center justify-between py-2">
                         <span className="text-sm font-medium text-gray-700">Payment</span>
@@ -2530,6 +2556,127 @@ const OutForDeliveryOrders = ({ onSelectOrder }) => {
       {orders.length === 0 ? (
         <div className="text-center py-8 text-gray-500 text-sm">
           No orders out for delivery
+        </div>
+      ) : (
+        <div>
+          {orders.map((order) => (
+            <OrderCard
+              key={order.orderId || order.mongoId}
+              {...order}
+              onSelect={onSelectOrder}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Scheduled Orders List
+function ScheduledOrders({ onSelectOrder }) {
+  const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let isMounted = true
+    let intervalId = null
+
+    const fetchOrders = async () => {
+      try {
+        const response = await restaurantAPI.getOrders()
+
+        if (!isMounted) return
+
+        const rawOrders = response?.data?.data?.orders || []
+        const now = new Date()
+        const scheduledOrders = rawOrders.filter((order) => {
+          if (order.status === "scheduled") return true
+          if (order.scheduledDelivery?.isScheduled && order.scheduledDelivery?.scheduledFor) {
+            return new Date(order.scheduledDelivery.scheduledFor) > now
+          }
+          return false
+        })
+
+        const transformedOrders = scheduledOrders
+          .map((order) => ({
+            orderId: order.orderId || order._id,
+            mongoId: order._id,
+            status: order.status || "scheduled",
+            customerName: order.userId?.name || "Customer",
+            type: order.deliveryFleet === "standard" ? "Home Delivery" : "Express Delivery",
+            tableOrToken: null,
+            timePlaced: order.scheduledDelivery?.scheduledFor
+              ? new Date(order.scheduledDelivery.scheduledFor).toLocaleString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : new Date(order.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+            scheduledAt: order.scheduledDelivery?.scheduledFor || order.createdAt,
+            eta: null,
+            itemsSummary: order.items?.map((item) => `${item.quantity}x ${item.name}`).join(", ") || "No items",
+            photoUrl: order.items?.[0]?.image || null,
+            photoAlt: order.items?.[0]?.name || "Order",
+          }))
+          .sort((a, b) => {
+            const aTime = new Date(a.scheduledAt)
+            const bTime = new Date(b.scheduledAt)
+            return aTime - bTime
+          })
+
+        if (isMounted) {
+          setOrders(transformedOrders)
+          setLoading(false)
+        }
+      } catch (error) {
+        if (!isMounted) return
+        if (error.code !== "ERR_NETWORK" && error.response?.status !== 404) {
+          console.error("Error fetching scheduled orders:", error)
+        }
+        if (isMounted) {
+          setOrders([])
+          setLoading(false)
+        }
+      }
+    }
+
+    fetchOrders()
+    intervalId = setInterval(() => {
+      if (isMounted) {
+        fetchOrders()
+      }
+    }, 10000)
+
+    return () => {
+      isMounted = false
+      if (intervalId) {
+        clearInterval(intervalId)
+      }
+    }
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="pt-4 pb-6">
+        <div className="flex items-baseline justify-between mb-3">
+          <h2 className="text-base font-semibold text-black">Scheduled orders</h2>
+          <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
+        </div>
+        <div className="text-center py-8 text-gray-500 text-sm">Loading...</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="pt-4 pb-6">
+      <div className="flex items-baseline justify-between mb-3">
+        <h2 className="text-base font-semibold text-black">Scheduled orders</h2>
+        <span className="text-xs text-gray-500">{orders.length} total</span>
+      </div>
+      {orders.length === 0 ? (
+        <div className="text-center py-8 text-gray-500 text-sm">
+          No scheduled orders
         </div>
       ) : (
         <div>

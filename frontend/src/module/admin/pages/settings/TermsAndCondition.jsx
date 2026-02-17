@@ -8,7 +8,7 @@ export default function TermsAndCondition() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [termsData, setTermsData] = useState({
-    title: 'Terms and Conditions',
+    title: 'Terms of Service',
     content: ''
   })
 
@@ -63,7 +63,7 @@ export default function TermsAndCondition() {
       }
     } catch (error) {
       console.error('Error fetching terms data:', error)
-      toast.error('Failed to load terms and conditions')
+      toast.error('Failed to load terms of service')
     } finally {
       setLoading(false)
     }
@@ -84,7 +84,7 @@ export default function TermsAndCondition() {
         content: htmlContent
       })
       if (response.data.success) {
-        toast.success('Terms and conditions updated successfully')
+        toast.success('Terms of service updated successfully')
         // Convert HTML to plain text for display in textarea
         const content = response.data.data.content || ''
         const textContent = htmlToText(content)
@@ -95,7 +95,7 @@ export default function TermsAndCondition() {
       }
     } catch (error) {
       console.error('Error saving terms:', error)
-      toast.error(error.response?.data?.message || 'Failed to save terms and conditions')
+      toast.error(error.response?.data?.message || 'Failed to save terms of service')
     } finally {
       setSaving(false)
     }
@@ -117,8 +117,8 @@ export default function TermsAndCondition() {
       <div className="max-w-6xl mx-auto">
         {/* Page Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-900">Terms And Condition</h1>
-          <p className="text-sm text-slate-600 mt-1">Manage your Terms and Conditions content</p>
+          <h1 className="text-2xl font-bold text-slate-900">Terms of Service</h1>
+          <p className="text-sm text-slate-600 mt-1">Manage your Terms of Service content</p>
         </div>
 
         {/* Text Area */}
@@ -126,7 +126,7 @@ export default function TermsAndCondition() {
           <Textarea
             value={termsData.content}
             onChange={(e) => setTermsData(prev => ({ ...prev, content: e.target.value }))}
-            placeholder="Enter terms and conditions content..."
+            placeholder="Enter terms of service content..."
             className="min-h-[600px] w-full text-sm text-slate-700 leading-relaxed resize-y"
             dir="ltr"
             style={{

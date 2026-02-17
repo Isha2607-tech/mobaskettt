@@ -109,6 +109,9 @@ import DeliveryOTP from "@/module/delivery/pages/auth/OTP";
 import DeliverySignupStep1 from "@/module/delivery/pages/auth/SignupStep1";
 import DeliverySignupStep2 from "@/module/delivery/pages/auth/SignupStep2";
 import DeliveryWelcome from "@/module/delivery/pages/auth/Welcome";
+import TermsPublic from "@/module/user/pages/legal/TermsPublic";
+import PrivacyPublic from "@/module/user/pages/legal/PrivacyPublic";
+import ContentPolicyPublic from "@/module/user/pages/legal/ContentPolicyPublic";
 
 function UserPathRedirect() {
   const location = useLocation();
@@ -148,6 +151,9 @@ export default function App() {
       <Routes>
         <Route path="/user" element={<Navigate to="/" replace />} />
         <Route path="/user/*" element={<UserPathRedirect />} />
+        <Route path="/legal/terms" element={<TermsPublic />} />
+        <Route path="/legal/privacy" element={<PrivacyPublic />} />
+        <Route path="/legal/content-policy" element={<ContentPolicyPublic />} />
         {/* Removed /routes route - Home should be accessed through UserRouter */}
 
         {/* Restaurant Public Routes */}

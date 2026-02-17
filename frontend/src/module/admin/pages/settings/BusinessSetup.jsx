@@ -22,6 +22,9 @@ export default function BusinessSetup() {
     address: "",
     state: "",
     pincode: "",
+    termsOfServiceUrl: "",
+    privacyPolicyUrl: "",
+    contentPolicyUrl: "",
   });
 
   // Fetch business settings on mount
@@ -44,6 +47,9 @@ export default function BusinessSetup() {
           address: settings.address || "",
           state: settings.state || "",
           pincode: settings.pincode || "",
+          termsOfServiceUrl: settings.policyLinks?.termsOfServiceUrl || "",
+          privacyPolicyUrl: settings.policyLinks?.privacyPolicyUrl || "",
+          contentPolicyUrl: settings.policyLinks?.contentPolicyUrl || "",
         });
         
         // Set logo and favicon previews if they exist
@@ -96,6 +102,9 @@ export default function BusinessSetup() {
         address: formData.address.trim(),
         state: formData.state.trim(),
         pincode: formData.pincode.trim(),
+        termsOfServiceUrl: formData.termsOfServiceUrl.trim(),
+        privacyPolicyUrl: formData.privacyPolicyUrl.trim(),
+        contentPolicyUrl: formData.contentPolicyUrl.trim(),
       };
 
       // Prepare files
@@ -489,6 +498,48 @@ export default function BusinessSetup() {
                   onChange={(e) => handleInputChange("pincode", e.target.value)}
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
+              </div>
+
+              <div className="md:col-span-2">
+                <h4 className="text-xs font-semibold text-slate-900 mb-2">Policy Links (Login Page)</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Terms of Service URL
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://example.com/terms"
+                      value={formData.termsOfServiceUrl}
+                      onChange={(e) => handleInputChange("termsOfServiceUrl", e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Privacy Policy URL
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://example.com/privacy"
+                      value={formData.privacyPolicyUrl}
+                      onChange={(e) => handleInputChange("privacyPolicyUrl", e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Content Policy URL
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://example.com/content-policy"
+                      value={formData.contentPolicyUrl}
+                      onChange={(e) => handleInputChange("contentPolicyUrl", e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 

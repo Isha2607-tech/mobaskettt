@@ -291,7 +291,7 @@ export const sidebarMenuData = [
         label: "Pages & Social Media",
         icon: "Link",
         subItems: [
-          { label: "Terms And Condition", path: "/admin/pages-social-media/terms" },
+          { label: "Terms of Service", path: "/admin/pages-social-media/terms" },
           { label: "Privacy Policy", path: "/admin/pages-social-media/privacy" },
           { label: "About Us", path: "/admin/pages-social-media/about" },
           { label: "Refund Policy", path: "/admin/pages-social-media/refund" },
@@ -625,7 +625,7 @@ export const mogroceryMenuData = [
         label: "Pages & Social Media",
         icon: "Link",
         subItems: [
-          { label: "Terms And Condition", path: "/admin/pages-social-media/terms" },
+          { label: "Terms of Service", path: "/admin/pages-social-media/terms" },
           { label: "Privacy Policy", path: "/admin/pages-social-media/privacy" },
           { label: "About Us", path: "/admin/pages-social-media/about" },
           { label: "Refund Policy", path: "/admin/pages-social-media/refund" },

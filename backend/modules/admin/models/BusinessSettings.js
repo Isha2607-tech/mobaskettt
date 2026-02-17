@@ -63,6 +63,23 @@ const businessSettingsSchema = new mongoose.Schema(
         default: ''
       }
     },
+    policyLinks: {
+      termsOfServiceUrl: {
+        type: String,
+        trim: true,
+        default: ''
+      },
+      privacyPolicyUrl: {
+        type: String,
+        trim: true,
+        default: ''
+      },
+      contentPolicyUrl: {
+        type: String,
+        trim: true,
+        default: ''
+      }
+    },
     maintenanceMode: {
       isEnabled: {
         type: Boolean,

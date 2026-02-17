@@ -43,13 +43,13 @@ export async function processScheduledOrders() {
         const windowExpiresAt = new Date(windowStartAt.getTime() + ORDER_MODIFICATION_WINDOW_MS);
 
         currentOrder.status = 'confirmed';
-        currentOrder.tracking = {
-          ...(currentOrder.tracking || {}),
-          confirmed: {
-            status: true,
-            timestamp: windowStartAt
-          }
-        };
+        // Avoid reassigning the full tracking object because legacy docs may carry
+        // undefined nested tracking fields (preparing/ready/outForDelivery/delivered),
+        // which causes Mongoose cast errors when saving.
+        currentOrder.set('tracking.confirmed', {
+          status: true,
+          timestamp: windowStartAt
+        });
         currentOrder.postOrderActions = {
           ...(currentOrder.postOrderActions || {}),
           modificationWindowStartAt: windowStartAt,
