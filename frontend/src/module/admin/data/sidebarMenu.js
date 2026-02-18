@@ -337,13 +337,6 @@ export const mogroceryMenuData = [
     items: [
       {
         type: "link",
-        label: "Grocery Approval",
-        path: "/admin/grocery-approval",
-        icon: "CheckCircle2",
-      },
-      
-      {
-        type: "link",
         label: "Categories",
         path: "/admin/grocery-categories",
         icon: "FolderTree",
@@ -389,10 +382,10 @@ export const mogroceryMenuData = [
         label: "Stores",
         icon: "Building2",
         subItems: [
-          { label: "Stores List", path: "/admin/grocery-stores" },
-          { label: "New Joining Request", path: "/admin/grocery-stores/joining-request" },
-          { label: "Store Commission", path: "/admin/grocery-stores/commission" },
-          { label: "Store Complaints", path: "/admin/grocery-stores/complaints" },
+          { label: "Stores List", path: "/admin/grocery-stores" }
+          // { label: "New Joining Request", path: "/admin/grocery-stores/joining-request" },
+          // { label: "Store Commission", path: "/admin/grocery-stores/commission" },
+          // { label: "Store Complaints", path: "/admin/grocery-stores/complaints" },
         ],
       },
     ],
@@ -584,18 +577,18 @@ export const mogroceryMenuData = [
 
     ],
   },
-  {
-    type: "section",
-    label: "TRANSACTION MANAGEMENT",
-    items: [
-      {
-        type: "link",
-        label: "Store Withdraws",
-        path: "/admin/grocery-store-withdraws",
-        icon: "CreditCard",
-      },
-    ],
-  },
+  // {
+  //   type: "section",
+  //   label: "TRANSACTION MANAGEMENT",
+  //   items: [
+  //     // {
+  //     //   type: "link",
+  //     //   label: "Store Withdraws",
+  //     //   path: "/admin/grocery-store-withdraws",
+  //     //   icon: "CreditCard",
+  //     // },
+  //   ],
+  // },
   {
     type: "section",
     label: "BANNER SETTINGS",

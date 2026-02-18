@@ -109,6 +109,7 @@ const GroceryPage = () => {
   const [bestSellerItems, setBestSellerItems] = useState([]);
   const [allProducts, setAllProducts] = useState([]);
   const [groceryStores, setGroceryStores] = useState([]);
+  const [hasActiveGroceryStore, setHasActiveGroceryStore] = useState(true);
 
   const getStoreCoordinates = (store) => {
     const geoCoordinates = store?.location?.coordinates;
@@ -272,15 +273,20 @@ const GroceryPage = () => {
         const restaurants = Array.isArray(response?.data?.data?.restaurants)
           ? response.data.data.restaurants
           : [];
-        const stores = restaurants.filter((restaurant) => restaurant?.platform === "mogrocery" && restaurant?.isActive);
-        setGroceryStores(stores);
+        const moGroceryStores = restaurants.filter((restaurant) => restaurant?.platform === "mogrocery");
+        const activeStores = moGroceryStores.filter((restaurant) => restaurant?.isActive !== false);
+        setGroceryStores(activeStores);
+        setHasActiveGroceryStore(activeStores.length > 0);
       } catch {
         setGroceryStores([]);
+        setHasActiveGroceryStore(false);
       }
     };
 
     fetchGroceryStores();
   }, []);
+
+  const isGroceryUnavailable = !hasActiveGroceryStore;
 
   // Auto-slide carousel
   useEffect(() => {
@@ -548,7 +554,20 @@ const GroceryPage = () => {
 
   return (
     // Main Container with White Background
-    <div className="min-h-screen text-slate-800 pb-24 font-sans w-full shadow-none overflow-x-hidden relative bg-white">
+    <div
+      className={`min-h-screen text-slate-800 pb-24 font-sans w-full shadow-none overflow-x-hidden relative bg-white ${
+        isGroceryUnavailable ? "grayscale-[0.95] opacity-70" : ""
+      }`}
+    >
+      {isGroceryUnavailable && (
+        <div className="fixed top-[88px] left-1/2 -translate-x-1/2 z-[95] px-4">
+          <div className="rounded-xl border border-slate-300 bg-white/95 backdrop-blur px-4 py-2 shadow-sm">
+            <p className="text-xs font-semibold text-slate-700 text-center">
+              MoGrocery is currently unavailable. Store is offline.
+            </p>
+          </div>
+        </div>
+      )}
       {/* Snow Effect Overlay */}
       <AnimatePresence>
         {showSnow && (
