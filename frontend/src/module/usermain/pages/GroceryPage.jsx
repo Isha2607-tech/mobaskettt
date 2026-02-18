@@ -15,7 +15,7 @@ import {
   X,
   Snowflake,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation as useRouterLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCart } from "../../user/context/CartContext";
 import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
@@ -93,8 +93,10 @@ import imgMedicine3D from "@/assets/icons/medicine_5488699.png";
 
 const GroceryPage = () => {
   const navigate = useNavigate();
+  const routerLocation = useRouterLocation();
   const { getGroceryCartCount, addToCart, isInCart } = useCart();
   const { location: userLocation } = useUserLocation();
+  const isGroceryCategoriesRoute = routerLocation.pathname === "/grocery/categories";
   const itemCount = getGroceryCartCount();
   const [activeTab, setActiveTab] = useState("All");
   const [activeCategoryId, setActiveCategoryId] = useState("all");
@@ -257,7 +259,9 @@ const GroceryPage = () => {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const response = await api.get("/grocery/products");
+        const response = await api.get("/grocery/products", {
+          params: { page: 1, limit: 1000 },
+        });
         const products = Array.isArray(response?.data?.data) ? response.data.data : [];
         setAllProducts(products);
       } catch {
@@ -378,6 +382,56 @@ const GroceryPage = () => {
     });
   }, [activeCategoryId, activeSubcategoryId, activeTab, allProducts]);
 
+  const isNoBgImageCandidate = (imageUrl) => {
+    if (typeof imageUrl !== "string" || !imageUrl.trim()) return false;
+    const value = imageUrl.toLowerCase();
+    return (
+      value.includes("removebg") ||
+      value.includes("transparent") ||
+      value.includes("no-bg") ||
+      value.includes("nobg") ||
+      value.endsWith(".png") ||
+      value.endsWith(".webp")
+    );
+  };
+
+  const extractImageUrl = (imageValue) => {
+    if (typeof imageValue === "string") return imageValue;
+    if (imageValue && typeof imageValue === "object") {
+      return (
+        imageValue.url ||
+        imageValue.image ||
+        imageValue.imageUrl ||
+        imageValue.secure_url ||
+        imageValue.src ||
+        ""
+      );
+    }
+    return "";
+  };
+
+  const getProductImageList = (product) => {
+    const imageList = Array.isArray(product?.images)
+      ? product.images.map(extractImageUrl).filter((img) => typeof img === "string" && img.trim())
+      : [];
+
+    const singleImage = extractImageUrl(product?.image);
+    if (singleImage) imageList.push(singleImage);
+
+    return Array.from(new Set(imageList));
+  };
+
+  const getProductImage = (product) => {
+    const imageList = getProductImageList(product);
+
+    if (imageList.length > 0) {
+      const noBgImage = imageList.find((img) => isNoBgImageCandidate(img));
+      return noBgImage || imageList[0];
+    }
+
+    return "https://via.placeholder.com/200";
+  };
+
   const bestsellers = [
     {
       title: "Vegetables & Fruits",
@@ -455,6 +509,57 @@ const GroceryPage = () => {
       });
   }, [activeTab, homepageCategories, searchQuery]);
 
+  const homepageCategoryDisplaySections = useMemo(() => {
+    return homepageCategorySections.map((category) => {
+      const categoryId = String(category?._id || category?.slug || category?.name || "");
+      const subcategories = Array.isArray(category?.subcategories) ? category.subcategories : [];
+
+      const baseCards = subcategories.map((subcategory, subIndex) => {
+        return {
+          _id: String(subcategory?._id || `${categoryId}-subcategory-${subIndex}`),
+          name: subcategory?.name || "Subcategory",
+          image: subcategory?.image || "https://via.placeholder.com/120",
+          __kind: "subcategory",
+          targetSubcategoryId: subcategory?._id ? String(subcategory._id) : null,
+        };
+      });
+
+      const productCards = allProducts
+        .filter((product) => {
+          const productCategoryId = String(
+            product?.category?._id || product?.category?.id || product?.category || ""
+          );
+          return categoryId && productCategoryId === categoryId;
+        })
+        .slice(0, 60)
+        .map((product, productIndex) => {
+          const firstSubcategoryId =
+            (Array.isArray(product?.subcategories) && product.subcategories[0]?._id) ||
+            product?.subcategory?._id ||
+            null;
+
+          return {
+            _id: `product-card-${product?._id || product?.id || productIndex}`,
+            name: product?.name || "Product",
+            image: getProductImage(product),
+            __kind: "product",
+            targetSubcategoryId: firstSubcategoryId ? String(firstSubcategoryId) : null,
+          };
+        });
+
+      const cards = [...baseCards];
+      for (const productCard of productCards) {
+        if (cards.length >= 40) break;
+        cards.push(productCard);
+      }
+
+      return {
+        ...category,
+        homepageCards: cards,
+      };
+    });
+  }, [allProducts, homepageCategorySections]);
+
   const visibleSearchProducts = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
     if (!query) return [];
@@ -485,6 +590,81 @@ const GroceryPage = () => {
   const visibleBestSellers = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
 
+    const getPreviewImagesForItem = (item) => {
+      const explicitImages = Array.isArray(item?.images)
+        ? item.images.map(extractImageUrl).filter((img) => typeof img === "string" && img.trim())
+        : [];
+      const uniqueExplicitImages = Array.from(new Set(explicitImages));
+      if (uniqueExplicitImages.length >= 2) {
+        return uniqueExplicitImages.slice(0, 4);
+      }
+
+      const type = String(item?.itemType || "");
+      const targetId = String(item?.itemId || "");
+
+      const productImages = allProducts
+        .filter((product) => {
+          if (!targetId) return false;
+
+          if (type === "category") {
+            const productCategoryId = String(
+              product?.category?._id || product?.category?.id || product?.category || ""
+            );
+            return productCategoryId === targetId;
+          }
+
+          if (type === "subcategory") {
+            const productSubcategoryIds = [
+              ...(Array.isArray(product?.subcategories) ? product.subcategories : []),
+              product?.subcategory,
+            ]
+              .map((subcat) => String(subcat?._id || subcat?.id || subcat || ""))
+              .filter(Boolean);
+            return productSubcategoryIds.includes(targetId);
+          }
+
+          return false;
+        })
+        .map((product) => getProductImage(product))
+        .filter((img) => typeof img === "string" && img.trim());
+
+      const uniqueProductImages = Array.from(new Set(productImages));
+      if (uniqueProductImages.length > 0) {
+        return uniqueProductImages.slice(0, 4);
+      }
+
+      return [item?.image || "https://via.placeholder.com/120"];
+    };
+
+    const getProductCountForItem = (item) => {
+      const type = String(item?.itemType || "");
+      const targetId = String(item?.itemId || "");
+      if (!targetId) return 0;
+
+      if (type === "category") {
+        return allProducts.filter((product) => {
+          const productCategoryId = String(
+            product?.category?._id || product?.category?.id || product?.category || ""
+          );
+          return productCategoryId === targetId;
+        }).length;
+      }
+
+      if (type === "subcategory") {
+        return allProducts.filter((product) => {
+          const productSubcategoryIds = [
+            ...(Array.isArray(product?.subcategories) ? product.subcategories : []),
+            product?.subcategory,
+          ]
+            .map((subcat) => String(subcat?._id || subcat?.id || subcat || ""))
+            .filter(Boolean);
+          return productSubcategoryIds.includes(targetId);
+        }).length;
+      }
+
+      return 0;
+    };
+
     if (bestSellerItems.length === 0) {
       return bestsellers
         .filter((item) => item.title.toLowerCase().includes(query))
@@ -492,6 +672,8 @@ const GroceryPage = () => {
           id: item.categoryId,
           name: item.title,
           image: item.images?.[0] || "https://via.placeholder.com/120",
+          previewImages: (item.images || []).slice(0, 4),
+          countLabel: item.count || "",
           itemType: "legacy",
           categoryId: item.categoryId,
         }));
@@ -503,15 +685,44 @@ const GroceryPage = () => {
         id: item._id,
         name: item.name || "",
         image: item.image || "https://via.placeholder.com/120",
+        previewImages: getPreviewImagesForItem(item),
+        countLabel: (() => {
+          if (item?.countLabel) return item.countLabel;
+          if (item?.count) return item.count;
+          if (Number.isFinite(Number(item?.productCount))) return `+${Number(item.productCount)} more`;
+          const derivedCount = getProductCountForItem(item);
+          return derivedCount > 0 ? `+${derivedCount} more` : "";
+        })(),
         itemType: item.itemType,
         itemId: item.itemId,
         subcategories: Array.isArray(item.subcategories) ? item.subcategories : [],
       }));
-  }, [bestSellerItems, bestsellers, searchQuery]);
+  }, [allProducts, bestSellerItems, bestsellers, searchQuery]);
 
   useEffect(() => {
     setActiveSubcategoryId("all-subcategories");
   }, [activeCategoryId]);
+
+  useEffect(() => {
+    if (!isGroceryCategoriesRoute) return;
+
+    setSearchQuery("");
+    setActiveSubcategoryId("all-subcategories");
+
+    const firstCategory = homepageCategories?.[0];
+    if (firstCategory) {
+      const categoryId = String(firstCategory?._id || firstCategory?.slug || firstCategory?.name || "all");
+      setActiveTab(firstCategory?.name || "All");
+      setActiveCategoryId(categoryId);
+    } else {
+      setActiveTab("All");
+      setActiveCategoryId("all");
+    }
+
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [homepageCategories, isGroceryCategoriesRoute]);
 
   const hasAnySearchMatch = useMemo(() => {
     if (!hasActiveSearch) return true;
@@ -611,11 +822,6 @@ const GroceryPage = () => {
     navigate("/categories");
   };
 
-  const getProductImage = (product) =>
-    Array.isArray(product?.images) && product.images[0]
-      ? product.images[0]
-      : product?.image || "https://via.placeholder.com/200";
-
   const handleAddProductToCart = (product) => {
     addToCart({
       id: product?._id || product?.id,
@@ -627,6 +833,33 @@ const GroceryPage = () => {
       restaurantId: "grocery-store",
       restaurant: "MoGrocery",
     });
+  };
+
+  const handleCategoriesNavClick = () => {
+    if (isGroceryCategoriesRoute) {
+      setSearchQuery("");
+      setActiveSubcategoryId("all-subcategories");
+      if (typeof window !== "undefined") {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+      return;
+    }
+    navigate("/grocery/categories");
+  };
+
+  const handleHomeNavClick = () => {
+    setSearchQuery("");
+    setActiveTab("All");
+    setActiveCategoryId("all");
+    setActiveSubcategoryId("all-subcategories");
+
+    if (!routerLocation.pathname.startsWith("/grocery") || isGroceryCategoriesRoute) {
+      navigate("/grocery");
+    }
+
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   };
 
   return (
@@ -888,31 +1121,41 @@ const GroceryPage = () => {
 
       {!hasActiveSearch && activeCategoryId === "all" && (
         <div className="px-4 pt-4 pb-2 relative z-10 md:max-w-6xl md:mx-auto">
-        <h3 className="text-lg font-[800] text-[#3e2723] mb-4">Bestsellers</h3>
+          <h3 className="text-lg font-[800] text-[#3e2723] mb-4">Bestsellers</h3>
 
-        <div className="flex flex-nowrap gap-4 overflow-x-auto scrollbar-hide no-scrollbar pb-4 px-2 snap-x snap-mandatory touch-pan-x">
-          {visibleBestSellers.map((item, idx) => (
-            <div
-              key={`${item.id}-${idx}`}
-              className="min-w-[160px] max-w-[160px] snap-center p-2.5 bg-[#eff3f6] rounded-[24px] flex flex-col relative group cursor-pointer active:scale-95 transition-transform shadow-[0_8px_10px_rgba(0,0,0,0.2)] border border-white/60"
-              onClick={() => handleBestSellerClick(item)}
-            >
-              <div className="w-full h-[148px] mb-3 bg-white rounded-[14px] flex items-center justify-center p-2 overflow-hidden relative shadow-sm">
-                <img
-                  src={item.image}
-                  alt={item.name}
-                  className="w-full h-full object-contain drop-shadow-md group-hover:scale-110 transition-transform duration-500 ease-out"
-                />
-              </div>
+          <div className="grid grid-cols-3 gap-2.5">
+            {visibleBestSellers.map((item, idx) => {
+              const cardImages = Array.from({ length: 4 }).map(
+                (_, imageIndex) => item.previewImages?.[imageIndex] || item.image
+              );
 
-              <div className="mt-auto text-center flex items-end justify-center pb-1">
-                <p className="text-[15px] font-[800] text-[#1a1a1a] leading-[1.2] tracking-tight whitespace-pre-line">
-                  {(item.name || "").replace("&", "&\n")}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
+              return (
+                <button
+                  type="button"
+                  key={`${item.id}-${idx}`}
+                  className="p-2.5 bg-[#e9edf2] rounded-[16px] border border-[#dde3ea] shadow-sm text-left active:scale-95 transition-transform"
+                  onClick={() => handleBestSellerClick(item)}
+                >
+                  <div className="grid grid-cols-2 gap-1.5 mb-2">
+                    {cardImages.map((imageSrc, imageIdx) => (
+                      <div
+                        key={`${item.id}-${imageIdx}`}
+                        className="h-10 rounded-[8px] bg-white border border-[#eceff3] overflow-hidden flex items-center justify-center p-1"
+                      >
+                        <img src={imageSrc} alt={item.name} className="w-full h-full object-contain" />
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] font-semibold text-slate-500 leading-none mb-1 text-center min-h-[10px]">
+                    {item.countLabel || ""}
+                  </p>
+                  <p className="text-[13px] font-[700] text-[#2b2b2b] leading-[1.2] text-center line-clamp-2 min-h-[32px]">
+                    {item.name}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -1032,20 +1275,38 @@ const GroceryPage = () => {
       {hasActiveSearch && visibleBestSellers.length > 0 && (
         <div className="px-4 pt-2 pb-2 relative z-10 md:max-w-6xl md:mx-auto">
           <h4 className="text-base font-[800] text-[#3e2723] mb-3">Related Bestsellers</h4>
-          <div className="flex flex-nowrap gap-3 overflow-x-auto scrollbar-hide no-scrollbar pb-2">
-            {visibleBestSellers.map((item, idx) => (
-              <button
-                type="button"
-                key={`search-bestseller-${item.id}-${idx}`}
-                className="min-w-[140px] max-w-[140px] bg-[#eff3f6] rounded-2xl p-2 border border-white/60 shadow-sm text-left"
-                onClick={() => handleBestSellerClick(item)}
-              >
-                <div className="w-full h-24 bg-white rounded-xl overflow-hidden flex items-center justify-center mb-2">
-                  <img src={item.image} alt={item.name} className="w-full h-full object-contain" />
-                </div>
-                <p className="text-xs font-bold text-slate-900 line-clamp-2">{item.name}</p>
-              </button>
-            ))}
+          <div className="grid grid-cols-3 gap-2.5">
+            {visibleBestSellers.map((item, idx) => {
+              const cardImages = Array.from({ length: 4 }).map(
+                (_, imageIndex) => item.previewImages?.[imageIndex] || item.image
+              );
+
+              return (
+                <button
+                  type="button"
+                  key={`search-bestseller-${item.id}-${idx}`}
+                  className="p-2.5 bg-[#e9edf2] rounded-[16px] border border-[#dde3ea] shadow-sm text-left active:scale-95 transition-transform"
+                  onClick={() => handleBestSellerClick(item)}
+                >
+                  <div className="grid grid-cols-2 gap-1.5 mb-2">
+                    {cardImages.map((imageSrc, imageIdx) => (
+                      <div
+                        key={`${item.id}-search-${imageIdx}`}
+                        className="h-10 rounded-[8px] bg-white border border-[#eceff3] overflow-hidden flex items-center justify-center p-1"
+                      >
+                        <img src={imageSrc} alt={item.name} className="w-full h-full object-contain" />
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] font-semibold text-slate-500 leading-none mb-1 text-center min-h-[10px]">
+                    {item.countLabel || ""}
+                  </p>
+                  <p className="text-[13px] font-[700] text-[#2b2b2b] leading-[1.2] text-center line-clamp-2 min-h-[32px]">
+                    {item.name}
+                  </p>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -1094,39 +1355,48 @@ const GroceryPage = () => {
         </div>
       )}
 
-      {!hasActiveSearch && activeCategoryId === "all" && homepageCategorySections.map((category, sectionIndex) => (
+      {!hasActiveSearch && activeCategoryId === "all" && homepageCategoryDisplaySections.map((category, sectionIndex) => (
         <div
           key={category._id || category.slug || category.name}
           className={`px-4 relative z-10 md:max-w-6xl md:mx-auto ${
-            sectionIndex === homepageCategorySections.length - 1 ? "pb-24" : "pb-6"
+            sectionIndex === homepageCategoryDisplaySections.length - 1 ? "pb-24" : "pb-6"
           }`}
         >
           <h3 className="text-lg font-[800] text-[#3e2723] mb-4">{category.name}</h3>
-          {(!category.subcategories || category.subcategories.length === 0) && (
+          {(!category.homepageCards || category.homepageCards.length === 0) && (
             <p className="text-sm text-slate-500 mb-2">No subcategories available.</p>
           )}
           <div className="grid grid-cols-4 gap-2">
-            {(category.subcategories || []).map((subcategory) => (
+            {(category.homepageCards || []).map((card) => (
               <div
-                key={subcategory._id}
-                className="flex flex-col items-center gap-2 cursor-pointer active:scale-95 transition-transform"
-                onClick={() => navigate(`/grocery/subcategory/${subcategory._id}`)}
+                key={card._id}
+                className="flex flex-col items-center gap-1.5 cursor-pointer active:scale-95 transition-transform"
+                onClick={() => {
+                  if (card.targetSubcategoryId) {
+                    navigate(`/grocery/subcategory/${card.targetSubcategoryId}`);
+                    return;
+                  }
+
+                  const selectedCategoryId = String(
+                    category?._id || category?.slug || category?.name || "all"
+                  );
+                  setActiveTab(category?.name || "All");
+                  setActiveCategoryId(selectedCategoryId);
+                  setActiveSubcategoryId("all-subcategories");
+                }}
               >
                 <div
-                  className="w-full aspect-square rounded-[20px] flex items-center justify-center p-2 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-white overflow-hidden relative"
-                  style={{
-                    background: "radial-gradient(circle at center, #ffffff 40%, #f6ffd9 100%)",
-                  }}
+                  className="w-full h-[72px] rounded-[12px] flex items-center justify-center p-2 shadow-sm border border-[#dce7eb] overflow-hidden relative bg-[#e9f4f7]"
                 >
                   <img
-                    src={subcategory.image || "https://via.placeholder.com/120"}
-                    alt={subcategory.name}
-                    className="w-full h-full object-contain drop-shadow-[0_8px_4px_rgba(0,0,0,0.25)] transition-transform duration-300"
+                    src={card.image || "https://via.placeholder.com/120"}
+                    alt={card.name}
+                    className="w-full h-full object-contain transition-transform duration-300"
                   />
                 </div>
-                <div className="h-8 flex items-start justify-center w-full">
-                  <p className="text-[12px] font-[800] text-center text-[#1a1a1a] leading-tight px-0.5 line-clamp-2">
-                    {subcategory.name}
+                <div className="h-9 flex items-start justify-center w-full">
+                  <p className="text-[11px] font-[700] text-center text-[#2b2b2b] leading-tight px-0.5 line-clamp-2">
+                    {card.name}
                   </p>
                 </div>
               </div>
@@ -1140,12 +1410,12 @@ const GroceryPage = () => {
       {/* --- 6. BOTTOM NAVIGATION (Fixed) --- */}
       <div className="fixed bottom-0 left-0 right-0 bg-white/85 backdrop-blur-md border-t border-slate-100 py-2 px-6 flex justify-between md:justify-center md:gap-28 items-end z-50 w-full pb-4">
         <div
-          className="flex flex-col items-center gap-1 cursor-pointer"
-          onClick={() => navigate("/grocery")}
+          className={`flex flex-col items-center gap-1 cursor-pointer ${isGroceryCategoriesRoute ? "text-slate-400 hover:text-slate-600" : ""}`}
+          onClick={handleHomeNavClick}
         >
-          <Home size={24} className="text-slate-900 fill-current" />
-          <span className="text-[10px] font-bold text-slate-900">Home</span>
-          <div className="w-8 h-1 bg-slate-900 rounded-full mt-0.5"></div>
+          <Home size={24} className={isGroceryCategoriesRoute ? "text-slate-400" : "text-slate-900 fill-current"} />
+          <span className={`text-[10px] ${isGroceryCategoriesRoute ? "font-medium text-slate-400" : "font-bold text-slate-900"}`}>Home</span>
+          {!isGroceryCategoriesRoute && <div className="w-8 h-1 bg-slate-900 rounded-full mt-0.5"></div>}
         </div>
 
         <div
@@ -1157,11 +1427,12 @@ const GroceryPage = () => {
         </div>
 
         <div
-          className="flex flex-col items-center gap-1 cursor-pointer text-slate-400 hover:text-slate-600"
-          onClick={() => navigate("/categories")}
+          className={`flex flex-col items-center gap-1 cursor-pointer ${isGroceryCategoriesRoute ? "text-slate-900" : "text-slate-400 hover:text-slate-600"}`}
+          onClick={handleCategoriesNavClick}
         >
           <LayoutGrid size={24} />
-          <span className="text-[10px] font-medium">Categories</span>
+          <span className={`text-[10px] ${isGroceryCategoriesRoute ? "font-bold text-slate-900" : "font-medium"}`}>Categories</span>
+          {isGroceryCategoriesRoute && <div className="w-8 h-1 bg-slate-900 rounded-full mt-0.5"></div>}
         </div>
 
         <button

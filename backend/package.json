@@ -13,6 +13,9 @@
     "fix:move-mogrocery-banners-to-mofood": "node scripts/move-mogrocery-banners-to-mofood.js",
     "fix:restore-mofood-banners": "node scripts/restore-mofood-banners-from-cloudinary.js",
     "seed:grocery-plans": "node scripts/seed-grocery-plans.js",
+    "seed:grocery-demo-catalog": "node scripts/seed-grocery-catalog-demo.js",
+    "reset:grocery-demo-catalog": "node scripts/reset-grocery-demo-catalog.js",
+    "backfill:grocery-product-images": "node scripts/backfill-grocery-product-images.js",
     "migrate:grocery-categories-static": "node scripts/migrate-static-grocery-categories.js"
   },
   "keywords": [
