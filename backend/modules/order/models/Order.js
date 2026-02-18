@@ -214,6 +214,13 @@ const orderSchema = new mongoose.Schema({
     durationDays: {
       type: Number,
       default: 0
+    },
+    selectedOfferIds: {
+      type: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'GroceryPlanOffer'
+      }],
+      default: []
     }
   },
   sendCutlery: {

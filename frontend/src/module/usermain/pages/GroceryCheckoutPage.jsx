@@ -249,6 +249,9 @@ export default function GroceryCheckoutPage() {
   const summaryDeliveryFee = Number(calculatedPricing?.deliveryFee ?? fallbackDeliveryFee);
   const summaryPlatformFee = Number(calculatedPricing?.platformFee ?? fallbackPlatformFee);
   const summaryTax = Number(calculatedPricing?.tax ?? fallbackTax);
+  const planDiscountAmount = Number(calculatedPricing?.breakdown?.planDiscountAmount ?? 0);
+  const appliedPlanName = String(calculatedPricing?.appliedPlanBenefits?.planName || "").trim();
+  const hasPlanDiscount = planDiscountAmount > 0;
   const grandTotal = Number(
     calculatedPricing?.total ??
       subtotal + summaryDeliveryFee + summaryPlatformFee + summaryTax - Number(calculatedPricing?.discount ?? 0),
@@ -506,6 +509,16 @@ export default function GroceryCheckoutPage() {
                 {showPricingLoading ? "Calculating..." : `Rs ${summaryTax.toFixed(2)}`}
               </span>
             </div>
+            {hasPlanDiscount && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-green-700">
+                  {appliedPlanName ? `${appliedPlanName} discount` : "Plan discount"}
+                </span>
+                <span className="text-green-700 font-bold">
+                  -Rs {planDiscountAmount.toFixed(2)}
+                </span>
+              </div>
+            )}
             {totalSavings > 0 && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-600">Total Savings</span>

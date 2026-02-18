@@ -55,6 +55,12 @@ const normalizeObjectIdArray = (values) => {
   return Array.from(unique);
 };
 
+const normalizePercentage = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.min(100, Math.max(0, parsed));
+};
+
 export const getCategories = async (req, res) => {
   try {
     const { section, includeSubcategories, activeOnly = 'true' } = req.query;
@@ -870,6 +876,9 @@ export const createPlanOffer = async (req, res) => {
       description = '',
       discountType = 'none',
       discountValue = 0,
+      categoryDiscountPercentage = 0,
+      subcategoryDiscountPercentage = 0,
+      productDiscountPercentage = 0,
       freeDelivery = false,
       planIds = [],
       productIds = [],
@@ -897,6 +906,9 @@ export const createPlanOffer = async (req, res) => {
       description: description.toString().trim(),
       discountType,
       discountValue: Number(discountValue) || 0,
+      categoryDiscountPercentage: normalizePercentage(categoryDiscountPercentage),
+      subcategoryDiscountPercentage: normalizePercentage(subcategoryDiscountPercentage),
+      productDiscountPercentage: normalizePercentage(productDiscountPercentage),
       freeDelivery: Boolean(freeDelivery),
       planIds: normalizeObjectIdArray(planIds),
       productIds: normalizeObjectIdArray(productIds),
@@ -936,6 +948,15 @@ export const updatePlanOffer = async (req, res) => {
     }
 
     if (update.discountValue !== undefined) update.discountValue = Number(update.discountValue) || 0;
+    if (update.categoryDiscountPercentage !== undefined) {
+      update.categoryDiscountPercentage = normalizePercentage(update.categoryDiscountPercentage);
+    }
+    if (update.subcategoryDiscountPercentage !== undefined) {
+      update.subcategoryDiscountPercentage = normalizePercentage(update.subcategoryDiscountPercentage);
+    }
+    if (update.productDiscountPercentage !== undefined) {
+      update.productDiscountPercentage = normalizePercentage(update.productDiscountPercentage);
+    }
     if (update.order !== undefined) update.order = Number(update.order) || 0;
     if (update.planIds !== undefined) update.planIds = normalizeObjectIdArray(update.planIds);
     if (update.productIds !== undefined) update.productIds = normalizeObjectIdArray(update.productIds);

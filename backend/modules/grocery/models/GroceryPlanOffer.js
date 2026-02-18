@@ -34,6 +34,24 @@ const groceryPlanOfferSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    categoryDiscountPercentage: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
+    subcategoryDiscountPercentage: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
+    productDiscountPercentage: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
     freeDelivery: {
       type: Boolean,
       default: false,

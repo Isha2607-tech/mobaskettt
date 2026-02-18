@@ -35,6 +35,9 @@ const PlansPage = () => {
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [planOffers, setPlanOffers] = useState([]);
   const [offersLoading, setOffersLoading] = useState(false);
+  const [selectedOfferIds, setSelectedOfferIds] = useState([]);
+  const [boughtPlans, setBoughtPlans] = useState([]);
+  const [boughtPlansLoading, setBoughtPlansLoading] = useState(true);
   const { getDefaultAddress, userProfile } = useProfile();
   const { location: liveLocation } = useUserLocation();
   const { zoneId } = useZone(liveLocation, "mogrocery");
@@ -73,6 +76,70 @@ const PlansPage = () => {
     fetchPlans();
   }, []);
 
+  useEffect(() => {
+    const fetchBoughtPlans = async () => {
+      try {
+        setBoughtPlansLoading(true);
+        const response = await orderAPI.getOrders({ page: 1, limit: 200 });
+        const orders =
+          response?.data?.data?.orders ||
+          response?.data?.orders ||
+          (Array.isArray(response?.data?.data) ? response.data.data : []);
+
+        const now = new Date();
+        const normalized = (Array.isArray(orders) ? orders : [])
+          .filter((order) => order?.planSubscription?.planId)
+          .filter((order) => String(order?.payment?.status || "").toLowerCase() === "completed")
+          .filter((order) => String(order?.status || "").toLowerCase() !== "cancelled")
+          .map((order) => {
+            const purchasedAt = order?.deliveredAt || order?.createdAt || null;
+            const startDate = purchasedAt ? new Date(purchasedAt) : null;
+            const durationDays = Number(order?.planSubscription?.durationDays || 0);
+            const expiresAt =
+              startDate && durationDays > 0
+                ? new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000)
+                : null;
+            const isActive = expiresAt ? expiresAt > now : false;
+
+            return {
+              id: order?._id || order?.id || order?.orderId,
+              orderId: order?.orderId || order?._id || order?.id,
+              planName: order?.planSubscription?.planName || "MoGrocery Plan",
+              durationDays,
+              selectedOfferCount: Array.isArray(order?.planSubscription?.selectedOfferIds)
+                ? order.planSubscription.selectedOfferIds.length
+                : 0,
+              purchasedAt,
+              expiresAt: expiresAt ? expiresAt.toISOString() : null,
+              isActive,
+            };
+          })
+          .sort((a, b) => new Date(b.purchasedAt || 0) - new Date(a.purchasedAt || 0));
+
+        setBoughtPlans(normalized);
+      } catch {
+        setBoughtPlans([]);
+      } finally {
+        setBoughtPlansLoading(false);
+      }
+    };
+
+    fetchBoughtPlans();
+  }, []);
+
+  useEffect(() => {
+    // Guard against stale scroll locks left by other screens/modals.
+    const lockedTop = document.body.style.top;
+    document.body.style.overflow = "";
+    document.body.style.position = "";
+    document.body.style.width = "";
+    document.body.style.top = "";
+
+    if (lockedTop) {
+      window.scrollTo(0, parseInt(lockedTop || "0", 10) * -1);
+    }
+  }, []);
+
   const renderPlanIcon = (iconKey) => {
     if (iconKey === "check") {
       return <Check size={24} className="text-white" strokeWidth={4} />;
@@ -89,6 +156,7 @@ const PlansPage = () => {
   const openPlan = (plan) => {
     setSelectedPlan(plan);
     setSelectedMealType("veg");
+    setSelectedOfferIds([]);
   };
 
   const selectedPlanOfferIdsKey = useMemo(() => {
@@ -125,9 +193,21 @@ const PlansPage = () => {
           if (!alreadyExists) merged.push(offer);
         });
         setPlanOffers(merged);
+        setSelectedOfferIds(
+          merged
+            .map((offer) => offer?._id || offer?.id)
+            .filter(Boolean)
+            .map((id) => String(id))
+        );
       } catch {
         const fallback = selectedPlanLinkedOffers;
         setPlanOffers(fallback);
+        setSelectedOfferIds(
+          fallback
+            .map((offer) => offer?._id || offer?.id)
+            .filter(Boolean)
+            .map((id) => String(id))
+        );
       } finally {
         setOffersLoading(false);
       }
@@ -257,6 +337,7 @@ const PlansPage = () => {
           planId: selectedPlan.id,
           planName: selectedPlan.name,
           durationDays: Number(selectedPlan.durationDays || 0),
+          selectedOfferIds,
         },
       };
 
@@ -314,6 +395,27 @@ const PlansPage = () => {
     }
   };
 
+  const toggleOfferSelection = (offerId) => {
+    if (!offerId) return;
+    const normalizedOfferId = String(offerId);
+    setSelectedOfferIds((prev) =>
+      prev.includes(normalizedOfferId)
+        ? prev.filter((id) => id !== normalizedOfferId)
+        : [...prev, normalizedOfferId]
+    );
+  };
+
+  const formatDate = (dateValue) => {
+    if (!dateValue) return "N/A";
+    const date = new Date(dateValue);
+    if (Number.isNaN(date.getTime())) return "N/A";
+    return date.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
   return (
     <div className="bg-gray-50 min-h-screen font-sans w-full relative pb-20 overflow-x-hidden">
       <div className="bg-[#FACC15] pb-10 rounded-b-[2.5rem] shadow-sm">
@@ -330,6 +432,59 @@ const PlansPage = () => {
       </div>
 
       <div className="px-4 mt-8 md:max-w-7xl md:mx-auto">
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xl font-black text-slate-900">Bought Plans</h2>
+            {boughtPlans.length > 0 && (
+              <span className="text-xs font-semibold text-slate-500">
+                {boughtPlans.length} plan{boughtPlans.length === 1 ? "" : "s"}
+              </span>
+            )}
+          </div>
+          {boughtPlansLoading ? (
+            <p className="text-sm text-slate-500">Loading bought plans...</p>
+          ) : boughtPlans.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-2xl p-4">
+              <p className="text-sm text-slate-500">You have not bought any plan yet.</p>
+            </div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {boughtPlans.map((plan) => (
+                <div key={plan.id} className="bg-white border border-slate-200 rounded-2xl p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-base font-bold text-slate-900">{plan.planName}</p>
+                      <p className="text-xs text-slate-500 mt-1">Order #{plan.orderId}</p>
+                    </div>
+                    <span
+                      className={`text-[11px] font-bold px-2 py-1 rounded-full ${
+                        plan.isActive
+                          ? "bg-green-100 text-green-700 border border-green-200"
+                          : "bg-slate-100 text-slate-600 border border-slate-200"
+                      }`}
+                    >
+                      {plan.isActive ? "Active" : "Expired"}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                    <p>Bought: {formatDate(plan.purchasedAt)}</p>
+                    <p>Valid till: {formatDate(plan.expiresAt)}</p>
+                    <p>Duration: {plan.durationDays || 0} days</p>
+                    <p>Offers: {plan.selectedOfferCount}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="mt-3 text-xs font-semibold text-emerald-700 hover:underline"
+                    onClick={() => navigate(`/orders/${plan.orderId}`)}
+                  >
+                    View purchase details
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="flex justify-between items-center mb-5">
           <div className="flex items-center gap-3">
             <h2 className="text-xl font-black text-slate-900">Monthly Plans</h2>
@@ -420,7 +575,7 @@ const PlansPage = () => {
         <>
           <div className="fixed inset-0 bg-black/60 z-[60] backdrop-blur-[2px]" onClick={() => setSelectedPlan(null)}></div>
           <div className="fixed bottom-0 left-0 right-0 z-[70] md:inset-0 md:flex md:items-center md:justify-center pointer-events-none">
-            <div className="bg-white w-full rounded-t-[2.5rem] md:rounded-[2.5rem] shadow-2xl overflow-hidden animate-slide-in-up max-h-[85vh] overflow-y-auto pointer-events-auto md:max-w-4xl md:h-auto md:max-h-[90vh] relative md:flex md:flex-row md:overflow-hidden">
+            <div data-lenis-prevent className="bg-white w-full rounded-t-[2.5rem] md:rounded-[2.5rem] shadow-2xl overflow-hidden animate-slide-in-up max-h-[85vh] overflow-y-auto pointer-events-auto md:max-w-4xl md:h-auto md:max-h-[90vh] relative md:flex md:flex-row md:overflow-hidden">
               <div className={`${selectedPlan.headerColor} p-6 pb-12 text-white relative md:w-2/5 md:pb-6 md:flex md:flex-col md:justify-center`}>
                 <button
                   onClick={() => setSelectedPlan(null)}
@@ -461,7 +616,7 @@ const PlansPage = () => {
               >
                 <X size={20} className="text-slate-900" />
               </button>
-              <div className="bg-white -mt-6 rounded-t-[2rem] px-6 pt-8 pb-8 relative md:w-3/5 md:mt-0 md:rounded-none md:p-8 md:overflow-y-auto no-scrollbar">
+              <div data-lenis-prevent className="bg-white -mt-6 rounded-t-[2rem] px-6 pt-8 pb-8 relative md:w-3/5 md:mt-0 md:rounded-none md:p-8 md:overflow-y-auto no-scrollbar">
                 <div className="mb-8">
                   <div className="flex items-center gap-2 mb-4">
                     <Star size={18} className="text-yellow-400 fill-yellow-400" />
@@ -539,16 +694,35 @@ const PlansPage = () => {
                     <Zap size={18} className="text-amber-500" />
                     <h3 className="font-bold text-slate-900 text-lg">Plan Offers</h3>
                   </div>
+                  {planOffers.length > 0 && (
+                    <p className="text-xs text-slate-500 mb-3">Select offers to activate with this plan.</p>
+                  )}
                   {offersLoading ? (
                     <p className="text-sm text-slate-500">Loading offers...</p>
                   ) : planOffers.length === 0 ? (
                     <p className="text-sm text-slate-500">No additional offers for this plan.</p>
                   ) : (
                     <div className="space-y-3">
-                      {planOffers.map((offer) => (
-                        <div key={offer._id} className="rounded-xl border border-amber-100 bg-amber-50 p-3">
+                      {planOffers.map((offer, idx) => {
+                        const offerId = offer?._id || offer?.id;
+                        const normalizedOfferId = offerId ? String(offerId) : "";
+                        const isSelected = !!normalizedOfferId && selectedOfferIds.includes(normalizedOfferId);
+                        return (
+                        <button
+                          key={normalizedOfferId || `offer-${idx}`}
+                          type="button"
+                          onClick={() => toggleOfferSelection(normalizedOfferId)}
+                          className={`w-full text-left rounded-xl border p-3 transition ${
+                            isSelected
+                              ? "border-amber-300 bg-amber-50"
+                              : "border-slate-200 bg-white hover:border-amber-200"
+                          }`}
+                        >
                           <p className="font-semibold text-slate-900">{offer.name}</p>
                           <p className="text-xs text-slate-600 mt-0.5">{offer.description || "Exclusive offer for this plan"}</p>
+                          <p className={`text-[11px] font-semibold mt-2 ${isSelected ? "text-amber-700" : "text-slate-500"}`}>
+                            {isSelected ? "Selected" : "Tap to select"}
+                          </p>
 
                           <div className="flex gap-2 mt-2 flex-wrap">
                             {offer.discountType !== "none" && Number(offer.discountValue || 0) > 0 && (
@@ -638,8 +812,8 @@ const PlansPage = () => {
                               </div>
                             );
                           })()}
-                        </div>
-                      ))}
+                        </button>
+                      )})}
                     </div>
                   )}
                 </div>

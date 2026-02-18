@@ -243,11 +243,14 @@ const getActivePlanContext = async (userId) => {
   return selected;
 };
 
-const getOfferEligibleSubtotal = ({ offer, items, subtotalByProductId, productMetaById, orderSubtotal }) => {
-  const productIds = toObjectIdStringSet(offer?.productIds);
-  const categoryIds = toObjectIdStringSet(offer?.categoryIds);
-  const subcategoryIds = toObjectIdStringSet(offer?.subcategoryIds);
+const getOfferTargetSets = (offer) => ({
+  productIds: toObjectIdStringSet(offer?.productIds),
+  categoryIds: toObjectIdStringSet(offer?.categoryIds),
+  subcategoryIds: toObjectIdStringSet(offer?.subcategoryIds)
+});
 
+const getOfferEligibleSubtotal = ({ offer, items, subtotalByProductId, productMetaById, orderSubtotal }) => {
+  const { productIds, categoryIds, subcategoryIds } = getOfferTargetSets(offer);
   const hasTargeting = productIds.size > 0 || categoryIds.size > 0 || subcategoryIds.size > 0;
   if (!hasTargeting) return Math.max(0, Number(orderSubtotal || 0));
 
@@ -271,6 +274,63 @@ const getOfferEligibleSubtotal = ({ offer, items, subtotalByProductId, productMe
   });
 
   return Math.max(0, eligibleSubtotal);
+};
+
+const getOfferPercentageDiscount = ({ offer, items, subtotalByProductId, productMetaById, orderSubtotal }) => {
+  const productIds = toObjectIdStringSet(offer?.productIds);
+  const categoryIds = toObjectIdStringSet(offer?.categoryIds);
+  const subcategoryIds = toObjectIdStringSet(offer?.subcategoryIds);
+
+  const hasTargeting = productIds.size > 0 || categoryIds.size > 0 || subcategoryIds.size > 0;
+  const basePercentage = Number(offer?.discountValue || 0);
+  const categoryPercentage = Number(offer?.categoryDiscountPercentage || 0);
+  const subcategoryPercentage = Number(offer?.subcategoryDiscountPercentage || 0);
+  const productPercentage = Number(offer?.productDiscountPercentage || 0);
+
+  if (!hasTargeting) {
+    return {
+      discount: Math.max(0, Math.round((Math.max(0, Number(orderSubtotal || 0)) * basePercentage) / 100)),
+      eligibleSubtotal: Math.max(0, Number(orderSubtotal || 0)),
+    };
+  }
+
+  let eligibleSubtotal = 0;
+  let discount = 0;
+  items.forEach((item) => {
+    const itemId = toObjectIdString(item?.itemId);
+    if (!itemId) return;
+
+    const productMatched = productIds.has(itemId);
+    const meta = productMetaById.get(itemId);
+    const categoryMatched = Boolean(meta?.category && categoryIds.has(meta.category));
+    const subcategoryMatched = Array.isArray(meta?.subcategories)
+      ? meta.subcategories.some((subcatId) => subcategoryIds.has(subcatId))
+      : false;
+    const matched = productMatched || categoryMatched || subcategoryMatched;
+
+    if (matched) {
+      const itemSubtotal = Number(subtotalByProductId.get(itemId) || 0);
+      eligibleSubtotal += itemSubtotal;
+      let appliedPercentage = 0;
+      if (productMatched && productPercentage > 0) {
+        appliedPercentage = productPercentage;
+      } else if (subcategoryMatched && subcategoryPercentage > 0) {
+        appliedPercentage = subcategoryPercentage;
+      } else if (categoryMatched && categoryPercentage > 0) {
+        appliedPercentage = categoryPercentage;
+      } else if (basePercentage > 0) {
+        appliedPercentage = basePercentage;
+      }
+      if (appliedPercentage > 0 && itemSubtotal > 0) {
+        discount += Math.round((itemSubtotal * appliedPercentage) / 100);
+      }
+    }
+  });
+
+  return {
+    discount: Math.max(0, Math.round(discount)),
+    eligibleSubtotal: Math.max(0, eligibleSubtotal),
+  };
 };
 
 const getPlanBenefitAdjustment = async ({ userId, items, subtotal }) => {
@@ -335,27 +395,43 @@ const getPlanBenefitAdjustment = async ({ userId, items, subtotal }) => {
   const appliedOfferIds = [];
 
   offers.forEach((offer) => {
-    const eligibleSubtotal = getOfferEligibleSubtotal({
-      offer,
-      items,
-      subtotalByProductId,
-      productMetaById,
-      orderSubtotal: subtotal
-    });
-    if (eligibleSubtotal <= 0) return;
+    let offerDiscount = 0;
+    if (offer.discountType === 'percentage') {
+      const percentageResult = getOfferPercentageDiscount({
+        offer,
+        items,
+        subtotalByProductId,
+        productMetaById,
+        orderSubtotal: subtotal
+      });
+      offerDiscount = percentageResult.discount;
+      if (percentageResult.eligibleSubtotal <= 0) return;
+    } else if (offer.discountType === 'flat') {
+      const eligibleSubtotal = getOfferEligibleSubtotal({
+        offer,
+        items,
+        subtotalByProductId,
+        productMetaById,
+        orderSubtotal: subtotal
+      });
+      if (eligibleSubtotal <= 0) return;
+      const discountValue = Number(offer.discountValue || 0);
+      offerDiscount = Math.min(Math.round(discountValue), Math.round(eligibleSubtotal));
+    } else {
+      const eligibleSubtotal = getOfferEligibleSubtotal({
+        offer,
+        items,
+        subtotalByProductId,
+        productMetaById,
+        orderSubtotal: subtotal
+      });
+      if (eligibleSubtotal <= 0) return;
+    }
 
     appliedOfferIds.push(offer._id.toString());
 
     if (offer.freeDelivery) {
       freeDelivery = true;
-    }
-
-    const discountValue = Number(offer.discountValue || 0);
-    let offerDiscount = 0;
-    if (offer.discountType === 'percentage') {
-      offerDiscount = Math.round((eligibleSubtotal * discountValue) / 100);
-    } else if (offer.discountType === 'flat') {
-      offerDiscount = Math.min(Math.round(discountValue), Math.round(eligibleSubtotal));
     }
 
     if (offerDiscount > bestDiscount) {
@@ -383,7 +459,10 @@ const getPlanBenefitAdjustment = async ({ userId, items, subtotal }) => {
           id: bestOffer._id.toString(),
           name: bestOffer.name || '',
           discountType: bestOffer.discountType || 'none',
-          discountValue: Number(bestOffer.discountValue || 0)
+          discountValue: Number(bestOffer.discountValue || 0),
+          categoryDiscountPercentage: Number(bestOffer.categoryDiscountPercentage || 0),
+          subcategoryDiscountPercentage: Number(bestOffer.subcategoryDiscountPercentage || 0),
+          productDiscountPercentage: Number(bestOffer.productDiscountPercentage || 0)
         }
       : null,
     appliedOfferIds

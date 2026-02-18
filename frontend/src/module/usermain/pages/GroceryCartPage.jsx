@@ -11,17 +11,26 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useCart } from "../../user/context/CartContext";
-import { adminAPI } from "@/lib/api";
+import { adminAPI, orderAPI, restaurantAPI } from "@/lib/api";
+import { useProfile } from "../../user/context/ProfileContext";
+import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
+import { useZone } from "../../user/hooks/useZone";
 
 const GroceryCartPage = () => {
   const navigate = useNavigate();
-  const { cart, updateQuantity, total, clearCart, isGroceryItem } = useCart();
+  const { cart, updateQuantity, clearCart, isGroceryItem } = useCart();
+  const { getDefaultAddress } = useProfile();
+  const { location: liveLocation } = useUserLocation();
+  const { zoneId } = useZone(liveLocation, "mogrocery");
   const [feeSettings, setFeeSettings] = useState({
     deliveryFee: 25,
     freeDeliveryThreshold: 149,
     platformFee: 5,
     deliveryFeeRanges: [],
   });
+  const [resolvedRestaurant, setResolvedRestaurant] = useState(null);
+  const [calculatedPricing, setCalculatedPricing] = useState(null);
+  const [loadingPricing, setLoadingPricing] = useState(false);
 
   // Filter grocery items (though CartContext usually keeps only one restaurant type)
   const groceryItems = cart.filter((item) => isGroceryItem(item));
@@ -65,15 +74,137 @@ const GroceryCartPage = () => {
     );
   }
 
+  const selectedAddress = useMemo(() => {
+    const defaultAddress = getDefaultAddress?.();
+    if (defaultAddress) {
+      return defaultAddress;
+    }
+
+    if (liveLocation?.latitude && liveLocation?.longitude) {
+      return {
+        label: "Home",
+        street: liveLocation.street || liveLocation.address || "",
+        additionalDetails: liveLocation.area || "",
+        city: liveLocation.city || "",
+        state: liveLocation.state || "",
+        zipCode: liveLocation.postalCode || liveLocation.zipCode || "",
+        formattedAddress: liveLocation.formattedAddress || liveLocation.address || "",
+        location: {
+          coordinates: [liveLocation.longitude, liveLocation.latitude],
+        },
+      };
+    }
+
+    return null;
+  }, [getDefaultAddress, liveLocation]);
+
   // Calculate savings
   const itemsTotal = groceryItems.reduce(
     (sum, item) => sum + Number(item.mrp || item.price || 0) * Number(item.quantity || 0),
     0,
   );
-  const totalSavings = itemsTotal - Number(total || 0);
+  const subtotal = groceryItems.reduce(
+    (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0),
+    0,
+  );
+  const totalSavings = itemsTotal - subtotal;
+
+  const resolveGroceryRestaurant = async () => {
+    if (resolvedRestaurant?.restaurantId) {
+      return resolvedRestaurant;
+    }
+
+    const cartRestaurantId = groceryItems[0]?.restaurantId;
+    const cartRestaurantName = groceryItems[0]?.restaurant || "MoGrocery";
+
+    if (cartRestaurantId && cartRestaurantId !== "grocery-store") {
+      const resolved = { restaurantId: cartRestaurantId, restaurantName: cartRestaurantName };
+      setResolvedRestaurant(resolved);
+      return resolved;
+    }
+
+    const restaurantsResponse = await restaurantAPI.getRestaurants({ limit: 200 });
+    const restaurants = restaurantsResponse?.data?.data?.restaurants || [];
+    const groceryStores = restaurants.filter((r) => r?.platform === "mogrocery" && r?.isActive);
+
+    if (!groceryStores.length) {
+      throw new Error("No active grocery store found.");
+    }
+
+    const groceryLikeStore =
+      groceryStores.find((r) => /grocery|mart|basket/i.test(r?.name || "")) || groceryStores[0];
+
+    const resolvedRestaurantId = groceryLikeStore?._id || groceryLikeStore?.restaurantId;
+    if (!resolvedRestaurantId) {
+      throw new Error("Unable to resolve grocery store.");
+    }
+
+    const resolved = {
+      restaurantId: resolvedRestaurantId,
+      restaurantName: groceryLikeStore?.name || cartRestaurantName,
+    };
+    setResolvedRestaurant(resolved);
+    return resolved;
+  };
+
+  const buildOrderItems = () =>
+    groceryItems.map((item) => ({
+      itemId: String(item.id || item._id || item.itemId || item.productId || ""),
+      name: item.name,
+      price: Number(item.price || 0),
+      quantity: Number(item.quantity || 1),
+      image: item.image || "",
+      description: item.description || "",
+      isVeg: item.isVeg !== false,
+    }));
+
+  useEffect(() => {
+    const resolveRestaurantForPreview = async () => {
+      if (!groceryItems.length) {
+        setResolvedRestaurant(null);
+        return;
+      }
+      try {
+        await resolveGroceryRestaurant();
+      } catch (error) {
+        console.error("Failed to resolve grocery store for cart pricing:", error);
+      }
+    };
+
+    resolveRestaurantForPreview();
+  }, [groceryItems]);
+
+  useEffect(() => {
+    const calculatePricingPreview = async () => {
+      if (!groceryItems.length || !selectedAddress || !resolvedRestaurant?.restaurantId) {
+        setCalculatedPricing(null);
+        setLoadingPricing(false);
+        return;
+      }
+
+      try {
+        setLoadingPricing(true);
+        const response = await orderAPI.calculateOrder({
+          items: buildOrderItems(),
+          restaurantId: resolvedRestaurant.restaurantId,
+          deliveryAddress: selectedAddress,
+          deliveryFleet: "standard",
+          platform: "mogrocery",
+          zoneId: zoneId || undefined,
+        });
+        setCalculatedPricing(response?.data?.data?.pricing || null);
+      } catch (error) {
+        console.error("Failed to calculate grocery cart pricing preview:", error);
+        setCalculatedPricing(null);
+      } finally {
+        setLoadingPricing(false);
+      }
+    };
+
+    calculatePricingPreview();
+  }, [groceryItems, selectedAddress, resolvedRestaurant, zoneId]);
 
   const deliveryCharge = useMemo(() => {
-    const subtotal = Number(total || 0);
     if (subtotal <= 0) return 0;
 
     const ranges = Array.isArray(feeSettings?.deliveryFeeRanges)
@@ -96,10 +227,20 @@ const GroceryCartPage = () => {
     if (subtotal >= freeThreshold) return 0;
 
     return Math.max(0, Number(feeSettings?.deliveryFee ?? 25));
-  }, [feeSettings, total]);
+  }, [feeSettings, subtotal]);
 
   const platformFee = Math.max(0, Number(feeSettings?.platformFee ?? 5));
-  const grandTotal = Number(total || 0) + deliveryCharge + platformFee;
+  const summaryDeliveryFee = Number(calculatedPricing?.deliveryFee ?? deliveryCharge);
+  const summaryPlatformFee = Number(calculatedPricing?.platformFee ?? platformFee);
+  const summaryTax = Number(calculatedPricing?.tax ?? 0);
+  const summaryDiscount = Number(calculatedPricing?.discount ?? 0);
+  const planDiscountAmount = Number(calculatedPricing?.breakdown?.planDiscountAmount ?? 0);
+  const appliedPlanName = String(calculatedPricing?.appliedPlanBenefits?.planName || "").trim();
+  const hasPlanDiscount = planDiscountAmount > 0;
+  const grandTotal = Number(
+    calculatedPricing?.total ??
+      subtotal + summaryDeliveryFee + summaryPlatformFee + summaryTax - summaryDiscount,
+  );
 
   return (
     <div className="min-h-screen bg-[#fefce8] pb-32">
@@ -207,10 +348,10 @@ const GroceryCartPage = () => {
                 )}
               </div>
               <div className="flex items-center gap-1.5">
-                {itemsTotal > Number(total || 0) && (
+                {itemsTotal > Number(subtotal || 0) && (
                   <span className="text-gray-400 line-through">Rs {itemsTotal}</span>
                 )}
-                <span className="font-bold text-gray-900">Rs {total}</span>
+                <span className="font-bold text-gray-900">Rs {subtotal}</span>
               </div>
             </div>
 
@@ -220,7 +361,11 @@ const GroceryCartPage = () => {
                 <AlertCircle size={12} className="text-gray-400" />
               </div>
               <span className="font-bold text-gray-900">
-                {deliveryCharge > 0 ? `Rs ${deliveryCharge}` : "FREE"}
+                {loadingPricing && !calculatedPricing
+                  ? "Calculating..."
+                  : summaryDeliveryFee > 0
+                    ? `Rs ${summaryDeliveryFee}`
+                    : "FREE"}
               </span>
             </div>
 
@@ -229,8 +374,21 @@ const GroceryCartPage = () => {
                 Platform fee
                 <AlertCircle size={12} className="text-gray-400" />
               </div>
-              <span className="font-bold text-gray-900">Rs {platformFee}</span>
+              <span className="font-bold text-gray-900">
+                {loadingPricing && !calculatedPricing ? "Calculating..." : `Rs ${summaryPlatformFee}`}
+              </span>
             </div>
+
+            {hasPlanDiscount && (
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5 text-green-700">
+                  {appliedPlanName ? `${appliedPlanName} discount` : "Plan discount"}
+                </div>
+                <span className="font-bold text-green-700">
+                  -Rs {planDiscountAmount.toFixed(2)}
+                </span>
+              </div>
+            )}
 
             <div className="border-t border-gray-100 pt-3 flex items-center justify-between">
               <span className="text-sm font-bold text-gray-900">Grand total</span>

@@ -415,12 +415,24 @@ export const createOrder = async (req, res) => {
       if (!planSubscription || typeof planSubscription !== 'object') return null;
       const rawPlanId = planSubscription.planId;
       if (!rawPlanId || !mongoose.Types.ObjectId.isValid(rawPlanId)) return null;
+      const selectedOfferIds = Array.from(
+        new Set(
+          (Array.isArray(planSubscription.selectedOfferIds) ? planSubscription.selectedOfferIds : [])
+            .map((value) => {
+              const normalized = typeof value === 'string' ? value : value?._id || value?.id || value;
+              return mongoose.Types.ObjectId.isValid(normalized) ? normalized.toString() : null;
+            })
+            .filter(Boolean)
+        )
+      ).map((id) => new mongoose.Types.ObjectId(id));
       return {
         planId: new mongoose.Types.ObjectId(rawPlanId),
         planName: (planSubscription.planName || '').toString().trim(),
-        durationDays: Number(planSubscription.durationDays || 0)
+        durationDays: Number(planSubscription.durationDays || 0),
+        selectedOfferIds
       };
     })();
+    const isPlanSubscriptionOrder = Boolean(normalizedPlanSubscription?.planId);
 
     // Ensure user has mandatory profile details before placing order
     const userProfile = await User.findById(userId).select('phone addresses').lean();
@@ -715,6 +727,14 @@ export const createOrder = async (req, res) => {
       planSubscription: normalizedPlanSubscription || undefined,
       sendCutlery: sendCutlery !== false,
       status: isFutureScheduledOrder ? 'scheduled' : 'pending',
+      adminApproval: isPlanSubscriptionOrder
+        ? {
+          status: 'approved',
+          reason: 'Auto-approved MoGrocery plan subscription',
+          reviewedAt: new Date(),
+          reviewedBy: null
+        }
+        : undefined,
       scheduledDelivery: {
         isScheduled: isFutureScheduledOrder,
         scheduledFor: isFutureScheduledOrder ? scheduledForDate : null,
@@ -924,7 +944,7 @@ export const createOrder = async (req, res) => {
         await saveOrderWithIdRetry(order);
 
         // Notify restaurant only for non-scheduled orders.
-        if (!isFutureScheduledOrder) {
+        if (!isFutureScheduledOrder && !isPlanSubscriptionOrder) {
           try {
             const notifyRestaurantResult = await notifyRestaurantNewOrder(order, assignedRestaurantId, 'wallet');
             logger.info('✅ Wallet payment order notification sent to restaurant', {
@@ -1013,7 +1033,7 @@ export const createOrder = async (req, res) => {
       await saveOrderWithIdRetry(order);
 
       // Notify restaurant only for non-scheduled orders.
-      if (!isFutureScheduledOrder) {
+      if (!isFutureScheduledOrder && !isPlanSubscriptionOrder) {
         try {
           const notifyRestaurantResult = await notifyRestaurantNewOrder(order, assignedRestaurantId, 'cash');
           logger.info('✅ COD order notification sent to restaurant', {
@@ -1295,7 +1315,7 @@ export const switchOrderToCash = async (req, res) => {
       });
     }
 
-    if (!isFutureScheduledOrder) {
+    if (!isFutureScheduledOrder && !order?.planSubscription?.planId) {
       try {
         await notifyRestaurantNewOrder(order, order.restaurantId, 'cash');
       } catch (notifyError) {
@@ -1462,7 +1482,8 @@ export const verifyOrderPayment = async (req, res) => {
     }
 
     // Notify restaurant only when order is active (not future-scheduled).
-    if (!isFutureScheduledOrder) {
+    const isPlanSubscriptionOrder = Boolean(order?.planSubscription?.planId);
+    if (!isFutureScheduledOrder && !isPlanSubscriptionOrder) {
       try {
         const restaurantId = order.restaurantId?.toString() || order.restaurantId;
         const restaurantName = order.restaurantName;

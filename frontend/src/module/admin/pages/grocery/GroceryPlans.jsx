@@ -29,6 +29,9 @@ const DEFAULT_OFFER_FORM = {
   description: "",
   discountType: "none",
   discountValue: 0,
+  categoryDiscountPercentage: 0,
+  subcategoryDiscountPercentage: 0,
+  productDiscountPercentage: 0,
   freeDelivery: false,
   order: 0,
   isActive: true,
@@ -294,6 +297,9 @@ export default function GroceryPlans() {
       description: offer.description || "",
       discountType: offer.discountType || "none",
       discountValue: Number(offer.discountValue || 0),
+      categoryDiscountPercentage: Number(offer.categoryDiscountPercentage || 0),
+      subcategoryDiscountPercentage: Number(offer.subcategoryDiscountPercentage || 0),
+      productDiscountPercentage: Number(offer.productDiscountPercentage || 0),
       freeDelivery: Boolean(offer.freeDelivery),
       order: Number(offer.order || 0),
       isActive: offer.isActive !== false,
@@ -359,6 +365,9 @@ export default function GroceryPlans() {
         name: offerForm.name.trim(),
         description: offerForm.description.trim(),
         discountValue: Number(offerForm.discountValue || 0),
+        categoryDiscountPercentage: Number(offerForm.categoryDiscountPercentage || 0),
+        subcategoryDiscountPercentage: Number(offerForm.subcategoryDiscountPercentage || 0),
+        productDiscountPercentage: Number(offerForm.productDiscountPercentage || 0),
         order: Number(offerForm.order || 0),
       }
       if (editingOfferId) {
@@ -712,6 +721,46 @@ export default function GroceryPlans() {
               <input className="px-3 py-2 border rounded" type="number" min="0" placeholder="Discount value" value={offerForm.discountValue} onChange={(e) => setOfferForm({ ...offerForm, discountValue: e.target.value })} />
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={offerForm.freeDelivery} onChange={(e) => setOfferForm({ ...offerForm, freeDelivery: e.target.checked })} /> Free delivery</label>
             </div>
+            {offerForm.discountType === "percentage" && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Category Discount %</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded"
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="0"
+                    value={offerForm.categoryDiscountPercentage}
+                    onChange={(e) => setOfferForm({ ...offerForm, categoryDiscountPercentage: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Subcategory Discount %</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded"
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="0"
+                    value={offerForm.subcategoryDiscountPercentage}
+                    onChange={(e) => setOfferForm({ ...offerForm, subcategoryDiscountPercentage: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Product Discount %</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded"
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="0"
+                    value={offerForm.productDiscountPercentage}
+                    onChange={(e) => setOfferForm({ ...offerForm, productDiscountPercentage: e.target.value })}
+                  />
+                </div>
+              </div>
+            )}
             <textarea className="w-full px-3 py-2 border rounded" placeholder="Description" value={offerForm.description} onChange={(e) => setOfferForm({ ...offerForm, description: e.target.value })} />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <MultiSelectPicker

@@ -1,4 +1,4 @@
-import { useParams, Link, useSearchParams } from "react-router-dom"
+import { useParams, Link, useSearchParams, useNavigate } from "react-router-dom"
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
@@ -276,6 +276,7 @@ const sanitizePhoneForTel = (phone = "") => String(phone).replace(/[^\d+]/g, "")
 
 export default function OrderTracking() {
   const { orderId } = useParams()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const confirmed = searchParams.get("confirmed") === "true"
   const { getOrderById } = useOrders()
@@ -314,8 +315,27 @@ export default function OrderTracking() {
     )
   }
 
+  const isMoGroceryPlanOrder = (rawOrder = null) => {
+    if (!rawOrder) return false
+
+    const note = String(rawOrder?.note || "").toLowerCase()
+    if (note.includes("[mogold plan]") || note.includes("plan subscription")) return true
+
+    if (rawOrder?.planSubscription?.planId || rawOrder?.planSubscription?.planName) {
+      return true
+    }
+
+    const items = Array.isArray(rawOrder?.items) ? rawOrder.items : []
+    return items.some((item) => {
+      const itemId = String(item?.itemId || "").toLowerCase()
+      const description = String(item?.description || "").toLowerCase()
+      return itemId.startsWith("plan-") || description.includes("plan subscription")
+    })
+  }
+
   const isAwaitingGroceryAdminAcceptance = (rawOrder = null) => {
     if (!isMoGroceryOrder(rawOrder)) return false
+    if (isMoGroceryPlanOrder(rawOrder)) return false
 
     const approvalStatus = String(rawOrder?.adminApproval?.status || "").toLowerCase()
     const normalizedStatus = String(rawOrder?.status || "").toLowerCase()
@@ -529,6 +549,7 @@ export default function OrderTracking() {
               restaurantLocation: restaurantCoords ? {
                 coordinates: restaurantCoords
               } : order.restaurantLocation,
+              planSubscription: apiOrder.planSubscription || null,
               deliveryPartnerId: apiOrder.deliveryPartnerId?._id || apiOrder.deliveryPartnerId || apiOrder.assignmentInfo?.deliveryPartnerId || null,
               assignmentInfo: apiOrder.assignmentInfo || null,
               deliveryState: apiOrder.deliveryState || null,
@@ -690,6 +711,7 @@ export default function OrderTracking() {
             estimatedDeliveryTime: Number(apiOrder.estimatedDeliveryTime || 0),
             preparationTime: Number(apiOrder.preparationTime || 0),
             adminApproval: apiOrder.adminApproval || null,
+            planSubscription: apiOrder.planSubscription || null,
             note: apiOrder.note || "",
             deliveryPartner: toValidDeliveryPartner(apiOrder.deliveryPartnerId),
             deliveryPartnerId: apiOrder.deliveryPartnerId?._id || apiOrder.deliveryPartnerId || apiOrder.assignmentInfo?.deliveryPartnerId || null,
@@ -1244,6 +1266,7 @@ export default function OrderTracking() {
           estimatedDeliveryTime: Number(apiOrder.estimatedDeliveryTime || 0),
           preparationTime: Number(apiOrder.preparationTime || 0),
           adminApproval: apiOrder.adminApproval || null,
+          planSubscription: apiOrder.planSubscription || null,
           note: apiOrder.note || "",
           deliveryPartner: toValidDeliveryPartner(apiOrder.deliveryPartnerId),
           deliveryPartnerId: apiOrder.deliveryPartnerId?._id || apiOrder.deliveryPartnerId || apiOrder.assignmentInfo?.deliveryPartnerId || null,
@@ -1296,6 +1319,12 @@ export default function OrderTracking() {
     order?.deliveryState?.status === "reached_pickup" ||
     order?.deliveryState?.currentPhase === "en_route_to_pickup" ||
     order?.deliveryState?.currentPhase === "at_pickup"
+  const isPlanSubscriptionOrder = isMoGroceryPlanOrder(order)
+  const purchasedPlanName = order?.planSubscription?.planName || order?.items?.[0]?.name || "MoGrocery Plan"
+  const purchasedPlanDurationDays = Number(order?.planSubscription?.durationDays || 0)
+  const purchasedPlanOfferCount = Array.isArray(order?.planSubscription?.selectedOfferIds)
+    ? order.planSubscription.selectedOfferIds.length
+    : 0
   const isPendingGroceryAdminAcceptance = isAwaitingGroceryAdminAcceptance(order)
 
   const statusConfig = {
@@ -1334,7 +1363,18 @@ export default function OrderTracking() {
     }
   }
 
-  const currentStatus = statusConfig[orderStatus] || statusConfig.placed
+  const planStatusConfig = {
+    title: orderStatus === "cancelled" ? "Plan purchase cancelled" : "Plan Purchased Successfully",
+    subtitle:
+      orderStatus === "cancelled"
+        ? "This plan purchase has been cancelled"
+        : "Your plan benefits are now active for this account",
+    color: orderStatus === "cancelled" ? "bg-red-600" : "bg-green-700"
+  }
+
+  const currentStatus = isPlanSubscriptionOrder
+    ? planStatusConfig
+    : (statusConfig[orderStatus] || statusConfig.placed)
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-[#0a0a0a]">
@@ -1360,7 +1400,7 @@ export default function OrderTracking() {
                 transition={{ delay: 0.9 }}
                 className="text-2xl font-bold text-gray-900 mt-6"
               >
-                Order Confirmed!
+                {isPlanSubscriptionOrder ? "Plan Purchased!" : "Order Confirmed!"}
               </motion.h1>
               <motion.p
                 initial={{ opacity: 0, y: 20 }}
@@ -1368,7 +1408,9 @@ export default function OrderTracking() {
                 transition={{ delay: 1.1 }}
                 className="text-gray-600 mt-2"
               >
-                Your order has been placed successfully
+                {isPlanSubscriptionOrder
+                  ? "Your plan has been activated successfully"
+                  : "Your order has been placed successfully"}
               </motion.p>
               <motion.div
                 initial={{ opacity: 0 }}
@@ -1428,13 +1470,13 @@ export default function OrderTracking() {
             transition={{ delay: 0.2 }}
           >
             <span className="text-sm">{currentStatus.subtitle}</span>
-            {orderStatus === 'preparing' && (
+            {!isPlanSubscriptionOrder && orderStatus === 'preparing' && (
               <>
                 <span className="w-1 h-1 rounded-full bg-white" />
                 <span className="text-sm text-green-200">On time</span>
               </>
             )}
-            {driverDistanceKm != null && (orderStatus === 'pickup' || order?.status === 'out_for_delivery') && (
+            {!isPlanSubscriptionOrder && driverDistanceKm != null && (orderStatus === 'pickup' || order?.status === 'out_for_delivery') && (
               <>
                 <span className="w-1 h-1 rounded-full bg-white" />
                 <span className="text-sm text-green-200">
@@ -1451,23 +1493,53 @@ export default function OrderTracking() {
               <RefreshCw className="w-4 h-4" />
             </motion.button>
           </motion.div>
-          <div className="mt-2 text-xs text-white/90 font-medium">
-            {canModifyOrder
-              ? `Edit/Cancel window: ${formatCountdown(modificationWindowSeconds)}`
-              : "Edit/Cancel window expired"}
-          </div>
+          {!isPlanSubscriptionOrder && (
+            <div className="mt-2 text-xs text-white/90 font-medium">
+              {canModifyOrder
+                ? `Edit/Cancel window: ${formatCountdown(modificationWindowSeconds)}`
+                : "Edit/Cancel window expired"}
+            </div>
+          )}
         </div>
       </motion.div>
 
       {/* Map Section */}
-      <DeliveryMap 
-        orderId={orderId} 
-        order={order}
-        isVisible={!showConfirmation && order !== null} 
-      />
+      {!isPlanSubscriptionOrder && (
+        <DeliveryMap
+          orderId={orderId}
+          order={order}
+          isVisible={!showConfirmation && order !== null}
+        />
+      )}
 
       {/* Scrollable Content */}
       <div className="max-w-4xl mx-auto px-4 md:px-6 lg:px-8 py-4 md:py-6 space-y-4 md:space-y-6 pb-24 md:pb-32">
+        {isPlanSubscriptionOrder ? (
+          <motion.div
+            className="bg-white rounded-xl p-5 shadow-sm"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <Check className="w-6 h-6 text-green-600" />
+              <p className="font-semibold text-gray-900">Plan activated for your account</p>
+            </div>
+            <p className="text-sm text-gray-600 mb-2">
+              {purchasedPlanName}
+            </p>
+            {purchasedPlanDurationDays > 0 && (
+              <p className="text-sm text-gray-600 mb-1">
+                Validity: {purchasedPlanDurationDays} day{purchasedPlanDurationDays === 1 ? "" : "s"}
+              </p>
+            )}
+            <p className="text-sm text-gray-600">
+              {purchasedPlanOfferCount > 0
+                ? `${purchasedPlanOfferCount} plan offer${purchasedPlanOfferCount === 1 ? "" : "s"} linked to this user and will apply on eligible MoGrocery orders.`
+                : "Plan benefits are linked to this user and will auto-apply on eligible MoGrocery orders."}
+            </p>
+          </motion.div>
+        ) : (
+          <>
         {/* Food Cooking Status - Show until delivery partner accepts pickup */}
         {(() => {
           // Check if delivery partner has accepted pickup
@@ -1632,6 +1704,8 @@ export default function OrderTracking() {
             subtitle=""
           />
         </motion.div>
+          </>
+        )}
 
         {/* Restaurant Section */}
         <motion.div 
@@ -1645,32 +1719,36 @@ export default function OrderTracking() {
               <span className="text-2xl">🍔</span>
             </div>
             <div className="flex-1">
-              <p className="font-semibold text-gray-900">{order.restaurant}</p>
+              <p className="font-semibold text-gray-900">{isPlanSubscriptionOrder ? purchasedPlanName : order.restaurant}</p>
               {order?.restaurantPhone ? (
                 <p className="text-xs text-gray-500">{order.restaurantPhone}</p>
               ) : null}
-              <p className="text-sm text-gray-500">{order.address?.city || 'Local Area'}</p>
+              <p className="text-sm text-gray-500">
+                {isPlanSubscriptionOrder ? "Plan purchase receipt" : (order.address?.city || 'Local Area')}
+              </p>
             </div>
-            <motion.button 
-              className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center"
-              whileTap={{ scale: 0.9 }}
-              onClick={() => {
-                const restaurantPhone =
-                  order?.restaurantId?.phone ||
-                  order?.restaurantId?.ownerPhone ||
-                  order?.restaurantId?.primaryContactNumber ||
-                  order?.restaurantPhone ||
-                  ""
-                const dialNumber = sanitizePhoneForTel(restaurantPhone)
-                if (dialNumber) {
-                  window.location.href = `tel:${dialNumber}`
-                } else {
-                  toast.error("Restaurant phone number not available")
-                }
-              }}
-            >
-              <Phone className="w-5 h-5 text-green-700" />
-            </motion.button>
+            {!isPlanSubscriptionOrder && (
+              <motion.button 
+                className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center"
+                whileTap={{ scale: 0.9 }}
+                onClick={() => {
+                  const restaurantPhone =
+                    order?.restaurantId?.phone ||
+                    order?.restaurantId?.ownerPhone ||
+                    order?.restaurantId?.primaryContactNumber ||
+                    order?.restaurantPhone ||
+                    ""
+                  const dialNumber = sanitizePhoneForTel(restaurantPhone)
+                  if (dialNumber) {
+                    window.location.href = `tel:${dialNumber}`
+                  } else {
+                    toast.error("Restaurant phone number not available")
+                  }
+                }}
+              >
+                <Phone className="w-5 h-5 text-green-700" />
+              </motion.button>
+            )}
           </div>
 
           {/* Order Items */}
@@ -1695,34 +1773,35 @@ export default function OrderTracking() {
           </div>
         </motion.div>
 
-        {/* Help Section */}
-        <motion.div 
-          className="bg-white rounded-xl shadow-sm overflow-hidden"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.8 }}
-        >
-          <SectionItem 
-            icon={Receipt}
-            title="Edit order"
-            subtitle={
-              canModifyOrder
-                ? `Available for ${formatCountdown(modificationWindowSeconds)}`
-                : "Edit window expired"
-            }
-            onClick={handleEditOrder}
-          />
-          <SectionItem 
-            icon={CircleSlash}
-            title="Cancel order"
-            subtitle={
-              canModifyOrder
-                ? `Available for ${formatCountdown(modificationWindowSeconds)}`
-                : "Cancel window expired"
-            }
-            onClick={handleCancelOrder}
-          />
-        </motion.div>
+        {!isPlanSubscriptionOrder && (
+          <motion.div 
+            className="bg-white rounded-xl shadow-sm overflow-hidden"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.8 }}
+          >
+            <SectionItem 
+              icon={Receipt}
+              title="Edit order"
+              subtitle={
+                canModifyOrder
+                  ? `Available for ${formatCountdown(modificationWindowSeconds)}`
+                  : "Edit window expired"
+              }
+              onClick={handleEditOrder}
+            />
+            <SectionItem 
+              icon={CircleSlash}
+              title="Cancel order"
+              subtitle={
+                canModifyOrder
+                  ? `Available for ${formatCountdown(modificationWindowSeconds)}`
+                  : "Cancel window expired"
+              }
+              onClick={handleCancelOrder}
+            />
+          </motion.div>
+        )}
 
       </div>
 
