@@ -871,9 +871,14 @@ export const adminAPI = {
     });
   },
 
-  // Get dashboard stats
-  getDashboardStats: () => {
-    return apiClient.get(API_ENDPOINTS.ADMIN.DASHBOARD_STATS);
+  // Get dashboard stats (platform-scoped)
+  getDashboardStats: (params = {}) => {
+    return apiClient.get(API_ENDPOINTS.ADMIN.DASHBOARD_STATS, {
+      params: {
+        ...params,
+        platform: params.platform || getAdminPlatform(),
+      },
+    });
   },
 
   // Get users
@@ -912,9 +917,14 @@ export const adminAPI = {
     return apiClient.get(API_ENDPOINTS.ADMIN.RESTAURANT_BY_ID.replace(':id', id));
   },
 
-  // Get restaurant analytics
-  getRestaurantAnalytics: (restaurantId) => {
-    return apiClient.get(API_ENDPOINTS.ADMIN.RESTAURANT_ANALYTICS.replace(':restaurantId', restaurantId));
+  // Get restaurant/store analytics (platform-scoped)
+  getRestaurantAnalytics: (restaurantId, params = {}) => {
+    return apiClient.get(API_ENDPOINTS.ADMIN.RESTAURANT_ANALYTICS.replace(':restaurantId', restaurantId), {
+      params: {
+        ...params,
+        platform: params.platform || getAdminPlatform(),
+      },
+    });
   },
 
   // Update restaurant status

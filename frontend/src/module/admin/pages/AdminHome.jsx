@@ -36,41 +36,31 @@ export default function AdminHome() {
   const [isLoading, setIsLoading] = useState(true)
   const [dashboardData, setDashboardData] = useState(null)
 
-  // Fetch dashboard stats on mount
+  // Fetch dashboard stats for active platform + filters
   useEffect(() => {
     const fetchDashboardStats = async () => {
       try {
         setIsLoading(true)
-        const response = await adminAPI.getDashboardStats()
+        const response = await adminAPI.getDashboardStats({
+          platform,
+          zone: selectedZone,
+          period: selectedPeriod,
+        })
         if (response.data?.success && response.data?.data) {
           setDashboardData(response.data.data)
-          console.log('✅ Dashboard stats fetched:', response.data.data)
-          console.log('💰 Commission:', response.data.data.commission)
-          console.log('💳 Platform Fee:', response.data.data.platformFee)
-          console.log('🚚 Delivery Fee:', response.data.data.deliveryFee)
-          console.log('🧾 GST:', response.data.data.gst)
-          console.log('💵 Total Admin Earnings:', response.data.data.totalAdminEarnings)
         } else {
-          console.error('❌ Invalid response format:', response.data)
+          setDashboardData(null)
         }
       } catch (error) {
-        console.error('❌ Error fetching dashboard stats:', error)
+        console.error("Error fetching dashboard stats:", error)
+        setDashboardData(null)
       } finally {
         setIsLoading(false)
       }
     }
 
     fetchDashboardStats()
-  }, [])
-
-  // Update loading state when filters change
-  useEffect(() => {
-    if (dashboardData) {
-      setIsLoading(true)
-      const timer = setTimeout(() => setIsLoading(false), 350)
-      return () => clearTimeout(timer)
-    }
-  }, [selectedZone, selectedPeriod])
+  }, [platform, selectedZone, selectedPeriod])
 
   // Get order stats from real data
   const getOrderStats = () => {
@@ -205,7 +195,7 @@ export default function AdminHome() {
             <MetricCard
               title="Commission earned"
               value={`₹${commissionTotal.toLocaleString("en-IN")}`}
-              helper="Restaurant commission"
+              helper={isGrocery ? "Store commission" : "Restaurant commission"}
               icon={<ArrowUpRight className="h-5 w-5 text-indigo-600" />}
               accent="bg-indigo-200/40"
             />

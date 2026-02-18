@@ -1,8 +1,15 @@
 import { useState, useEffect } from 'react'
 import { Search, TrendingUp, TrendingDown, DollarSign, ShoppingCart, XCircle, Star, Calendar, BarChart3, Users, Award, Package } from 'lucide-react'
 import { adminAPI } from '@/lib/api'
+import { usePlatform } from '../context/PlatformContext'
 
 export default function PointOfSale() {
+  const { platform } = usePlatform()
+  const isGrocery = platform === "mogrocery"
+  const entityLabel = isGrocery ? "Store" : "Restaurant"
+  const entityPluralLabel = isGrocery ? "Stores" : "Restaurants"
+  const platformLabel = isGrocery ? "MoGrocery" : "MoFood"
+
   const [restaurants, setRestaurants] = useState([])
   const [selectedRestaurant, setSelectedRestaurant] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
@@ -38,8 +45,12 @@ export default function PointOfSale() {
 
   // Fetch restaurants list
   useEffect(() => {
+    setSelectedRestaurant('')
+    setSearchQuery('')
+    setShowSearchResults(false)
+    setRestaurantData(null)
     fetchRestaurants()
-  }, [])
+  }, [platform])
 
   // Fetch restaurant analytics when restaurant is selected
   useEffect(() => {
@@ -72,19 +83,47 @@ export default function PointOfSale() {
         completionRate: 0
       })
     }
-  }, [selectedRestaurant])
+  }, [selectedRestaurant, platform])
+
+  const getEntityId = (entity) => {
+    return entity?.restaurantId || entity?.storeId || entity?.vendorId || entity?._id || ""
+  }
 
   const fetchRestaurants = async () => {
     try {
       setLoading(true)
-      const response = await adminAPI.getRestaurants({ limit: 1000, isActive: true })
-      if (response?.data?.success) {
-        setRestaurants(response.data.data?.restaurants || response.data.data || [])
+      if (isGrocery) {
+        const response = await adminAPI.getGroceryStores({ limit: 1000, isActive: true, platform: "mogrocery" })
+        if (response?.data?.success) {
+          const rawStores = response.data.data?.stores || response.data.data || []
+          const stores = Array.isArray(rawStores) ? rawStores : []
+          setRestaurants(stores.filter((store) => String(store?.platform || "mogrocery").toLowerCase() === "mogrocery"))
+        } else {
+          setRestaurants([])
+        }
+      } else {
+        const response = await adminAPI.getRestaurants({ limit: 1000, isActive: true, platform: "mofood" })
+        if (response?.data?.success) {
+          const rawRestaurants = response.data.data?.restaurants || response.data.data || []
+          const list = Array.isArray(rawRestaurants) ? rawRestaurants : []
+          setRestaurants(
+            list.filter((restaurant) => {
+              const p = String(restaurant?.platform || "mofood").toLowerCase()
+              return p === "mofood"
+            })
+          )
+        } else {
+          setRestaurants([])
+        }
       }
     } catch (error) {
       console.error('Error fetching restaurants:', error)
       // Fallback to dummy data for development
-      setRestaurants([
+      setRestaurants(isGrocery ? [
+        { _id: '1', name: 'Fresh Basket', storeId: 'STR001' },
+        { _id: '2', name: 'Daily Mart', storeId: 'STR002' },
+        { _id: '3', name: 'Green Grocer', storeId: 'STR003' }
+      ] : [
         { _id: '1', name: 'Spice Garden', restaurantId: 'RST001' },
         { _id: '2', name: 'Tandoor Express', restaurantId: 'RST002' },
         { _id: '3', name: 'Coastal Delights', restaurantId: 'RST003' }
@@ -104,10 +143,10 @@ export default function PointOfSale() {
         return
       }
       
-      console.log('Fetching analytics for restaurant:', restaurantId)
+      console.log('Fetching analytics for entity:', restaurantId, platform)
       
       // Fetch comprehensive restaurant analytics from backend
-      const analyticsResponse = await adminAPI.getRestaurantAnalytics(restaurantId)
+      const analyticsResponse = await adminAPI.getRestaurantAnalytics(restaurantId, { platform })
       
       console.log('Analytics response:', analyticsResponse)
       
@@ -186,7 +225,8 @@ export default function PointOfSale() {
         message: error?.message,
         response: error?.response?.data,
         status: error?.response?.status,
-        restaurantId: selectedRestaurant
+        entityId: selectedRestaurant,
+        platform,
       })
       
       // Show user-friendly error message
@@ -233,7 +273,7 @@ export default function PointOfSale() {
     const query = searchQuery.toLowerCase()
     return (
       restaurant.name?.toLowerCase().includes(query) ||
-      restaurant.restaurantId?.toLowerCase().includes(query) ||
+      getEntityId(restaurant)?.toLowerCase().includes(query) ||
       restaurant._id?.toLowerCase().includes(query)
     )
   })
@@ -243,7 +283,7 @@ export default function PointOfSale() {
     setSelectedRestaurant(restaurantId)
     const selected = restaurants.find(r => r._id === restaurantId)
     if (selected) {
-      setSearchQuery(`${selected.name} (${selected.restaurantId || selected._id})`)
+      setSearchQuery(`${selected.name} (${getEntityId(selected)})`)
     }
     setShowSearchResults(false)
   }
@@ -271,7 +311,7 @@ export default function PointOfSale() {
 
   const getSelectedRestaurantName = () => {
     const restaurant = restaurants.find(r => r._id === selectedRestaurant)
-    return restaurant?.name || 'Select Restaurant'
+    return restaurant?.name || `Select ${entityLabel}`
   }
 
   return (
@@ -280,8 +320,8 @@ export default function PointOfSale() {
         
         {/* Header Section */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-[#334257] mb-2">Restaurant POS Analytics & Benefits</h1>
-          <p className="text-sm text-[#8a94aa]">Track restaurant performance, profits, and commission details</p>
+          <h1 className="text-2xl font-bold text-[#334257] mb-2">{platformLabel} POS Analytics & Benefits</h1>
+          <p className="text-sm text-[#8a94aa]">Track {entityLabel.toLowerCase()} performance, profits, and commission details</p>
                 </div>
 
         {/* Restaurant Selection Card */}
@@ -289,7 +329,7 @@ export default function PointOfSale() {
           <div className="flex flex-col gap-4">
                 <div>
                   <label className="block text-sm font-medium text-[#334257] mb-2">
-                Search Restaurant by Name or ID <span className="text-red-500">*</span>
+                Search {entityLabel} by Name or ID <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 z-10" />
@@ -306,7 +346,7 @@ export default function PointOfSale() {
                     // Delay to allow click on results
                     setTimeout(() => setShowSearchResults(false), 200)
                   }}
-                  placeholder="Type restaurant name or ID to search..."
+                  placeholder={`Type ${entityLabel.toLowerCase()} name or ID to search...`}
                   className="w-full h-11 pl-10 pr-3 rounded-md border border-[#e3e6ef] bg-white text-sm text-[#4a5671] focus:outline-none focus:ring-1 focus:ring-[#006fbd]"
                 />
                 
@@ -322,7 +362,7 @@ export default function PointOfSale() {
                           <div className="flex items-center justify-between">
                           <div>
                             <p className="text-sm font-medium text-[#334257]">{restaurant.name}</p>
-                            <p className="text-xs text-[#8a94aa]">ID: {restaurant.restaurantId || restaurant._id}</p>
+                            <p className="text-xs text-[#8a94aa]">ID: {getEntityId(restaurant)}</p>
                           </div>
                           {selectedRestaurant === restaurant._id && (
                             <div className="w-2 h-2 bg-[#006fbd] rounded-full"></div>
@@ -336,7 +376,7 @@ export default function PointOfSale() {
                 {/* No Results Message */}
                 {showSearchResults && searchQuery.trim() && filteredRestaurants.length === 0 && (
                   <div className="absolute z-50 w-full mt-1 bg-white border border-[#e3e6ef] rounded-md shadow-lg p-4">
-                    <p className="text-sm text-[#8a94aa] text-center">No restaurants found matching "{searchQuery}"</p>
+                    <p className="text-sm text-[#8a94aa] text-center">No {entityPluralLabel.toLowerCase()} found matching "{searchQuery}"</p>
                   </div>
                 )}
                   </div>
@@ -359,15 +399,15 @@ export default function PointOfSale() {
                     setSelectedRestaurant(e.target.value)
                     const selected = restaurants.find(r => r._id === e.target.value)
                     if (selected) {
-                      setSearchQuery(`${selected.name} (${selected.restaurantId || selected._id})`)
+                      setSearchQuery(`${selected.name} (${getEntityId(selected)})`)
                     }
                   }}
                         className="w-full h-11 rounded-md border border-[#e3e6ef] bg-white px-3 pr-10 text-sm text-[#4a5671] focus:outline-none focus:ring-1 focus:ring-[#006fbd]"
                       >
-                  <option value="">Select Restaurant</option>
+                  <option value="">{`Select ${entityLabel}`}</option>
                   {restaurants.map(restaurant => (
                     <option key={restaurant._id} value={restaurant._id}>
-                      {restaurant.name} ({restaurant.restaurantId || restaurant._id})
+                      {restaurant.name} ({getEntityId(restaurant)})
                           </option>
                         ))}
                       </select>
@@ -388,7 +428,7 @@ export default function PointOfSale() {
                 <div>
                   <h2 className="text-xl font-bold text-[#334257] mb-1">{getSelectedRestaurantName()}</h2>
                   <p className="text-sm text-[#8a94aa]">
-                    Restaurant ID: {restaurants.find(r => r._id === selectedRestaurant)?.restaurantId || selectedRestaurant}
+                    {entityLabel} ID: {getEntityId(restaurants.find(r => r._id === selectedRestaurant)) || selectedRestaurant}
                   </p>
                 </div>
                 <div className={`px-4 py-2 rounded-full text-sm font-semibold ${
@@ -531,7 +571,7 @@ export default function PointOfSale() {
                     <span className="text-base font-semibold text-[#006fbd]">{formatCurrency(analyticsData.totalCommission)}</span>
                   </div>
                   <div className="flex justify-between items-center py-3 border-b border-[#e3e6ef]">
-                    <span className="text-sm text-[#8a94aa]">Restaurant Earning</span>
+                    <span className="text-sm text-[#8a94aa]">{entityLabel} Earning</span>
                     <span className="text-base font-semibold text-green-600">{formatCurrency(analyticsData.restaurantEarning)}</span>
                   </div>
                 </div>
@@ -586,13 +626,13 @@ export default function PointOfSale() {
                 </div>
               </div>
 
-              {/* Restaurant Details */}
+              {/* Entity Details */}
               <div className="bg-white rounded-lg shadow-sm border border-[#e3e6ef] p-6">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="p-2 bg-orange-100 rounded-lg">
                     <Package className="w-5 h-5 text-orange-600" />
                   </div>
-                  <h3 className="text-base font-semibold text-[#334257]">Restaurant Details</h3>
+                  <h3 className="text-base font-semibold text-[#334257]">{entityLabel} Details</h3>
                 </div>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
@@ -649,16 +689,16 @@ export default function PointOfSale() {
         ) : selectedRestaurant && loading ? (
           <div className="bg-white rounded-lg shadow-sm border border-[#e3e6ef] p-12 text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#006fbd] mx-auto mb-4"></div>
-            <p className="text-sm text-[#8a94aa]">Loading restaurant analytics...</p>
+            <p className="text-sm text-[#8a94aa]">{`Loading ${entityLabel.toLowerCase()} analytics...`}</p>
           </div>
         ) : (
           <div className="bg-white rounded-lg shadow-sm border border-[#e3e6ef] p-12 text-center">
             <div className="w-16 h-16 rounded-full border-2 border-dashed border-[#d1d7e6] flex items-center justify-center mx-auto mb-4">
               <Search className="w-8 h-8 text-[#8a94aa]" />
             </div>
-            <p className="text-base font-medium text-[#334257] mb-2">Select a Restaurant</p>
+            <p className="text-base font-medium text-[#334257] mb-2">{`Select a ${entityLabel}`}</p>
             <p className="text-sm text-[#8a94aa] max-w-md mx-auto">
-              Please select a restaurant from the dropdown above to view detailed analytics, profit information, and commission details.
+              {`Please select a ${entityLabel.toLowerCase()} from the dropdown above to view detailed analytics, profit information, and commission details.`}
             </p>
           </div>
         )}
