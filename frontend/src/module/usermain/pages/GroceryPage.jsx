@@ -93,10 +93,12 @@ import imgMedicine3D from "@/assets/icons/medicine_5488699.png";
 
 const GroceryPage = () => {
   const navigate = useNavigate();
-  const { getGroceryCartCount } = useCart();
+  const { getGroceryCartCount, addToCart, isInCart } = useCart();
   const { location: userLocation } = useUserLocation();
   const itemCount = getGroceryCartCount();
   const [activeTab, setActiveTab] = useState("All");
+  const [activeCategoryId, setActiveCategoryId] = useState("all");
+  const [activeSubcategoryId, setActiveSubcategoryId] = useState("all-subcategories");
 
   const [isScrolled, setIsScrolled] = useState(false);
   const [currentBanner, setCurrentBanner] = useState(0);
@@ -323,6 +325,59 @@ const GroceryPage = () => {
     [homepageCategories]
   );
 
+  const normalizedSidebarSubcategories = useMemo(() => {
+    const categoriesToUse =
+      activeCategoryId === "all"
+        ? homepageCategories
+        : homepageCategories.filter(
+            (category) => String(category?._id || category?.slug || category?.name) === String(activeCategoryId)
+          );
+
+    const map = new Map();
+    categoriesToUse.forEach((category) => {
+      const categoryKey = String(category?._id || category?.slug || category?.name || "");
+      const categoryName = category?.name || "Category";
+      const subcategories = Array.isArray(category?.subcategories) ? category.subcategories : [];
+      subcategories.forEach((subcategory) => {
+        if (!subcategory?._id) return;
+        map.set(String(subcategory._id), {
+          _id: String(subcategory._id),
+          name: subcategory?.name || "Subcategory",
+          image: subcategory?.image || "https://via.placeholder.com/120",
+          categoryId: categoryKey,
+          categoryName,
+        });
+      });
+    });
+
+    return Array.from(map.values());
+  }, [activeCategoryId, homepageCategories]);
+
+  const visibleLayoutProducts = useMemo(() => {
+    return allProducts.filter((product) => {
+      const productCategoryId = String(
+        product?.category?._id || product?.category?.id || product?.category || ""
+      );
+      const productSubcategoryIds = [
+        ...(Array.isArray(product?.subcategories) ? product.subcategories : []),
+        product?.subcategory,
+      ]
+        .map((subcategory) => String(subcategory?._id || subcategory?.id || subcategory || ""))
+        .filter(Boolean);
+
+      const categoryMatch =
+        activeCategoryId === "all" ||
+        productCategoryId === String(activeCategoryId) ||
+        String(product?.category?.name || "") === String(activeTab);
+
+      const subcategoryMatch =
+        activeSubcategoryId === "all-subcategories" ||
+        productSubcategoryIds.includes(String(activeSubcategoryId));
+
+      return categoryMatch && subcategoryMatch;
+    });
+  }, [activeCategoryId, activeSubcategoryId, activeTab, allProducts]);
+
   const bestsellers = [
     {
       title: "Vegetables & Fruits",
@@ -454,6 +509,10 @@ const GroceryPage = () => {
       }));
   }, [bestSellerItems, bestsellers, searchQuery]);
 
+  useEffect(() => {
+    setActiveSubcategoryId("all-subcategories");
+  }, [activeCategoryId]);
+
   const hasAnySearchMatch = useMemo(() => {
     if (!hasActiveSearch) return true;
     return (
@@ -550,6 +609,24 @@ const GroceryPage = () => {
     }
 
     navigate("/categories");
+  };
+
+  const getProductImage = (product) =>
+    Array.isArray(product?.images) && product.images[0]
+      ? product.images[0]
+      : product?.image || "https://via.placeholder.com/200";
+
+  const handleAddProductToCart = (product) => {
+    addToCart({
+      id: product?._id || product?.id,
+      name: product?.name || "Product",
+      price: Number(product?.sellingPrice || 0),
+      mrp: Number(product?.mrp || 0),
+      weight: product?.unit || "",
+      image: getProductImage(product),
+      restaurantId: "grocery-store",
+      restaurant: "MoGrocery",
+    });
   };
 
   return (
@@ -668,7 +745,10 @@ const GroceryPage = () => {
                       key={cat.id}
                       className={`flex flex-col items-center gap-1 cursor-pointer group px-2 py-1 rounded-xl transition-colors ${cat.name === activeTab ? "bg-white/55" : "hover:bg-white/35"
                         }`}
-                      onClick={() => setActiveTab(cat.name)}
+                      onClick={() => {
+                        setActiveTab(cat.name);
+                        setActiveCategoryId(cat.id);
+                      }}
                     >
                       <div className="relative transition-transform group-hover:scale-110">
                         {cat.name === activeTab && (
@@ -748,7 +828,10 @@ const GroceryPage = () => {
                     key={cat.id}
                     className={`flex flex-col items-center gap-1.5 cursor-pointer min-w-[68px] px-1 py-1 rounded-xl transition-colors ${activeTab === cat.name ? "bg-white/55" : "hover:bg-white/35"
                       }`}
-                    onClick={() => setActiveTab(cat.name)}
+                    onClick={() => {
+                      setActiveTab(cat.name);
+                      setActiveCategoryId(cat.id);
+                    }}
                   >
                     <div className="relative">
                       <img
@@ -771,16 +854,15 @@ const GroceryPage = () => {
         </div>
       </div>
 
-      {/* --- 2. DYNAMIC BANNER CAROUSEL --- */}
-      {!hasActiveSearch && (
+      {!hasActiveSearch && activeCategoryId === "all" && (
         <div className="relative z-0 -mt-1 animate-fade-in-up px-4 pt-2 pb-1 md:max-w-6xl mx-auto">
-        {/* Carousel Container */}
         <div className="relative w-full aspect-[1.8/1] md:aspect-[3/1] bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg border border-white/30 overflow-hidden">
           {bannerImages.map((bannerImg, index) => (
             <div
               key={`${bannerImg}-${index}`}
-              className={`absolute inset-0 transition-opacity duration-1000 ease-in-out flex items-center justify-center ${index === currentBanner ? "opacity-100 z-10" : "opacity-0 z-0"
-                }`}
+              className={`absolute inset-0 transition-opacity duration-1000 ease-in-out flex items-center justify-center ${
+                index === currentBanner ? "opacity-100 z-10" : "opacity-0 z-0"
+              }`}
             >
               <img
                 src={bannerImg}
@@ -790,13 +872,13 @@ const GroceryPage = () => {
             </div>
           ))}
 
-          {/* Carousel Indicators */}
           <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1.5 z-20">
             {bannerImages.map((_, i) => (
               <div
                 key={i}
-                className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === currentBanner ? "bg-white w-4" : "bg-white/50"
-                  }`}
+                className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
+                  i === currentBanner ? "bg-white w-4" : "bg-white/50"
+                }`}
               ></div>
             ))}
           </div>
@@ -804,8 +886,7 @@ const GroceryPage = () => {
         </div>
       )}
 
-      {/* --- 4. BESTSELLERS (Transparent) --- */}
-      {!hasActiveSearch && (
+      {!hasActiveSearch && activeCategoryId === "all" && (
         <div className="px-4 pt-4 pb-2 relative z-10 md:max-w-6xl md:mx-auto">
         <h3 className="text-lg font-[800] text-[#3e2723] mb-4">Bestsellers</h3>
 
@@ -816,7 +897,6 @@ const GroceryPage = () => {
               className="min-w-[160px] max-w-[160px] snap-center p-2.5 bg-[#eff3f6] rounded-[24px] flex flex-col relative group cursor-pointer active:scale-95 transition-transform shadow-[0_8px_10px_rgba(0,0,0,0.2)] border border-white/60"
               onClick={() => handleBestSellerClick(item)}
             >
-              {/* Image Grid */}
               <div className="w-full h-[148px] mb-3 bg-white rounded-[14px] flex items-center justify-center p-2 overflow-hidden relative shadow-sm">
                 <img
                   src={item.image}
@@ -825,7 +905,6 @@ const GroceryPage = () => {
                 />
               </div>
 
-              {/* Title */}
               <div className="mt-auto text-center flex items-end justify-center pb-1">
                 <p className="text-[15px] font-[800] text-[#1a1a1a] leading-[1.2] tracking-tight whitespace-pre-line">
                   {(item.name || "").replace("&", "&\n")}
@@ -834,6 +913,111 @@ const GroceryPage = () => {
             </div>
           ))}
         </div>
+        </div>
+      )}
+
+      {!hasActiveSearch && activeCategoryId !== "all" && (
+        <div className="px-2 sm:px-4 pb-24 pt-2 relative z-10 md:max-w-6xl md:mx-auto">
+          <div className="flex gap-2 sm:gap-3">
+            <aside className="w-[86px] sm:w-[100px] shrink-0 border-r border-slate-200 pr-2">
+              <div className="max-h-[calc(100vh-230px)] overflow-y-auto space-y-2 pb-3">
+                <button
+                  type="button"
+                  className={`w-full rounded-xl px-2 py-2 text-[11px] font-semibold text-center border ${
+                    activeSubcategoryId === "all-subcategories"
+                      ? "bg-[#fff4cc] border-[#facc15] text-slate-900"
+                      : "bg-white border-slate-200 text-slate-600"
+                  }`}
+                  onClick={() => setActiveSubcategoryId("all-subcategories")}
+                >
+                  All
+                </button>
+                {normalizedSidebarSubcategories.map((subcategory) => (
+                  <button
+                    type="button"
+                    key={subcategory._id}
+                    className={`w-full rounded-xl px-1.5 py-2 border flex flex-col items-center gap-1.5 ${
+                      activeSubcategoryId === subcategory._id
+                        ? "bg-[#fff4cc] border-[#facc15]"
+                        : "bg-white border-slate-200"
+                    }`}
+                    onClick={() => setActiveSubcategoryId(subcategory._id)}
+                  >
+                    <img
+                      src={subcategory.image}
+                      alt={subcategory.name}
+                      className="w-10 h-10 rounded-full object-cover bg-slate-50"
+                    />
+                    <span className="text-[10px] font-semibold text-slate-700 leading-tight line-clamp-2">
+                      {subcategory.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </aside>
+
+            <section className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-3 px-1">
+                <h3 className="text-base sm:text-lg font-[800] text-[#3e2723]">
+                  {activeSubcategoryId === "all-subcategories"
+                    ? activeTab
+                    : normalizedSidebarSubcategories.find((subcat) => subcat._id === activeSubcategoryId)?.name || "Products"}
+                </h3>
+                <span className="text-xs font-semibold text-slate-500">{visibleLayoutProducts.length} items</span>
+              </div>
+
+              {visibleLayoutProducts.length === 0 ? (
+                <p className="px-1 py-6 text-sm text-slate-500">No products found in this subcategory.</p>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3">
+                  {visibleLayoutProducts.map((product) => {
+                    const productId = product?._id || product?.id;
+                    const alreadyInCart = isInCart(productId);
+
+                    return (
+                      <div
+                        key={`layout-product-${productId}`}
+                        className="rounded-2xl border border-slate-200 bg-white shadow-sm p-2.5 sm:p-3"
+                      >
+                        <div className="w-full aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 flex items-center justify-center">
+                          <img
+                            src={getProductImage(product)}
+                            alt={product?.name || "Product"}
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                        <p className="text-[12px] sm:text-sm font-semibold text-slate-900 line-clamp-2 min-h-[34px]">
+                          {product?.name || "Product"}
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">
+                          {product?.unit || "Unit not specified"}
+                        </p>
+                        <div className="mt-2 flex items-end justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-bold text-slate-900">Rs {Number(product?.sellingPrice || 0)}</p>
+                            {Number(product?.mrp || 0) > Number(product?.sellingPrice || 0) && (
+                              <p className="text-[10px] text-slate-400 line-through">Rs {Number(product?.mrp || 0)}</p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            className={`h-7 sm:h-8 px-2.5 sm:px-3 rounded-lg text-[10px] sm:text-xs font-bold ${
+                              alreadyInCart
+                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                : "bg-emerald-600 text-white"
+                            }`}
+                            onClick={() => handleAddProductToCart(product)}
+                          >
+                            {alreadyInCart ? "ADDED" : "ADD"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </div>
         </div>
       )}
 
@@ -910,10 +1094,12 @@ const GroceryPage = () => {
         </div>
       )}
 
-      {homepageCategorySections.map((category, sectionIndex) => (
+      {!hasActiveSearch && activeCategoryId === "all" && homepageCategorySections.map((category, sectionIndex) => (
         <div
           key={category._id || category.slug || category.name}
-          className={`px-4 relative z-10 md:max-w-6xl md:mx-auto ${sectionIndex === homepageCategorySections.length - 1 ? "pb-24" : "pb-6"}`}
+          className={`px-4 relative z-10 md:max-w-6xl md:mx-auto ${
+            sectionIndex === homepageCategorySections.length - 1 ? "pb-24" : "pb-6"
+          }`}
         >
           <h3 className="text-lg font-[800] text-[#3e2723] mb-4">{category.name}</h3>
           {(!category.subcategories || category.subcategories.length === 0) && (
