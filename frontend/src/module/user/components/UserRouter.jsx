@@ -243,6 +243,14 @@ export default function UserRouter() {
           }
         />
         <Route
+          path="/profile/addresses"
+          element={
+            <ProtectedRoute requiredRole="user" loginPath="/user/auth/sign-in">
+              <Profile />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/profile/edit"
           element={
             <ProtectedRoute requiredRole="user" loginPath="/user/auth/sign-in">

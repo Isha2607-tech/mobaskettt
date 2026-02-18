@@ -229,7 +229,7 @@ const GroceryProfile = () => {
         <MenuItem
           icon={MapPin}
           title="Address book"
-          onClick={() => navigate("/profile/edit")}
+          onClick={() => navigate("/profile")}
         />
         <MenuItem
           icon={Bookmark}
