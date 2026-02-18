@@ -99,25 +99,7 @@ const GroceryCartPage = () => {
     };
   }, []);
 
-  if (groceryItems.length === 0) {
-    return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 pb-24">
-        <div className="w-48 h-48 bg-gray-50 rounded-full flex items-center justify-center mb-6">
-          <ShoppingBag size={80} className="text-gray-200" />
-        </div>
-        <h2 className="text-xl font-bold text-gray-900 mb-2">Your cart is empty</h2>
-        <p className="text-gray-500 text-center mb-8">
-          Looks like you haven&apos;t added anything to your cart yet.
-        </p>
-        <button
-          onClick={() => navigate("/grocery")}
-          className="bg-[#facd01] text-gray-900 px-8 py-3 rounded-xl font-bold hover:bg-[#e6bc01] transition-colors"
-        >
-          Start Shopping
-        </button>
-      </div>
-    );
-  }
+  const isCartEmpty = groceryItems.length === 0;
 
   const selectedAddress = useMemo(() => {
     const defaultAddress = getDefaultAddress?.();
@@ -289,6 +271,30 @@ const GroceryCartPage = () => {
       subtotal + summaryDeliveryFee + summaryPlatformFee + summaryTax - summaryDiscount,
   );
 
+  const handleClearCart = () => {
+    clearCart("mogrocery");
+  };
+
+  if (isCartEmpty) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 pb-24">
+        <div className="w-48 h-48 bg-gray-50 rounded-full flex items-center justify-center mb-6">
+          <ShoppingBag size={80} className="text-gray-200" />
+        </div>
+        <h2 className="text-xl font-bold text-gray-900 mb-2">Your cart is empty</h2>
+        <p className="text-gray-500 text-center mb-8">
+          Looks like you haven&apos;t added anything to your cart yet.
+        </p>
+        <button
+          onClick={() => navigate("/grocery")}
+          className="bg-[#facd01] text-gray-900 px-8 py-3 rounded-xl font-bold hover:bg-[#e6bc01] transition-colors"
+        >
+          Start Shopping
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#fefce8] pb-32">
       {/* Header */}
@@ -303,7 +309,8 @@ const GroceryCartPage = () => {
           <h1 className="text-lg font-bold text-gray-900">My Cart</h1>
         </div>
         <button
-          onClick={clearCart}
+          type="button"
+          onClick={handleClearCart}
           className="text-[10px] font-bold text-red-500 bg-red-50 px-2 py-1 rounded"
         >
           CLEAR CART
