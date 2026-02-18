@@ -14,6 +14,7 @@ import {
   AlertCircle,
   Truck,
   CalendarDays,
+  Sparkles,
 } from "lucide-react";
 import { useCart } from "../../user/context/CartContext";
 import { motion, AnimatePresence } from "framer-motion";
@@ -252,6 +253,7 @@ export default function GroceryCheckoutPage() {
   const planDiscountAmount = Number(calculatedPricing?.breakdown?.planDiscountAmount ?? 0);
   const appliedPlanName = String(calculatedPricing?.appliedPlanBenefits?.planName || "").trim();
   const hasPlanDiscount = planDiscountAmount > 0;
+  const isMoGoldPlanApplied = hasPlanDiscount && /mogold/i.test(appliedPlanName || "");
   const grandTotal = Number(
     calculatedPricing?.total ??
       subtotal + summaryDeliveryFee + summaryPlatformFee + summaryTax - Number(calculatedPricing?.discount ?? 0),
@@ -480,6 +482,43 @@ export default function GroceryCheckoutPage() {
           <h3 className="text-sm font-bold text-gray-900 mb-3 border-b border-gray-50 pb-2">
             Order Summary
           </h3>
+          {isMoGoldPlanApplied && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
+              className="relative overflow-hidden rounded-xl border border-yellow-200 bg-gradient-to-r from-yellow-50 via-amber-50 to-yellow-100 p-3 mb-3"
+            >
+              <motion.div
+                aria-hidden
+                className="absolute inset-y-0 -left-1/2 w-1/2 bg-white/35 blur-sm"
+                animate={{ x: ["0%", "280%"] }}
+                transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut", repeatDelay: 1.2 }}
+              />
+              <div className="relative flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <motion.div
+                    animate={{ rotate: [0, -10, 10, 0], scale: [1, 1.08, 1] }}
+                    transition={{ duration: 1.2, repeat: Infinity, repeatDelay: 1 }}
+                    className="w-8 h-8 rounded-full bg-yellow-400/90 text-yellow-900 flex items-center justify-center shadow-sm"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                  </motion.div>
+                  <div>
+                    <p className="text-[11px] font-black text-yellow-900 tracking-wide">MoGold Plan Applied</p>
+                    <p className="text-[10px] text-yellow-800">Exclusive plan savings unlocked</p>
+                  </div>
+                </div>
+                <motion.span
+                  animate={{ scale: [1, 1.07, 1] }}
+                  transition={{ duration: 0.9, repeat: Infinity, repeatDelay: 0.8 }}
+                  className="text-sm font-black text-green-700"
+                >
+                  -Rs {planDiscountAmount.toFixed(2)}
+                </motion.span>
+              </div>
+            </motion.div>
+          )}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600">Subtotal</span>
@@ -510,8 +549,8 @@ export default function GroceryCheckoutPage() {
               </span>
             </div>
             {hasPlanDiscount && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-green-700">
+              <div className="flex items-center justify-between text-sm rounded-lg bg-green-50 border border-green-100 px-2.5 py-2">
+                <span className="text-green-700 font-semibold">
                   {appliedPlanName ? `${appliedPlanName} discount` : "Plan discount"}
                 </span>
                 <span className="text-green-700 font-bold">
