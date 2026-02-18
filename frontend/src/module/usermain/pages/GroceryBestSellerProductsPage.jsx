@@ -167,7 +167,7 @@ export default function GroceryBestSellerProductsPage() {
       )}
 
       <AddToCartAnimation
-        bottomOffset={96}
+        bottomOffset={24}
         pillClassName="scale-105"
         linkTo="/grocery/cart"
         platform="mogrocery"
