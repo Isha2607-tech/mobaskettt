@@ -9,7 +9,9 @@ import {
   Clock,
   ShieldCheck,
   AlertCircle,
+  Sparkles,
 } from "lucide-react";
+import { motion } from "framer-motion";
 import { useCart } from "../../user/context/CartContext";
 import { adminAPI, orderAPI, restaurantAPI } from "@/lib/api";
 import { useProfile } from "../../user/context/ProfileContext";
@@ -31,6 +33,7 @@ const GroceryCartPage = () => {
   const [resolvedRestaurant, setResolvedRestaurant] = useState(null);
   const [calculatedPricing, setCalculatedPricing] = useState(null);
   const [loadingPricing, setLoadingPricing] = useState(false);
+  const [hasActivePlanSubscription, setHasActivePlanSubscription] = useState(false);
 
   // Filter grocery items (though CartContext usually keeps only one restaurant type)
   const groceryItems = cart.filter((item) => isGroceryItem(item));
@@ -52,6 +55,48 @@ const GroceryCartPage = () => {
     };
 
     fetchFeeSettings();
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchActivePlanStatus = async () => {
+      try {
+        const response = await orderAPI.getOrders({ page: 1, limit: 200 });
+        const orders =
+          response?.data?.data?.orders ||
+          response?.data?.orders ||
+          (Array.isArray(response?.data?.data) ? response.data.data : []);
+
+        const now = new Date();
+        const hasActive = (Array.isArray(orders) ? orders : []).some((order) => {
+          if (!order?.planSubscription?.planId) return false;
+          if (String(order?.payment?.status || "").toLowerCase() !== "completed") return false;
+          if (String(order?.status || "").toLowerCase() === "cancelled") return false;
+
+          const purchasedAt = order?.deliveredAt || order?.createdAt;
+          const durationDays = Number(order?.planSubscription?.durationDays || 0);
+          if (!purchasedAt || durationDays <= 0) return false;
+
+          const expiresAt = new Date(new Date(purchasedAt).getTime() + durationDays * 24 * 60 * 60 * 1000);
+          return expiresAt > now;
+        });
+
+        if (isMounted) {
+          setHasActivePlanSubscription(hasActive);
+        }
+      } catch {
+        if (isMounted) {
+          setHasActivePlanSubscription(false);
+        }
+      }
+    };
+
+    fetchActivePlanStatus();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   if (groceryItems.length === 0) {
@@ -237,6 +282,8 @@ const GroceryCartPage = () => {
   const planDiscountAmount = Number(calculatedPricing?.breakdown?.planDiscountAmount ?? 0);
   const appliedPlanName = String(calculatedPricing?.appliedPlanBenefits?.planName || "").trim();
   const hasPlanDiscount = planDiscountAmount > 0;
+  const isMoGoldPlanApplied = /mogold/i.test(appliedPlanName || "");
+  const shouldShowPlanAnimation = hasActivePlanSubscription || isMoGoldPlanApplied;
   const grandTotal = Number(
     calculatedPricing?.total ??
       subtotal + summaryDeliveryFee + summaryPlatformFee + summaryTax - summaryDiscount,
@@ -335,6 +382,43 @@ const GroceryCartPage = () => {
         {/* Bill Details */}
         <div className="bg-white mx-4 mt-4 rounded-xl p-4 shadow-sm border border-gray-50 mb-6">
           <h2 className="text-sm font-bold text-gray-900 mb-3">Bill details</h2>
+          {shouldShowPlanAnimation && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
+              className="relative overflow-hidden rounded-xl border border-yellow-200 bg-gradient-to-r from-yellow-50 via-amber-50 to-yellow-100 p-3 mb-3"
+            >
+              <motion.div
+                aria-hidden
+                className="absolute inset-y-0 -left-1/2 w-1/2 bg-white/35 blur-sm"
+                animate={{ x: ["0%", "280%"] }}
+                transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut", repeatDelay: 1.2 }}
+              />
+              <div className="relative flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <motion.div
+                    animate={{ rotate: [0, -10, 10, 0], scale: [1, 1.08, 1] }}
+                    transition={{ duration: 1.2, repeat: Infinity, repeatDelay: 1 }}
+                    className="w-8 h-8 rounded-full bg-yellow-400/90 text-yellow-900 flex items-center justify-center shadow-sm"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                  </motion.div>
+                  <div>
+                    <p className="text-[11px] font-black text-yellow-900 tracking-wide">MoGold Plan Applied</p>
+                    <p className="text-[10px] text-yellow-800">Exclusive plan savings unlocked</p>
+                  </div>
+                </div>
+                <motion.span
+                  animate={{ scale: [1, 1.07, 1] }}
+                  transition={{ duration: 0.9, repeat: Infinity, repeatDelay: 0.8 }}
+                  className="text-sm font-black text-green-700"
+                >
+                  {hasPlanDiscount ? `-Rs ${planDiscountAmount.toFixed(2)}` : "Benefits Active"}
+                </motion.span>
+              </div>
+            </motion.div>
+          )}
 
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">

@@ -121,13 +121,13 @@ export default function GrocerySubcategoryProductsPage() {
       )}
 
       {!loading && !error && products.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 px-4 py-4">
+        <div className="grid grid-cols-2 gap-3 px-4 py-4 sm:grid-cols-3 lg:grid-cols-4">
           {products.map((product) => (
             <div
               key={product._id}
-              className="rounded-2xl border border-slate-200 p-3 bg-white shadow-sm"
+              className="rounded-2xl border border-slate-200 p-3 bg-white shadow-sm flex flex-col"
             >
-              <div className="w-full aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 flex items-center justify-center">
+              <div className="w-full aspect-square bg-slate-50 rounded-xl overflow-hidden mb-3 flex items-center justify-center">
                 <img
                   src={Array.isArray(product.images) && product.images[0] ? product.images[0] : "https://via.placeholder.com/200"}
                   alt={product.name}
@@ -136,20 +136,20 @@ export default function GrocerySubcategoryProductsPage() {
               </div>
               <p className="text-sm font-semibold text-slate-900 line-clamp-2">{product.name}</p>
               <p className="text-xs text-slate-500 mt-1">{product.unit || "Unit not specified"}</p>
-              <div className="mt-2 flex items-center justify-between">
+              {isInCart(product?._id || product?.id) && (
+                <p className="mt-1 text-[11px] font-semibold text-emerald-700">Already added to cart</p>
+              )}
+              <div className="mt-3 flex items-end justify-between gap-2">
                 <div>
                   <p className="text-sm font-bold text-slate-900">Rs {product.sellingPrice ?? 0}</p>
                   {product.mrp && Number(product.mrp) > Number(product.sellingPrice) && (
                     <p className="text-xs text-slate-400 line-through">Rs {product.mrp}</p>
                   )}
                 </div>
-                {isInCart(product?._id || product?.id) && (
-                  <p className="text-[11px] font-semibold text-emerald-700">Already added to cart</p>
-                )}
                 <button
                   type="button"
                   onClick={(event) => handleAddToCart(product, event)}
-                  className={`h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1 ${
+                  className={`h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1 shrink-0 ${
                     isInCart(product?._id || product?.id)
                       ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
                       : "bg-emerald-600 text-white"
