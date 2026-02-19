@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   MapPin,
   CreditCard,
+  Wallet,
   Clock,
   ShoppingBag,
   Home,
@@ -21,7 +22,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useProfile } from "../../user/context/ProfileContext";
 import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
 import { useZone } from "../../user/hooks/useZone";
-import { adminAPI, orderAPI, restaurantAPI } from "@/lib/api";
+import { adminAPI, orderAPI, restaurantAPI, userAPI } from "@/lib/api";
 import { initRazorpayPayment } from "@/lib/utils/razorpay";
 import { toast } from "sonner";
 
@@ -34,6 +35,8 @@ export default function GroceryCheckoutPage() {
 
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("card");
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [walletLoading, setWalletLoading] = useState(false);
   const [deliveryOption, setDeliveryOption] = useState("now");
   const [scheduledDate, setScheduledDate] = useState(new Date());
   const [scheduledTime, setScheduledTime] = useState("");
@@ -313,6 +316,29 @@ export default function GroceryCheckoutPage() {
     calculatedPricing?.total ??
       subtotal + summaryDeliveryFee + summaryPlatformFee + summaryTax - Number(calculatedPricing?.discount ?? 0),
   );
+  const hasSufficientWalletBalance = walletBalance >= grandTotal;
+
+  useEffect(() => {
+    const fetchWalletBalance = async () => {
+      try {
+        setWalletLoading(true);
+        const response = await userAPI.getWallet();
+        const balance =
+          response?.data?.data?.wallet?.balance ??
+          response?.data?.wallet?.balance ??
+          response?.data?.data?.balance ??
+          0;
+        setWalletBalance(Number(balance || 0));
+      } catch (error) {
+        console.error("Failed to fetch wallet balance:", error);
+        setWalletBalance(0);
+      } finally {
+        setWalletLoading(false);
+      }
+    };
+
+    fetchWalletBalance();
+  }, []);
 
   const handlePlaceOrder = async () => {
     if (isPlacingOrder) return;
@@ -327,6 +353,16 @@ export default function GroceryCheckoutPage() {
     if (deliveryOption === "schedule" && !scheduledTime) {
       toast.error("Please select a delivery time slot.");
       return;
+    }
+    if (paymentMethod === "wallet") {
+      if (walletLoading) {
+        toast.info("Checking wallet balance. Please wait.");
+        return;
+      }
+      if (!hasSufficientWalletBalance) {
+        toast.error("Insufficient wallet balance. Add money or choose another payment method.");
+        return;
+      }
     }
 
     setIsPlacingOrder(true);
@@ -380,7 +416,12 @@ export default function GroceryCheckoutPage() {
 
       const scheduledFor = computeScheduledForISO();
 
-      const backendPaymentMethod = paymentMethod === "cash" ? "cash" : "razorpay";
+      const backendPaymentMethod =
+        paymentMethod === "cash"
+          ? "cash"
+          : paymentMethod === "wallet"
+            ? "wallet"
+            : "razorpay";
 
       const orderPayload = {
         items,
@@ -402,8 +443,11 @@ export default function GroceryCheckoutPage() {
       const { order, razorpay } = orderResponse?.data?.data || {};
       const orderIdentifier = order?.orderId || order?.id;
 
-      if (backendPaymentMethod === "cash") {
+      if (backendPaymentMethod === "cash" || backendPaymentMethod === "wallet") {
         clearCart();
+        if (backendPaymentMethod === "wallet") {
+          setWalletBalance((prev) => Math.max(0, prev - Number(calculatedPricing?.total || 0)));
+        }
         toast.success("Order placed successfully.");
         navigate(`/orders/${orderIdentifier}?confirmed=true`);
         return;
@@ -857,6 +901,41 @@ export default function GroceryCheckoutPage() {
               )}
             </button>
             <button
+              onClick={() => setPaymentMethod("wallet")}
+              className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all ${paymentMethod === "wallet"
+                ? "border-[#facd01] bg-yellow-50/50"
+                : "border-gray-100 bg-white"
+                }`}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className={`p-2 rounded-lg ${paymentMethod === "wallet" ? "bg-[#facd01] text-gray-900" : "bg-gray-100 text-gray-400"}`}
+                >
+                  <Wallet className="w-5 h-5" />
+                </div>
+                <div className="text-left">
+                  <span
+                    className={`block text-sm font-bold ${paymentMethod === "wallet" ? "text-gray-900" : "text-gray-500"}`}
+                  >
+                    MoBasket Wallet
+                  </span>
+                  <span className="block text-xs text-gray-500">
+                    {walletLoading
+                      ? "Checking balance..."
+                      : `Available: Rs ${walletBalance.toFixed(2)}`}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {!walletLoading && !hasSufficientWalletBalance && (
+                  <span className="text-[11px] font-semibold text-red-500">Low balance</span>
+                )}
+                {paymentMethod === "wallet" && (
+                  <div className="w-4 h-4 rounded-full bg-[#facd01] border-4 border-white shadow-sm ring-1 ring-[#facd01]"></div>
+                )}
+              </div>
+            </button>
+            <button
               onClick={() => setPaymentMethod("cash")}
               className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all ${paymentMethod === "cash"
                 ? "border-[#facd01] bg-yellow-50/50"
@@ -888,12 +967,14 @@ export default function GroceryCheckoutPage() {
         <button
           className="w-full bg-[#facd01] hover:bg-[#e6bc01] text-gray-900 font-black py-4 rounded-2xl text-base shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"
           onClick={handlePlaceOrder}
-          disabled={isPlacingOrder || groceryItems.length === 0}
+          disabled={isPlacingOrder || groceryItems.length === 0 || (paymentMethod === "wallet" && !walletLoading && !hasSufficientWalletBalance)}
         >
           {isPlacingOrder
             ? "Processing..."
             : paymentMethod === "cash"
               ? "Place Order"
+              : paymentMethod === "wallet"
+                ? "Pay via Wallet"
               : "Proceed to Payment"}
           <ChevronRight
             size={20}

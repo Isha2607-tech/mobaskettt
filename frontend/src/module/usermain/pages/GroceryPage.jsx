@@ -1205,12 +1205,12 @@ const GroceryPage = () => {
         <div className="px-4 pt-3 pb-24 relative z-10 md:max-w-6xl md:mx-auto animate-fade-in-up">
           <div className="h-[140px] md:h-[185px] rounded-2xl bg-slate-200 shimmer-bg mb-4" />
           <div className="h-5 w-36 rounded bg-slate-200 shimmer-bg mb-3" />
-          <div className="grid grid-cols-2 gap-3 mb-5">
+          <div className="grid grid-cols-2 gap-2.5 mb-5">
             {Array.from({ length: 6 }).map((_, idx) => (
               <div key={`best-skeleton-${idx}`} className="rounded-[22px] border border-[#d9dee5] bg-[#e9edf2] px-3 py-3.5">
-                <div className="relative grid grid-cols-2 gap-1.5 mb-2.5">
+                <div className="relative grid grid-cols-2 gap-1 mb-2">
                   {Array.from({ length: 4 }).map((__, innerIdx) => (
-                    <div key={`best-inner-${idx}-${innerIdx}`} className="h-14 rounded-xl bg-slate-200 shimmer-bg" />
+                    <div key={`best-inner-${idx}-${innerIdx}`} className="aspect-square rounded-xl bg-slate-200 shimmer-bg" />
                   ))}
                   <div className="absolute left-1/2 -translate-x-1/2 bottom-1 h-8 w-8 rounded-full bg-white shadow-sm border border-slate-200 shimmer-bg" />
                 </div>
@@ -1273,7 +1273,7 @@ const GroceryPage = () => {
         <div className="px-4 pt-4 pb-2 relative z-10 md:max-w-6xl md:mx-auto">
           <h3 className="text-lg font-[800] text-[#3e2723] mb-4">Bestsellers</h3>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2.5">
             {visibleBestSellers.map((item, idx) => {
               const cardImages = Array.from({ length: 4 }).map(
                 (_, imageIndex) => item.previewImages?.[imageIndex] || item.image
@@ -1286,13 +1286,13 @@ const GroceryPage = () => {
                   className="px-3 py-2.5 bg-[#e9edf2] rounded-[22px] border border-[#d9dee5] shadow-[0_4px_12px_rgba(15,23,42,0.08)] text-left active:scale-95 transition-transform"
                   onClick={() => handleBestSellerClick(item)}
                 >
-                  <div className="relative grid grid-cols-2 gap-1.5 mb-2.5">
+                  <div className="relative grid grid-cols-2 gap-1 mb-2">
                     {cardImages.map((imageSrc, imageIdx) => (
                       <div
                         key={`${item.id}-${imageIdx}`}
-                        className="h-14 rounded-xl bg-white border border-[#eceff3] overflow-hidden flex items-center justify-center p-0.5"
+                        className="aspect-square rounded-xl bg-white border border-[#eceff3] overflow-hidden flex items-center justify-center p-0.5"
                       >
-                        <img src={imageSrc} alt={item.name} className="w-full h-full object-contain scale-125" />
+                        <img src={imageSrc} alt={item.name} className="w-full h-full object-contain scale-115" />
                       </div>
                     ))}
                     {item.countLabel ? (
@@ -1301,7 +1301,7 @@ const GroceryPage = () => {
                       </div>
                     ) : null}
                   </div>
-                  <p className="text-[15px] font-[800] text-[#262a33] leading-[1.08] text-center line-clamp-2 min-h-[28px]">
+                  <p className="text-[15px] font-[800] text-[#262a33] leading-[1.08] text-center line-clamp-2 min-h-[24px]">
                     {item.name}
                   </p>
                 </button>
