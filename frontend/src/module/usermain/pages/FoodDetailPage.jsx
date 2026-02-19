@@ -168,7 +168,6 @@ export default function FoodDetailPage() {
       text: `Check this on MoBasket: ${product.name}`,
       url,
     };
-    const fallbackText = `${payload.text} ${url}`;
 
     try {
       if (navigator.share) {
@@ -176,22 +175,13 @@ export default function FoodDetailPage() {
         return;
       }
 
-      const encoded = encodeURIComponent(fallbackText);
-      window.open(`https://wa.me/?text=${encoded}`, "_blank", "noopener,noreferrer");
-      toast.success("Opening share options");
-      return;
-    } catch (error) {
-      console.error("Share failed:", error);
-    }
-
-    try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(url);
         toast.success("Product link copied");
         return;
       }
-    } catch {
-      // Continue to error toast
+    } catch (error) {
+      console.error("Share failed:", error);
     }
 
     toast.error("Unable to share right now");
