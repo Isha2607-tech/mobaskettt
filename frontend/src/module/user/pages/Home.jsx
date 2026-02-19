@@ -292,25 +292,45 @@ export default function Home() {
   const query = searchParams.get("q") || "";
   const [heroSearch, setHeroSearch] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const speechRecognitionRef = useRef(null);
 
   const startListening = () => {
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.lang = 'en-IN';
-
-      recognition.onstart = () => setIsListening(true);
-      recognition.onend = () => setIsListening(false);
-
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        setHeroSearch(transcript);
-      };
-
-      recognition.start();
-    } else {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
       alert("Voice search is not supported in this browser.");
+      return;
+    }
+
+    try {
+      if (!speechRecognitionRef.current) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = "en-IN";
+
+        recognition.onstart = () => setIsListening(true);
+        recognition.onend = () => setIsListening(false);
+        recognition.onresult = (event) => {
+          const transcript = event?.results?.[0]?.[0]?.transcript?.trim() || "";
+          if (transcript) {
+            setHeroSearch(transcript);
+          }
+        };
+        recognition.onerror = () => {
+          setIsListening(false);
+        };
+
+        speechRecognitionRef.current = recognition;
+      }
+
+      if (isListening) {
+        return;
+      }
+
+      speechRecognitionRef.current.start();
+    } catch (error) {
+      setIsListening(false);
+      alert(error?.message || "Unable to start voice search. Please try again.");
     }
   };
   const { openSearch, closeSearch, searchValue, setSearchValue } =

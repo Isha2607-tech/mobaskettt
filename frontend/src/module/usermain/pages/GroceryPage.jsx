@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Search,
   ArrowLeft,
@@ -110,26 +110,46 @@ const GroceryPage = () => {
   // Search & Voice Logic
   const [searchQuery, setSearchQuery] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const speechRecognitionRef = useRef(null);
   const hasActiveSearch = searchQuery.trim().length > 0;
 
   const startListening = () => {
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.lang = 'en-IN'; // Better for Indian context
-
-      recognition.onstart = () => setIsListening(true);
-      recognition.onend = () => setIsListening(false);
-
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        setSearchQuery(transcript);
-      };
-
-      recognition.start();
-    } else {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
       alert("Voice search is not supported in this browser.");
+      return;
+    }
+
+    try {
+      if (!speechRecognitionRef.current) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = "en-IN";
+
+        recognition.onstart = () => setIsListening(true);
+        recognition.onend = () => setIsListening(false);
+        recognition.onresult = (event) => {
+          const transcript = event?.results?.[0]?.[0]?.transcript?.trim() || "";
+          if (transcript) {
+            setSearchQuery(transcript);
+          }
+        };
+        recognition.onerror = () => {
+          setIsListening(false);
+        };
+
+        speechRecognitionRef.current = recognition;
+      }
+
+      if (isListening) {
+        return;
+      }
+
+      speechRecognitionRef.current.start();
+    } catch (error) {
+      setIsListening(false);
+      alert(error?.message || "Unable to start voice search. Please try again.");
     }
   };
 
@@ -2049,5 +2069,6 @@ const GroceryPage = () => {
 };
 
 export default GroceryPage;
+
 
 

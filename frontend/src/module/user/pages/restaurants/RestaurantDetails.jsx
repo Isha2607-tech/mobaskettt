@@ -1412,6 +1412,18 @@ export default function RestaurantDetails() {
   };
 
   // Handle share restaurant
+  const openDirectShare = (shareText) => {
+    try {
+      const encoded = encodeURIComponent(shareText);
+      const whatsappUrl = `https://wa.me/?text=${encoded}`;
+      window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+      toast.success("Opening share options");
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const handleShareRestaurant = async () => {
     const companyName = await getCompanyNameAsync();
     const restaurantSlug = restaurant?.slug || slug || "";
@@ -1434,13 +1446,17 @@ export default function RestaurantDetails() {
       } catch (error) {
         // User cancelled or error occurred
         if (error.name !== "AbortError") {
-          // Fallback to copy to clipboard
-          await copyToClipboard(shareUrl);
+          // Fallback to direct app sharing first, then copy
+          if (!openDirectShare(shareText)) {
+            await copyToClipboard(shareUrl);
+          }
         }
       }
     } else {
-      // Fallback to copy to clipboard
-      await copyToClipboard(shareUrl);
+      // Fallback to direct app sharing first, then copy
+      if (!openDirectShare(shareText)) {
+        await copyToClipboard(shareUrl);
+      }
     }
   };
 
@@ -1467,13 +1483,17 @@ export default function RestaurantDetails() {
       } catch (error) {
         // User cancelled or error occurred
         if (error.name !== "AbortError") {
-          // Fallback to copy to clipboard
-          await copyToClipboard(shareUrl);
+          // Fallback to direct app sharing first, then copy
+          if (!openDirectShare(shareText)) {
+            await copyToClipboard(shareUrl);
+          }
         }
       }
     } else {
-      // Fallback to copy to clipboard
-      await copyToClipboard(shareUrl);
+      // Fallback to direct app sharing first, then copy
+      if (!openDirectShare(shareText)) {
+        await copyToClipboard(shareUrl);
+      }
     }
   };
 
@@ -1504,6 +1524,29 @@ export default function RestaurantDetails() {
   const handleItemClick = (item) => {
     setSelectedItem(item);
     setShowItemDetail(true);
+  };
+
+  const getItemImages = (item) => {
+    const images = [];
+    if (typeof item?.image === "string" && item.image.trim()) {
+      images.push(item.image.trim());
+    }
+
+    if (Array.isArray(item?.images)) {
+      item.images.forEach((img) => {
+        const candidate =
+          typeof img === "string"
+            ? img
+            : typeof img?.url === "string"
+              ? img.url
+              : "";
+        if (candidate && candidate.trim()) {
+          images.push(candidate.trim());
+        }
+      });
+    }
+
+    return Array.from(new Set(images));
   };
 
   const getItemDietType = (item) => {
@@ -2178,19 +2221,41 @@ export default function RestaurantDetails() {
 
                                   {/* Right Side - Image and Add Button */}
                                   <div className="relative w-32 h-32 flex-shrink-0">
-                                    {item.image ? (
-                                      <img
-                                        src={item.image}
-                                        alt={item.name}
-                                        className="w-full h-full object-cover rounded-2xl shadow-sm"
-                                      />
-                                    ) : (
-                                      <div className="w-full h-full bg-gray-200 dark:bg-gray-700 rounded-2xl flex items-center justify-center">
-                                        <span className="text-xs text-gray-400">
-                                          No image
-                                        </span>
-                                      </div>
-                                    )}
+                                    {(() => {
+                                      const itemImages = getItemImages(item);
+                                      if (itemImages.length > 1) {
+                                        return (
+                                          <div className="grid grid-cols-2 gap-1 w-full h-full rounded-2xl overflow-hidden shadow-sm bg-white">
+                                            {itemImages.slice(0, 2).map((img, idx) => (
+                                              <img
+                                                key={`${item.id || item._id || item.name}-img-${idx}`}
+                                                src={img}
+                                                alt={`${item.name} ${idx + 1}`}
+                                                className="w-full h-full object-cover"
+                                              />
+                                            ))}
+                                          </div>
+                                        );
+                                      }
+
+                                      if (itemImages.length === 1) {
+                                        return (
+                                          <img
+                                            src={itemImages[0]}
+                                            alt={item.name}
+                                            className="w-full h-full object-cover rounded-2xl shadow-sm"
+                                          />
+                                        );
+                                      }
+
+                                      return (
+                                        <div className="w-full h-full bg-gray-200 dark:bg-gray-700 rounded-2xl flex items-center justify-center">
+                                          <span className="text-xs text-gray-400">
+                                            No image
+                                          </span>
+                                        </div>
+                                      );
+                                    })()}
                                     {quantity > 0 ? (
                                       <motion.div
                                         initial={{ opacity: 0, scale: 0.8 }}
@@ -2479,9 +2544,11 @@ export default function RestaurantDetails() {
                                                     />
                                                   </button>
                                                   <button
-                                                    onClick={(e) =>
-                                                      e.stopPropagation()
-                                                    }
+                                                    onClick={(e) => {
+                                                      e.preventDefault();
+                                                      e.stopPropagation();
+                                                      handleShareClick(item);
+                                                    }}
                                                     className="p-1.5 border border-gray-300 dark:border-gray-700 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                                                   >
                                                     <Share2 size={18} />
@@ -2491,19 +2558,41 @@ export default function RestaurantDetails() {
 
                                               {/* Right Side - Image and Add Button */}
                                               <div className="relative w-32 h-32 flex-shrink-0">
-                                                {item.image ? (
-                                                  <img
-                                                    src={item.image}
-                                                    alt={item.name}
-                                                    className="w-full h-full object-cover rounded-2xl shadow-sm"
-                                                  />
-                                                ) : (
-                                                  <div className="w-full h-full bg-gray-200 dark:bg-gray-700 rounded-2xl flex items-center justify-center">
-                                                    <span className="text-xs text-gray-400">
-                                                      No image
-                                                    </span>
-                                                  </div>
-                                                )}
+                                                {(() => {
+                                                  const itemImages = getItemImages(item);
+                                                  if (itemImages.length > 1) {
+                                                    return (
+                                                      <div className="grid grid-cols-2 gap-1 w-full h-full rounded-2xl overflow-hidden shadow-sm bg-white">
+                                                        {itemImages.slice(0, 2).map((img, idx) => (
+                                                          <img
+                                                            key={`${item.id || item._id || item.name}-sheet-img-${idx}`}
+                                                            src={img}
+                                                            alt={`${item.name} ${idx + 1}`}
+                                                            className="w-full h-full object-cover"
+                                                          />
+                                                        ))}
+                                                      </div>
+                                                    );
+                                                  }
+
+                                                  if (itemImages.length === 1) {
+                                                    return (
+                                                      <img
+                                                        src={itemImages[0]}
+                                                        alt={item.name}
+                                                        className="w-full h-full object-cover rounded-2xl shadow-sm"
+                                                      />
+                                                    );
+                                                  }
+
+                                                  return (
+                                                    <div className="w-full h-full bg-gray-200 dark:bg-gray-700 rounded-2xl flex items-center justify-center">
+                                                      <span className="text-xs text-gray-400">
+                                                        No image
+                                                      </span>
+                                                    </div>
+                                                  );
+                                                })()}
                                                 {quantity > 0 ? (
                                                   <motion.div
                                                     initial={{
@@ -3282,19 +3371,41 @@ export default function RestaurantDetails() {
 
                   {/* Image Section */}
                   <div className="relative w-full h-64 overflow-hidden rounded-t-3xl">
-                    {selectedItem.image ? (
-                      <img
-                        src={selectedItem.image}
-                        alt={selectedItem.name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
-                        <span className="text-sm text-gray-400">
-                          No image available
-                        </span>
-                      </div>
-                    )}
+                    {(() => {
+                      const selectedImages = getItemImages(selectedItem);
+                      if (selectedImages.length > 1) {
+                        return (
+                          <div className="grid grid-cols-2 gap-1 w-full h-full bg-white">
+                            {selectedImages.slice(0, 2).map((img, idx) => (
+                              <img
+                                key={`${selectedItem.id || selectedItem._id || selectedItem.name}-modal-img-${idx}`}
+                                src={img}
+                                alt={`${selectedItem.name} ${idx + 1}`}
+                                className="w-full h-full object-cover"
+                              />
+                            ))}
+                          </div>
+                        );
+                      }
+
+                      if (selectedImages.length === 1) {
+                        return (
+                          <img
+                            src={selectedImages[0]}
+                            alt={selectedItem.name}
+                            className="w-full h-full object-cover"
+                          />
+                        );
+                      }
+
+                      return (
+                        <div className="w-full h-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                          <span className="text-sm text-gray-400">
+                            No image available
+                          </span>
+                        </div>
+                      );
+                    })()}
                     {/* Bookmark and Share Icons Overlay */}
                     <div className="absolute bottom-4 right-4 flex items-center gap-3">
                       <button
