@@ -994,6 +994,21 @@ export default function DeliveryHome() {
   }
 
   const weeklyOrders = calculateWeeklyOrders()
+  const totalCashLimit = Number.isFinite(Number(walletState?.totalCashLimit))
+    ? Number(walletState.totalCashLimit)
+    : 750
+  const cashInHand = Math.max(0, Number(walletState?.cashInHand) || 0)
+  const availableCashLimit =
+    Number.isFinite(Number(walletState?.availableCashLimit)) && Number(walletState?.availableCashLimit) >= 0
+      ? Number(walletState.availableCashLimit)
+      : Math.max(0, totalCashLimit - cashInHand)
+  const pocketBalanceForEligibility = Number.isFinite(Number(walletState?.pocketBalance))
+    ? Number(walletState.pocketBalance)
+    : (Number(walletState?.totalBalance) || 0)
+  const orderEligibilityMinBalance = totalCashLimit > 0 ? totalCashLimit : 750
+  const isPocketBalanceTooLowForOrders = pocketBalanceForEligibility <= orderEligibilityMinBalance
+  const isCashLimitReached = totalCashLimit > 0 && availableCashLimit <= 0
+  const isMapLockedForOrderEligibility = isCashLimitReached || isPocketBalanceTooLowForOrders
 
   // State for active earning addon
   const [activeEarningAddon, setActiveEarningAddon] = useState(null)
@@ -1109,9 +1124,13 @@ export default function DeliveryHome() {
   const earningsGuaranteeTarget = activeEarningAddon?.earningAmount || 0
   const earningsGuaranteeOrdersTarget = activeEarningAddon?.requiredOrders || 0
   // Only show current orders/earnings if there's an active offer
-  const earningsGuaranteeCurrentOrders = activeEarningAddon ? (activeEarningAddon.currentOrders ?? weeklyOrders) : 0
+  const earningsGuaranteeCurrentOrders = activeEarningAddon
+    ? (activeEarningAddon.currentOrders ?? weeklyOrders)
+    : weeklyOrders
   // Show only bonus earnings from the offer, not total weekly earnings
-  const earningsGuaranteeCurrentEarnings = activeEarningAddon ? calculateBonusEarnings() : 0
+  const earningsGuaranteeCurrentEarnings = activeEarningAddon
+    ? calculateBonusEarnings()
+    : weeklyEarnings
   const ordersProgress = earningsGuaranteeOrdersTarget > 0 
     ? Math.min(earningsGuaranteeCurrentOrders / earningsGuaranteeOrdersTarget, 1) 
     : 0
@@ -1138,6 +1157,7 @@ export default function DeliveryHome() {
   const weekEndDate = getWeekEndDate()
   // Offer is live if it's valid (started) or upcoming (not started yet but active)
   const isOfferLive = activeEarningAddon?.isValid || activeEarningAddon?.isUpcoming || false
+  const hasActiveOffer = !!activeEarningAddon
 
   // Calculate total hours worked today (prefer store, then calculated; default to 0)
   const calculatedHours = bookedGigs
@@ -8993,9 +9013,42 @@ export default function DeliveryHome() {
             </motion.div>
           )}
 
+          {isMapLockedForOrderEligibility && (
+            <div
+              className="absolute inset-0 z-30 bg-gray-200/75 pointer-events-auto flex items-center justify-center px-6"
+              style={{ backdropFilter: 'grayscale(1)' }}
+            >
+              <div className="rounded-xl bg-white/90 border border-gray-300 px-4 py-3 text-center shadow-sm max-w-xs">
+                {isPocketBalanceTooLowForOrders ? (
+                  <>
+                    <p className="text-sm font-semibold text-gray-900">Pocket balance too low</p>
+                    <p className="text-xs text-gray-700 mt-1">
+                      Keep pocket balance above admin cash limit ₹{orderEligibilityMinBalance.toFixed(2)} to receive orders.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-semibold text-gray-900">Cash limit reached</p>
+                    <p className="text-xs text-gray-700 mt-1">
+                      Settle collected cash to continue COD pickups.
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Floating Action Button - My Location */}
           <motion.button
             onClick={() => {
+              if (isMapLockedForOrderEligibility) {
+                if (isPocketBalanceTooLowForOrders) {
+                  toast.error(`Keep pocket balance above admin cash limit ₹${orderEligibilityMinBalance.toFixed(2)} to receive orders.`)
+                } else {
+                  toast.error('Cash limit reached. Settle cash to continue.')
+                }
+                return
+              }
               if (navigator.geolocation) {
                 setIsRefreshingLocation(true)
                 navigator.geolocation.getCurrentPosition(
@@ -9085,7 +9138,12 @@ export default function DeliveryHome() {
                 )
               }
             }}
-            className="absolute bottom-44 right-3 w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center hover:bg-gray-50 transition-colors z-20 overflow-visible"
+            disabled={isMapLockedForOrderEligibility}
+            className={`absolute bottom-44 right-3 w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-colors z-20 overflow-visible ${
+              isMapLockedForOrderEligibility
+                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                : 'bg-white hover:bg-gray-50'
+            }`}
             whileTap={{ scale: 0.92 }}
             transition={{ 
               type: "spring", 
@@ -9353,7 +9411,7 @@ export default function DeliveryHome() {
               <p className="text-white/90 text-center text-sm mb-4">Complete 1 order to unlock ₹100</p>
               <div className="flex items-center text-center justify-center gap-2 text-white/70 text-xs mb-4">
                 <Clock className="w-4 h-4" />
-                <span className="text-center">Valid till 10 December 2025</span>
+                <span className="text-center">{hasActiveOffer ? `Valid till ${weekEndDate}` : "No active offer"}</span>
               </div>
               <button
                 onClick={() => {
@@ -9385,7 +9443,7 @@ export default function DeliveryHome() {
                   <div className="flex-1">
                     <h2 className="text-lg font-bold text-white mb-1">Earnings Guarantee</h2>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-white">Valid till {weekEndDate}</span>
+                      <span className="text-sm text-white">{hasActiveOffer ? `Valid till ${weekEndDate}` : "No active offer"}</span>
                       {isOfferLive && (
                         <div className="flex items-center gap-1">
                           <div className="w-2 h-2 bg-green-500 rounded-full"></div>
@@ -9397,7 +9455,7 @@ export default function DeliveryHome() {
                   {/* Summary Box */}
                   <div className="bg-black text-white px-4 py-3 rounded-lg text-center min-w-[80px]">
                     <div className="text-2xl font-bold">₹{earningsGuaranteeTarget.toFixed(0)}</div>
-                    <div className="text-xs text-white/80 mt-1">{earningsGuaranteeOrdersTarget} orders</div>
+                    <div className="text-xs text-white/80 mt-1">{hasActiveOffer ? `${earningsGuaranteeOrdersTarget} orders` : "This week"}</div>
                   </div>
                 </div>
               </div>
@@ -9438,7 +9496,7 @@ export default function DeliveryHome() {
                         />
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-xl font-bold text-gray-900">{earningsGuaranteeCurrentOrders} of {earningsGuaranteeOrdersTarget || 0}</span>
+                        <span className="text-xl font-bold text-gray-900">{hasActiveOffer ? `${earningsGuaranteeCurrentOrders} of ${earningsGuaranteeOrdersTarget || 0}` : `${earningsGuaranteeCurrentOrders}`}</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 mt-3">

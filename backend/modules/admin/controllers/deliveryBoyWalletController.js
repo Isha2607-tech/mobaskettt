@@ -31,7 +31,8 @@ export const getDeliveryBoyWallets = asyncHandler(async (req, res) => {
     BusinessSettings.getSettings().catch(() => null)
   ]);
 
-  const availableCashLimit = Number(settings?.deliveryCashLimit) || 0;
+  const availableCashLimit = Number(settings?.deliveryCashLimit) || 750;
+  const minimumWalletBalance = Number(settings?.deliveryMinimumWalletBalance) || 0;
   const rows = [];
 
   for (const d of deliveries) {
@@ -49,6 +50,8 @@ export const getDeliveryBoyWallets = asyncHandler(async (req, res) => {
       walletId: wallet._id,
       availableCashLimit,
       remainingCashLimit,
+      minimumWalletBalance,
+      maxWithdrawable: Math.max(0, (Number(wallet.totalBalance) || 0) - minimumWalletBalance),
       pocketBalance: Number(wallet.totalBalance) || 0,
       cashCollected,
       totalEarning: Number(wallet.totalEarned) || 0,

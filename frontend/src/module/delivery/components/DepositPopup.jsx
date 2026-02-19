@@ -76,7 +76,8 @@ export default function DepositPopup({ onSuccess, cashInHand = 0 }) {
               toast.success(`Deposit of ₹${amt.toFixed(2)} successful. Available limit updated.`)
               setAmount("")
               window.dispatchEvent(new CustomEvent("deliveryWalletStateUpdated"))
-              if (onSuccess) onSuccess()
+              window.dispatchEvent(new Event("deliveryWalletStateUpdated"))
+              if (onSuccess) onSuccess(verifyRes?.data?.data || null)
             } else {
               toast.error(verifyRes?.data?.message || "Verification failed")
             }

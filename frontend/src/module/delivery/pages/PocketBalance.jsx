@@ -94,28 +94,10 @@ export default function PocketBalancePage() {
   // Calculate total withdrawn (needed for pocket balance calculation)
   const totalWithdrawn = balances.totalWithdrawn || 0
   
-  // Pocket balance = total balance (includes bonus + earnings)
-  // Formula: Pocket Balance = Earnings + Bonus - Withdrawals
-  // Use walletState.pocketBalance if available, otherwise calculate from totalBalance
-  let pocketBalance = walletState?.pocketBalance !== undefined 
-    ? walletState.pocketBalance 
-    : (walletState?.totalBalance || balances.totalBalance || 0)
-  
-  // IMPORTANT: Ensure pocket balance includes bonus
-  // If backend totalBalance is 0 but we have bonus, calculate it manually
-  // This ensures bonus is always reflected in pocket balance and withdrawable amount
-  if (pocketBalance === 0 && totalBonus > 0) {
-    // If totalBalance is 0 but we have bonus, pocket balance = bonus
-    pocketBalance = totalBonus
-  } else if (pocketBalance > 0 && totalBonus > 0) {
-    // Verify pocket balance includes bonus
-    // Calculate expected: Earnings + Bonus - Withdrawals
-    const expectedBalance = weeklyEarnings + totalBonus - totalWithdrawn
-    // Use the higher value to ensure bonus is included
-    if (expectedBalance > pocketBalance) {
-      pocketBalance = expectedBalance
-    }
-  }
+  // Pocket balance should come from backend source-of-truth wallet totals.
+  const pocketBalance = walletState?.pocketBalance !== undefined
+    ? Number(walletState.pocketBalance) || 0
+    : (Number(walletState?.totalBalance) || Number(balances.totalBalance) || 0)
   
   // Calculate cash collected (cash in hand)
   const cashCollected = balances.cashInHand || 0
@@ -128,9 +110,10 @@ export default function PocketBalancePage() {
   
   // Withdrawal limit from admin (min amount above which withdrawal is allowed)
   const withdrawalLimit = Number(walletState?.deliveryWithdrawalLimit) || 100
+  const minimumWalletBalance = Math.max(0, Number(walletState?.deliveryMinimumWalletBalance) || 0)
   
-  // Withdrawable amount = pocket balance (includes bonus + earnings)
-  const withdrawableAmount = pocketBalance > 0 ? pocketBalance : 0
+  // Withdrawable amount = pocket balance after retaining minimum wallet balance
+  const withdrawableAmount = Math.max(0, (pocketBalance > 0 ? pocketBalance : 0) - minimumWalletBalance)
   
   // Withdrawal allowed only when withdrawable amount >= withdrawal limit
   const canWithdraw = withdrawableAmount >= withdrawalLimit && withdrawableAmount > 0
@@ -148,6 +131,7 @@ export default function PocketBalancePage() {
     weeklyEarnings: weeklyEarnings,
     withdrawableAmount: withdrawableAmount,
     withdrawalLimit,
+    minimumWalletBalance,
     canWithdraw
   })
 
@@ -257,7 +241,7 @@ export default function PocketBalancePage() {
             <p className="text-xs">
               {withdrawableAmount <= 0
                 ? "Withdrawable amount is ₹0"
-                : `Withdrawable amount is minimum (${formatCurrency(withdrawalLimit)}).`}
+                : `Withdrawable amount is minimum (${formatCurrency(withdrawalLimit)}) after retaining ${formatCurrency(minimumWalletBalance)}.`}
             </p>
           </div>
         </div>
@@ -356,6 +340,18 @@ export default function PocketBalancePage() {
             </div>
           }
           value={formatCurrency(withdrawalLimit)}
+          multiline
+        />
+        <DetailRow
+          label={
+            <div>
+              Minimum wallet balance
+              <p className="text-xs text-gray-500">
+                Wallet balance cannot go below this after withdrawal
+              </p>
+            </div>
+          }
+          value={formatCurrency(minimumWalletBalance)}
           multiline
         />
 

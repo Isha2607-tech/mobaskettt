@@ -499,6 +499,32 @@ export const acceptOrder = asyncHandler(async (req, res) => {
       return errorResponse(res, 400, `Order cannot be accepted. Current status: ${order.status}. Order must be in 'preparing' or 'ready' status.`);
     }
 
+    // Enforce minimum pocket balance threshold before accepting any order.
+    // Rule: delivery partner must keep pocket balance strictly greater than threshold.
+    const wallet = await DeliveryWallet.findOrCreateByDeliveryId(delivery._id);
+    let orderAcceptanceMinBalance = 750;
+    try {
+      const settings = await BusinessSettings.getSettings();
+      const configuredLimit = Number(settings?.deliveryCashLimit);
+      if (Number.isFinite(configuredLimit) && configuredLimit > 0) {
+        orderAcceptanceMinBalance = configuredLimit;
+      }
+    } catch (_) {
+      orderAcceptanceMinBalance = 750;
+    }
+    const currentPocketBalance = Math.max(0, Number(wallet.totalBalance) || 0);
+    if (currentPocketBalance <= orderAcceptanceMinBalance) {
+      return errorResponse(
+        res,
+        400,
+        `Insufficient pocket balance. Keep balance above ₹${orderAcceptanceMinBalance.toFixed(2)} to receive orders.`,
+        {
+          pocketBalance: currentPocketBalance,
+          requiredAbove: orderAcceptanceMinBalance
+        }
+      );
+    }
+
     // Enforce admin-configured COD cash limit before accepting a COD order.
     // If current cash in hand + this COD order amount exceeds limit, block acceptance.
     let paymentMethodForLimit = (order.payment?.method || '').toString().toLowerCase();
@@ -513,8 +539,7 @@ export const acceptOrder = asyncHandler(async (req, res) => {
 
     const isCashOrder = paymentMethodForLimit === 'cash' || paymentMethodForLimit === 'cod' || paymentMethodForLimit === 'cash on delivery';
     if (isCashOrder) {
-      const wallet = await DeliveryWallet.findOrCreateByDeliveryId(delivery._id);
-      let totalCashLimit = 0;
+      let totalCashLimit = 750;
       try {
         const settings = await BusinessSettings.getSettings();
         const configuredLimit = Number(settings?.deliveryCashLimit);
@@ -522,7 +547,7 @@ export const acceptOrder = asyncHandler(async (req, res) => {
           totalCashLimit = configuredLimit;
         }
       } catch (_) {
-        totalCashLimit = 0;
+        totalCashLimit = 750;
       }
 
       const cashInHand = Math.max(0, Number(wallet.cashInHand) || 0);

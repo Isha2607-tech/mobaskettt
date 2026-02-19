@@ -161,9 +161,10 @@ deliveryWalletSchema.index({ 'transactions.type': 1 });
 deliveryWalletSchema.index({ 'transactions.createdAt': -1 });
 deliveryWalletSchema.index({ lastTransactionAt: -1 });
 
-// Virtual for pocket balance (totalBalance - cashInHand)
+// Virtual for pocket balance.
+// Pocket balance should match totalBalance (cashInHand is tracked separately for COD limit).
 deliveryWalletSchema.virtual('pocketBalance').get(function() {
-  return this.totalBalance - this.cashInHand;
+  return this.totalBalance;
 });
 
 // Virtual for pending withdrawals
@@ -215,6 +216,8 @@ deliveryWalletSchema.methods.addTransaction = function(transactionData) {
       this.totalBalance -= transaction.amount;
       this.cashInHand = Math.max(0, this.cashInHand - transaction.amount);
     } else if (transaction.type === 'deposit') {
+      // Deposit settles COD cash and also credits pocket balance.
+      this.totalBalance += transaction.amount;
       this.cashInHand = Math.max(0, (this.cashInHand || 0) - transaction.amount);
     }
   }
@@ -260,6 +263,9 @@ deliveryWalletSchema.methods.updateTransactionStatus = function(transactionId, s
     } else if (transaction.type === 'deduction') {
       this.totalBalance -= oldAmount;
       this.cashInHand = Math.max(0, this.cashInHand - oldAmount);
+    } else if (transaction.type === 'deposit') {
+      this.totalBalance += oldAmount;
+      this.cashInHand = Math.max(0, this.cashInHand - oldAmount);
     }
   }
   
@@ -276,6 +282,7 @@ deliveryWalletSchema.methods.updateTransactionStatus = function(transactionId, s
       this.totalBalance += oldAmount;
       this.totalWithdrawn = Math.max(0, this.totalWithdrawn - oldAmount);
     } else if (transaction.type === 'deposit') {
+      this.totalBalance = Math.max(0, this.totalBalance - oldAmount);
       this.cashInHand = (this.cashInHand || 0) + oldAmount;
     }
   }

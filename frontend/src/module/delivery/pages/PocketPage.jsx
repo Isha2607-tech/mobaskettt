@@ -82,13 +82,18 @@ export default function PocketPage() {
           const profile = response.data.data.profile
           const bankDetails = profile?.documents?.bankDetails
           
-          // Check if all required bank details fields are filled
-          const isFilled = !!(
+          // Check if all required payout fields are filled (PAN + bank details)
+          const hasPan = !!(
+            profile?.documents?.pan?.number?.trim() &&
+            profile?.documents?.pan?.document
+          )
+          const hasBank = !!(
             bankDetails?.accountHolderName?.trim() &&
             bankDetails?.accountNumber?.trim() &&
             bankDetails?.ifscCode?.trim() &&
             bankDetails?.bankName?.trim()
           )
+          const isFilled = hasPan && hasBank
           
           setBankDetailsFilled(isFilled)
         }
@@ -297,10 +302,14 @@ export default function PocketPage() {
   // When no offer is active, show 0 of 0 and ₹0
   const earningsGuaranteeTarget = activeEarningAddon?.earningAmount || 0
   const earningsGuaranteeOrdersTarget = activeEarningAddon?.requiredOrders || 0
-  // Only show current orders/earnings if there's an active offer
-  const earningsGuaranteeCurrentOrders = activeEarningAddon ? (activeEarningAddon.currentOrders ?? weeklyOrders) : 0
-  // Show only bonus earnings from the offer, not total weekly earnings
-  const earningsGuaranteeCurrentEarnings = activeEarningAddon ? calculateBonusEarnings() : 0
+  // Fallback to live weekly values when no active offer exists (avoid looking static).
+  const earningsGuaranteeCurrentOrders = activeEarningAddon
+    ? (activeEarningAddon.currentOrders ?? weeklyOrders)
+    : weeklyOrders
+  // Show only bonus earnings for active offer; otherwise show this week's live earnings.
+  const earningsGuaranteeCurrentEarnings = activeEarningAddon
+    ? calculateBonusEarnings()
+    : weeklyEarnings
   const ordersProgress = earningsGuaranteeOrdersTarget > 0 
     ? Math.min(earningsGuaranteeCurrentOrders / earningsGuaranteeOrdersTarget, 1) 
     : 0
@@ -327,36 +336,17 @@ export default function PocketPage() {
   const weekEndDate = getWeekEndDate()
   // Offer is live if it's valid (started) or upcoming (not started yet but active)
   const isOfferLive = activeEarningAddon?.isValid || activeEarningAddon?.isUpcoming || false
+  const hasActiveOffer = !!activeEarningAddon
 
   // Calculate total bonus amount from all bonus transactions
   const totalBonus = walletState?.transactions
     ?.filter(t => t.type === 'bonus' && t.status === 'Completed')
     .reduce((sum, t) => sum + (t.amount || 0), 0) || 0
   
-  // Pocket balance - shows total balance (includes bonus)
-  // Total balance = all earnings + bonus - withdrawals
-  // This is what delivery partner can withdraw
-  // IMPORTANT: Use walletState.pocketBalance if available (from API), otherwise use totalBalance
-  let pocketBalance = walletState?.pocketBalance !== undefined 
-    ? walletState.pocketBalance 
-    : (walletState?.totalBalance || balances.totalBalance || 0)
-  
-  // IMPORTANT: Ensure pocket balance includes bonus
-  // If backend totalBalance is 0 but we have bonus, calculate it manually
-  // This ensures bonus is always reflected in pocket balance
-  if (pocketBalance === 0 && totalBonus > 0) {
-    // If totalBalance is 0 but we have bonus, pocket balance = bonus
-    pocketBalance = totalBonus
-  } else if (pocketBalance > 0 && totalBonus > 0) {
-    // Verify pocket balance includes bonus
-    // Calculate expected: Earnings + Bonus - Withdrawals
-    const totalWithdrawn = balances.totalWithdrawn || 0
-    const expectedBalance = weeklyEarnings + totalBonus - totalWithdrawn
-    // Use the higher value to ensure bonus is included
-    if (expectedBalance > pocketBalance) {
-      pocketBalance = expectedBalance
-    }
-  }
+  // Pocket balance should come from backend source-of-truth wallet totals.
+  const pocketBalance = walletState?.pocketBalance !== undefined
+    ? Number(walletState.pocketBalance) || 0
+    : (Number(walletState?.totalBalance) || Number(balances.totalBalance) || 0)
   
   // Debug: Log pocket balance calculation
   useEffect(() => {
@@ -377,7 +367,7 @@ export default function PocketPage() {
   // Available cash limit = remaining limit (global limit - cash in hand)
   const totalCashLimit = Number.isFinite(Number(walletState?.totalCashLimit))
     ? Number(walletState.totalCashLimit)
-    : 0
+    : 750
   const availableCashLimit =
     Number.isFinite(Number(walletState?.availableCashLimit)) &&
     Number(walletState?.availableCashLimit) >= 0
@@ -815,7 +805,9 @@ export default function PocketPage() {
               <div className="flex-1">
                 <h2 className="text-lg font-bold text-white mb-1">Earnings Guarantee</h2>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-white">Valid till {weekEndDate}</span>
+                  <span className="text-sm text-white">
+                    {hasActiveOffer ? `Valid till ${weekEndDate}` : "No active offer"}
+                  </span>
                   {isOfferLive && (
                     <div className="flex items-center gap-1">
                       <div className="w-2 h-2 bg-green-500 rounded-full"></div>
@@ -827,7 +819,9 @@ export default function PocketPage() {
               {/* Summary Box */}
               <div className="bg-black text-white px-4 py-3 rounded-lg text-center min-w-[80px]">
                 <div className="text-2xl font-bold">₹{earningsGuaranteeTarget.toFixed(0)}</div>
-                <div className="text-xs text-white/80 mt-1">{earningsGuaranteeOrdersTarget} orders</div>
+                <div className="text-xs text-white/80 mt-1">
+                  {hasActiveOffer ? `${earningsGuaranteeOrdersTarget} orders` : "This week"}
+                </div>
               </div>
             </div>
           </div>
@@ -868,7 +862,11 @@ export default function PocketPage() {
                     />
                   </svg>
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-xl font-bold text-gray-900">{earningsGuaranteeCurrentOrders} of {earningsGuaranteeOrdersTarget || 0}</span>
+                    <span className="text-xl font-bold text-gray-900">
+                      {hasActiveOffer
+                        ? `${earningsGuaranteeCurrentOrders} of ${earningsGuaranteeOrdersTarget || 0}`
+                        : `${earningsGuaranteeCurrentOrders}`}
+                    </span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-3">
@@ -953,6 +951,11 @@ export default function PocketPage() {
                   <span className="text-black text-sm font-medium">₹{availableCashLimit.toFixed(2)}</span>
                   <ArrowRight className="w-4 h-4 text-gray-600" />
                 </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-black text-sm">Total cash limit (admin)</span>
+                <span className="text-black text-sm font-medium">₹{totalCashLimit.toFixed(2)}</span>
               </div>
 
               {/* Warning Message */}
@@ -1057,6 +1060,7 @@ export default function PocketPage() {
           onClose={() => setShowCashLimitPopup(false)}
           walletData={{
             totalCashLimit: totalCashLimit,
+            availableCashLimit: availableCashLimit,
             cashInHand: balances.cashInHand ?? 0,
             deductions: 0,
             pocketWithdrawals: balances.totalWithdrawn ?? 0,
@@ -1075,7 +1079,15 @@ export default function PocketPage() {
       >
         <DepositPopup
           cashInHand={balances.cashInHand ?? walletState?.cashInHand ?? 0}
-          onSuccess={() => setShowDepositPopup(false)}
+          onSuccess={async () => {
+            setShowDepositPopup(false)
+            try {
+              const walletData = await fetchDeliveryWallet()
+              setWalletState(walletData)
+            } catch (_) {
+              // Wallet will refresh via existing interval/event listeners
+            }
+          }}
         />
       </BottomPopup>
     </div>

@@ -7,8 +7,10 @@ export default function DeliveryCashLimit() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [savingWithdrawal, setSavingWithdrawal] = useState(false)
+  const [savingMinimumBalance, setSavingMinimumBalance] = useState(false)
   const [deliveryCashLimit, setDeliveryCashLimit] = useState("")
   const [deliveryWithdrawalLimit, setDeliveryWithdrawalLimit] = useState("")
+  const [deliveryMinimumWalletBalance, setDeliveryMinimumWalletBalance] = useState("")
 
   const fetchLimit = async () => {
     try {
@@ -17,13 +19,16 @@ export default function DeliveryCashLimit() {
       const data = response?.data?.data ?? response?.data ?? {}
       const limit = data.deliveryCashLimit
       const wl = data.deliveryWithdrawalLimit ?? 100
+      const mb = data.deliveryMinimumWalletBalance ?? 0
       setDeliveryCashLimit(limit !== undefined && limit !== null ? String(limit) : "")
       setDeliveryWithdrawalLimit(wl !== undefined && wl !== null ? String(wl) : "100")
+      setDeliveryMinimumWalletBalance(mb !== undefined && mb !== null ? String(mb) : "0")
     } catch (error) {
       console.error("Error fetching delivery cash limit:", error)
       toast.error(error.response?.data?.message || "Failed to load delivery cash limit")
       setDeliveryCashLimit("")
       setDeliveryWithdrawalLimit("100")
+      setDeliveryMinimumWalletBalance("0")
     } finally {
       setLoading(false)
     }
@@ -77,6 +82,30 @@ export default function DeliveryCashLimit() {
     }
   }
 
+  const saveMinimumWalletBalance = async () => {
+    const value = Number(deliveryMinimumWalletBalance)
+    if (!Number.isFinite(value) || value < 0) {
+      toast.error("Minimum wallet balance must be a number (>= 0)")
+      return
+    }
+
+    try {
+      setSavingMinimumBalance(true)
+      const response = await adminAPI.updateDeliveryCashLimit({ deliveryMinimumWalletBalance: value })
+      const saved =
+        response?.data?.data?.deliveryMinimumWalletBalance ??
+        response?.data?.deliveryMinimumWalletBalance ??
+        value
+      setDeliveryMinimumWalletBalance(String(saved))
+      toast.success("Minimum wallet balance updated successfully")
+    } catch (error) {
+      console.error("Error saving minimum wallet balance:", error)
+      toast.error(error.response?.data?.message || "Failed to update minimum wallet balance")
+    } finally {
+      setSavingMinimumBalance(false)
+    }
+  }
+
   useEffect(() => {
     fetchLimit()
   }, [])
@@ -93,7 +122,7 @@ export default function DeliveryCashLimit() {
           <p className="text-sm text-slate-600 mb-6">
             Set a <strong>global COD cash limit</strong> and <strong>minimum withdrawal amount</strong> for all delivery
             partners. Cash limit is used for Available cash limit in the delivery app; withdrawal is allowed only when
-            withdrawable amount is above the withdrawal limit.
+            withdrawable amount is above the withdrawal limit and minimum wallet balance is maintained.
           </p>
 
           <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg mb-6">
@@ -176,6 +205,49 @@ export default function DeliveryCashLimit() {
                     className="px-4 py-2.5 text-sm font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
                     {savingWithdrawal && <Loader2 className="w-4 h-4 animate-spin" />}
+                    Save
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-sky-50 border border-sky-200 rounded-lg mt-6">
+            <div className="flex items-start gap-3">
+              <Wallet className="w-5 h-5 text-sky-700 mt-0.5" />
+              <div className="flex-1">
+                <div className="font-semibold text-sky-900 mb-1">
+                  Minimum Wallet Balance (Global)
+                </div>
+                <div className="text-sm text-sky-800/80 mb-3">
+                  Delivery partner must keep at least this balance after withdrawal.
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                  <div className="flex-1">
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={deliveryMinimumWalletBalance}
+                      onChange={(e) => setDeliveryMinimumWalletBalance(e.target.value)}
+                      className="w-full px-4 py-2.5 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 text-sm border-sky-200"
+                      placeholder={loading ? "Loading..." : "e.g., 200"}
+                      disabled={loading || savingMinimumBalance}
+                    />
+                    {loading && (
+                      <p className="text-xs text-sky-700/80 mt-1 flex items-center gap-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Loading…
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={saveMinimumWalletBalance}
+                    disabled={loading || savingMinimumBalance}
+                    className="px-4 py-2.5 text-sm font-medium rounded-lg bg-sky-600 text-white hover:bg-sky-700 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {savingMinimumBalance && <Loader2 className="w-4 h-4 animate-spin" />}
                     Save
                   </button>
                 </div>
