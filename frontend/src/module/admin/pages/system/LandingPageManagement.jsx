@@ -19,7 +19,9 @@ export default function LandingPageManagement({ forcedPlatform }) {
         ? "mogrocery"
         : "mofood"
   const [activeTab, setActiveTab] = useState('banners')
-  const [exploreMoreSubTab, setExploreMoreSubTab] = useState('top-10')
+  const [exploreMoreSubTab, setExploreMoreSubTab] = useState(
+    platform === 'mogrocery' ? 'best-sellers' : 'top-10'
+  )
 
   // Hero Banners
   const [banners, setBanners] = useState([])
@@ -161,10 +163,15 @@ export default function LandingPageManagement({ forcedPlatform }) {
 
   // Fetch Top 10 and Gourmet when Explore More tab is active
   useEffect(() => {
+    if (platform === 'mogrocery' && exploreMoreSubTab !== 'best-sellers') {
+      setExploreMoreSubTab('best-sellers')
+      return
+    }
+
     if (activeTab === 'explore-more') {
-      if (exploreMoreSubTab === 'top-10') {
+      if (exploreMoreSubTab === 'top-10' && platform !== 'mogrocery') {
         fetchTop10Restaurants()
-      } else if (exploreMoreSubTab === 'gourmet') {
+      } else if (exploreMoreSubTab === 'gourmet' && platform !== 'mogrocery') {
         fetchGourmetRestaurants()
       } else if (exploreMoreSubTab === 'best-sellers' && platform === 'mogrocery') {
         fetchGroceryCatalogData()
@@ -175,6 +182,12 @@ export default function LandingPageManagement({ forcedPlatform }) {
       fetchBestSellers()
     }
   }, [activeTab, exploreMoreSubTab, platform])
+
+  useEffect(() => {
+    if (platform === 'mogrocery' && (activeTab === 'under-250' || activeTab === 'explore-more')) {
+      setActiveTab('banners')
+    }
+  }, [platform, activeTab])
 
   // ==================== HERO BANNERS ====================
   const fetchBanners = async () => {
@@ -1260,14 +1273,14 @@ export default function LandingPageManagement({ forcedPlatform }) {
   // ==================== RENDER ====================
   const tabs = [
     { id: 'banners', label: 'Hero Banners', icon: ImageIcon },
-    { id: 'under-250', label: '250 Banner', icon: Tag },
-    { id: 'explore-more', label: 'Explore More', icon: Layout },
+    ...(platform !== 'mogrocery' ? [{ id: 'under-250', label: '250 Banner', icon: Tag }] : []),
+    ...(platform !== 'mogrocery' ? [{ id: 'explore-more', label: 'Explore More', icon: Layout }] : []),
     ...(platform === 'mogrocery' ? [{ id: 'best-sellers', label: 'Best Sellers', icon: Megaphone }] : []),
   ]
 
   const exploreMoreTabs = [
-    { id: 'top-10', label: 'Top 10', icon: Trophy },
-    { id: 'gourmet', label: 'Gourmet', icon: ChefHat },
+    ...(platform !== 'mogrocery' ? [{ id: 'top-10', label: 'Top 10', icon: Trophy }] : []),
+    ...(platform !== 'mogrocery' ? [{ id: 'gourmet', label: 'Gourmet', icon: ChefHat }] : []),
     ...(platform === 'mogrocery' ? [{ id: 'best-sellers', label: 'Best Sellers', icon: Megaphone }] : []),
   ]
 
@@ -1471,7 +1484,7 @@ export default function LandingPageManagement({ forcedPlatform }) {
         )}
 
         {/* Under 250 Banner Tab */}
-        {activeTab === 'under-250' && (
+        {platform !== 'mogrocery' && activeTab === 'under-250' && (
           <>
             {/* Upload Section */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
@@ -1588,7 +1601,7 @@ export default function LandingPageManagement({ forcedPlatform }) {
 
 
         {/* Explore More / Best Sellers Tab */}
-        {(activeTab === 'explore-more' || (activeTab === 'best-sellers' && platform === 'mogrocery')) && (
+        {((platform !== 'mogrocery' && activeTab === 'explore-more') || (activeTab === 'best-sellers' && platform === 'mogrocery')) && (
           <>
             {/* Sub-tabs for Explore More */}
             {activeTab === 'explore-more' && (
@@ -1617,7 +1630,7 @@ export default function LandingPageManagement({ forcedPlatform }) {
             )}
 
             {/* Top 10 Tab Content */}
-            {exploreMoreSubTab === 'top-10' && (
+            {platform !== 'mogrocery' && exploreMoreSubTab === 'top-10' && (
               <>
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
                   <h2 className="text-lg font-bold text-slate-900 mb-4">Add Restaurant to Top 10</h2>
@@ -1726,7 +1739,7 @@ export default function LandingPageManagement({ forcedPlatform }) {
             )}
 
             {/* Gourmet Tab Content */}
-            {exploreMoreSubTab === 'gourmet' && (
+            {platform !== 'mogrocery' && exploreMoreSubTab === 'gourmet' && (
               <>
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
                   <h2 className="text-lg font-bold text-slate-900 mb-4">Add Restaurant to Gourmet</h2>

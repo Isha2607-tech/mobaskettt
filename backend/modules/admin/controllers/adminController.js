@@ -30,6 +30,19 @@ const logger = winston.createLogger({
  */
 export const getDashboardStats = asyncHandler(async (req, res) => {
   try {
+    const requestedPlatform = req.query?.platform === 'mogrocery' ? 'mogrocery' : 'mofood';
+    const restaurantPlatformQuery =
+      requestedPlatform === 'mogrocery'
+        ? { platform: 'mogrocery' }
+        : { $or: [{ platform: 'mofood' }, { platform: { $exists: false } }] };
+
+    // Scope dashboard metrics to the active platform restaurants/stores.
+    const scopedRestaurants = await Restaurant.find(restaurantPlatformQuery).select('_id').lean();
+    const scopedRestaurantObjectIds = scopedRestaurants.map((restaurant) => restaurant._id);
+    const scopedRestaurantStringIds = scopedRestaurantObjectIds.map((id) => String(id));
+    const scopedOrderMatch = { restaurantId: { $in: scopedRestaurantStringIds } };
+    const scopedSettlementMatch = { restaurantId: { $in: scopedRestaurantObjectIds } };
+
     // Calculate date ranges
     const now = new Date();
     const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -38,6 +51,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     const revenueStats = await Order.aggregate([
       {
         $match: {
+          ...scopedOrderMatch,
           status: 'delivered',
           'pricing.total': { $exists: true }
         }
@@ -64,25 +78,14 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     // Get all settlements for delivered orders only (to match with revenue calculation)
     // First get delivered order IDs
-    const deliveredOrderIds = await Order.find({ status: 'delivered' }).select('_id').lean();
+    const deliveredOrderIds = await Order.find({ ...scopedOrderMatch, status: 'delivered' }).select('_id').lean();
     const deliveredOrderIdArray = deliveredOrderIds.map(o => o._id);
     
     // Get settlements only for delivered orders
     const allSettlements = await OrderSettlement.find({
+      ...scopedSettlementMatch,
       orderId: { $in: deliveredOrderIdArray }
     }).lean();
-    
-    console.log(`📊 Dashboard Stats - Total settlements found: ${allSettlements.length}`);
-    
-    // Debug: Log first settlement to see actual structure
-    if (allSettlements.length > 0) {
-      const firstSettlement = allSettlements[0];
-      console.log('🔍 First settlement sample:', {
-        orderNumber: firstSettlement.orderNumber,
-        adminEarning: firstSettlement.adminEarning,
-        userPayment: firstSettlement.userPayment
-      });
-    }
     
     // Calculate totals from all settlements - use adminEarning fields
     let totalCommission = 0;
@@ -101,10 +104,6 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
       totalDeliveryFee += deliveryFee;
       totalGST += gst;
       
-      // Log each settlement for debugging
-      if (index < 5) { // Log first 5 settlements
-        console.log(`📦 Settlement ${index + 1} (${s.orderNumber}): Commission: ₹${commission}, Platform: ₹${platformFee}, Delivery: ₹${deliveryFee}, GST: ₹${gst}`);
-      }
     });
     
     totalCommission = Math.round(totalCommission * 100) / 100;
@@ -112,10 +111,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     totalDeliveryFee = Math.round(totalDeliveryFee * 100) / 100;
     totalGST = Math.round(totalGST * 100) / 100;
     
-    console.log(`💰 Final calculated totals - Commission: ₹${totalCommission}, Platform Fee: ₹${totalPlatformFee}, Delivery Fee: ₹${totalDeliveryFee}, GST: ₹${totalGST}`);
-    
     // Get last 30 days data from OrderSettlement
     const last30DaysSettlements = await OrderSettlement.find({
+      ...scopedSettlementMatch,
       createdAt: { $gte: last30Days, $lte: now }
     }).lean();
     const last30DaysCommission = last30DaysSettlements.reduce((sum, s) => sum + (s.adminEarning?.commission || 0), 0);
@@ -125,6 +123,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
 
     // Get order statistics
     const orderStats = await Order.aggregate([
+      {
+        $match: scopedOrderMatch
+      },
       {
         $group: {
           _id: '$status',
@@ -139,10 +140,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     });
 
     // Get total orders processed
-    const totalOrders = await Order.countDocuments({ status: 'delivered' });
+    const totalOrders = await Order.countDocuments({ ...scopedOrderMatch, status: 'delivered' });
 
     // Get active partners count
-    const activeRestaurants = await Restaurant.countDocuments({ isActive: true });
+    const activeRestaurants = await Restaurant.countDocuments({ ...restaurantPlatformQuery, isActive: true });
     // Note: Delivery partners are stored in User model
     const User = (await import('../../auth/models/User.js')).default;
     const activeDeliveryPartners = await User.countDocuments({ 
@@ -154,10 +155,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     // Get additional stats
     // Total restaurants (only active/approved restaurants)
     // This matches the admin restaurants list which shows only active restaurants by default
-    const totalRestaurants = await Restaurant.countDocuments({ isActive: true });
+    const totalRestaurants = await Restaurant.countDocuments({ ...restaurantPlatformQuery, isActive: true });
     
     // Restaurant requests pending (inactive restaurants with completed onboarding, no rejection)
     const pendingRestaurantRequestsQuery = {
+      ...restaurantPlatformQuery,
       isActive: false,
       $and: [
         {
@@ -201,7 +203,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     // Count ALL items (including disabled sections, unavailable items, pending/approved, excluding only rejected)
     const Menu = (await import('../../restaurant/models/Menu.js')).default;
     // Get all active menus and count items in sections and subsections
-    const activeMenus = await Menu.find({ isActive: true }).select('sections').lean();
+    const activeMenus = await Menu.find({
+      isActive: true,
+      restaurant: { $in: scopedRestaurantObjectIds }
+    }).select('sections').lean();
     let totalFoods = 0;
     activeMenus.forEach(menu => {
       if (menu.sections && Array.isArray(menu.sections)) {
@@ -241,7 +246,10 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     // Total addons - Count all addons from active menus
     // Count ALL addons (including unavailable, pending/approved, excluding only rejected)
     let totalAddons = 0;
-    const menusWithAddons = await Menu.find({ isActive: true }).select('addons').lean();
+    const menusWithAddons = await Menu.find({
+      isActive: true,
+      restaurant: { $in: scopedRestaurantObjectIds }
+    }).select('addons').lean();
     menusWithAddons.forEach(menu => {
       // Only process if menu has addons array and it's not empty
       if (!menu.addons || !Array.isArray(menu.addons) || menu.addons.length === 0) {
@@ -261,13 +269,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     });
     
     // Total customers (users with role 'user' or no role specified)
-    const totalCustomers = await User.countDocuments({
-      $or: [
-        { role: 'user' },
-        { role: { $exists: false } },
-        { role: null }
-      ]
-    });
+    const distinctScopedCustomers = await Order.distinct('userId', scopedOrderMatch);
+    const totalCustomers = distinctScopedCustomers.length;
     
     // Pending orders (already in orderStatusMap)
     const pendingOrders = orderStatusMap.pending || 0;
@@ -278,9 +281,11 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     // Get recent activity (last 24 hours)
     const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const recentOrders = await Order.countDocuments({
+      ...scopedOrderMatch,
       createdAt: { $gte: last24Hours }
     });
     const recentRestaurants = await Restaurant.countDocuments({
+      ...restaurantPlatformQuery,
       createdAt: { $gte: last24Hours },
       isActive: true
     });
@@ -296,6 +301,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
       
       // Get orders delivered in this month
       const monthOrders = await Order.find({
+        ...scopedOrderMatch,
         status: 'delivered',
         deliveredAt: { $gte: monthStart, $lte: monthEnd }
       }).select('_id pricing deliveredAt').lean();
