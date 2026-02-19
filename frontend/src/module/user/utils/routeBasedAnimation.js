@@ -61,6 +61,58 @@ export function smoothRotation(currentBearing, targetBearing, smoothingFactor = 
 }
 
 /**
+ * Safely read marker rotation across marker implementations.
+ * Some Google Maps markers do not implement getRotation/setRotation.
+ */
+function getMarkerRotation(marker) {
+  if (!marker) return 0;
+
+  if (typeof marker.getRotation === 'function') {
+    const value = Number(marker.getRotation());
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  // Fallback to locally tracked value
+  const tracked = Number(marker.__mobasketRotation);
+  if (Number.isFinite(tracked)) return tracked;
+
+  // Fallback to icon.rotation when available
+  if (typeof marker.getIcon === 'function') {
+    const icon = marker.getIcon();
+    if (icon && typeof icon === 'object' && Number.isFinite(Number(icon.rotation))) {
+      return Number(icon.rotation);
+    }
+  }
+
+  return 0;
+}
+
+/**
+ * Safely write marker rotation across marker implementations.
+ */
+function setMarkerRotation(marker, rotation) {
+  if (!marker) return;
+  const normalized = ((Number(rotation) || 0) + 360) % 360;
+  marker.__mobasketRotation = normalized;
+
+  if (typeof marker.setRotation === 'function') {
+    marker.setRotation(normalized);
+    return;
+  }
+
+  // Fallback: if icon is an object/symbol, try updating icon.rotation
+  if (typeof marker.getIcon === 'function' && typeof marker.setIcon === 'function') {
+    const icon = marker.getIcon();
+    if (icon && typeof icon === 'object') {
+      marker.setIcon({
+        ...icon,
+        rotation: normalized
+      });
+    }
+  }
+}
+
+/**
  * Animate marker smoothly along route polyline
  * @param {Object} marker - Google Maps Marker instance
  * @param {Object} currentPos - Current position {lat, lng}
@@ -99,16 +151,16 @@ export function animateMarkerSmoothly(marker, currentPos, targetPos, duration = 
         : currentPos;
       
       const bearing = calculateBearing(prevPos, { lat: currentLat, lng: currentLng });
-      const currentRotation = marker.getRotation() || 0;
+      const currentRotation = getMarkerRotation(marker);
       const smoothedBearing = smoothRotation(currentRotation, bearing, 0.4);
-      marker.setRotation(smoothedBearing);
+      setMarkerRotation(marker, smoothedBearing);
       
       requestAnimationFrame(animate);
     } else {
       // Animation complete
       marker.setPosition(targetPos);
       const finalBearing = calculateBearing(currentPos, targetPos);
-      marker.setRotation(finalBearing);
+      setMarkerRotation(marker, finalBearing);
       
       if (onComplete) onComplete();
     }
@@ -282,9 +334,7 @@ export class RouteBasedAnimationController {
     } else {
       // First time - set position directly
       this.marker.setPosition(targetPos);
-      if (bearing !== undefined) {
-        this.marker.setRotation(bearing);
-      }
+      if (bearing !== undefined) setMarkerRotation(this.marker, bearing);
     }
     
     this.currentIndex = pointInfo.currentIndex;
