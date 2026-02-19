@@ -15,6 +15,18 @@ const logger = winston.createLogger({
   ]
 });
 
+const getSafeOtpErrorMessage = (error) => {
+  const rawMessage = String(error?.message || "");
+  const isProviderOrTlsError =
+    /ssl|tls|alert number|routines|socket hang up|econnreset|ehostunreach|etimedout|enotfound/i.test(rawMessage);
+
+  if (isProviderOrTlsError) {
+    return "OTP service is temporarily unavailable. Please try again in a few minutes.";
+  }
+
+  return rawMessage || "Failed to send OTP. Please try again.";
+};
+
 /**
  * Send OTP for delivery boy phone number
  * POST /api/delivery/auth/send-otp
@@ -41,7 +53,7 @@ export const sendOTP = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     logger.error(`Error sending OTP: ${error.message}`);
-    return errorResponse(res, 500, error.message);
+    return errorResponse(res, 500, getSafeOtpErrorMessage(error));
   }
 });
 

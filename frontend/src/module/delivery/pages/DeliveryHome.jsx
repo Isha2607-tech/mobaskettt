@@ -445,6 +445,22 @@ export default function DeliveryHome() {
   const lastRouteRecalculationRef = useRef(null) // Track last route recalculation time (API cost optimization)
   const lastBikePositionRef = useRef(null) // Track last bike position for deviation detection
   const acceptedOrderIdsRef = useRef(new Set()) // Track accepted order IDs to prevent duplicate notifications
+  const normalizeOrderId = useCallback((value) => {
+    if (!value) return null
+    return String(value)
+  }, [])
+  const markOrderAsAccepted = useCallback((...ids) => {
+    ids
+      .map((id) => normalizeOrderId(id))
+      .filter(Boolean)
+      .forEach((id) => acceptedOrderIdsRef.current.add(id))
+  }, [normalizeOrderId])
+  const isOrderAlreadyAccepted = useCallback((...ids) => {
+    return ids
+      .map((id) => normalizeOrderId(id))
+      .filter(Boolean)
+      .some((id) => acceptedOrderIdsRef.current.has(id))
+  }, [normalizeOrderId])
   // Live tracking polyline refs
   const liveTrackingPolylineRef = useRef(null) // Google Maps Polyline instance for live tracking
   const liveTrackingPolylineShadowRef = useRef(null) // Shadow/outline polyline for better visibility (Zomato/Rapido style)
@@ -616,6 +632,12 @@ export default function DeliveryHome() {
   const newOrderAcceptButtonIsSwiping = useRef(false)
   const [newOrderAcceptButtonProgress, setNewOrderAcceptButtonProgress] = useState(0)
   const [newOrderIsAnimatingToComplete, setNewOrderIsAnimatingToComplete] = useState(false)
+  const popupOrderId =
+    selectedRestaurant?.orderId ||
+    selectedRestaurant?.id ||
+    newOrder?.orderMongoId ||
+    newOrder?.orderId ||
+    null
   const newOrderPopupRef = useRef(null)
   const newOrderSwipeStartY = useRef(0)
   const newOrderIsSwiping = useRef(false)
@@ -1431,7 +1453,7 @@ export default function DeliveryHome() {
 
   // Play audio when New Order popup appears (only for real orders from Socket.IO)
   useEffect(() => {
-    if (showNewOrderPopup && (newOrder || selectedRestaurant)) {
+    if (showNewOrderPopup && popupOrderId) {
       // Stop any existing audio first
       stopNewOrderAlertSound("restarting popup sound")
 
@@ -1494,7 +1516,7 @@ export default function DeliveryHome() {
       // Stop audio when popup closes
       stopNewOrderAlertSound("popup closed")
     }
-  }, [showNewOrderPopup, selectedRestaurant, newOrder, stopNewOrderAlertSound])
+  }, [showNewOrderPopup, popupOrderId, stopNewOrderAlertSound])
 
   // Reset countdown when popup closes
   useEffect(() => {
@@ -2781,11 +2803,15 @@ export default function DeliveryHome() {
             // Close popup and show route on main map (not full-screen directions map)
             setShowNewOrderPopup(false);
             // CRITICAL: Clear newOrder notification immediately to prevent duplicate notifications
-            const acceptedOrderId = restaurantInfo.id || restaurantInfo.orderId || newOrder?.orderMongoId || newOrder?.orderId;
-            if (acceptedOrderId) {
-              acceptedOrderIdsRef.current.add(acceptedOrderId);
-              console.log('✅ Added order to accepted list:', acceptedOrderId);
-            }
+            markOrderAsAccepted(
+              restaurantInfo?.id,
+              restaurantInfo?.orderId,
+              newOrder?.orderMongoId,
+              newOrder?.orderId,
+            );
+            console.log('✅ Added order to accepted list:', {
+              ids: [restaurantInfo?.id, restaurantInfo?.orderId, newOrder?.orderMongoId, newOrder?.orderId].filter(Boolean),
+            });
             clearNewOrder();
             
             // Ensure route path is visible
@@ -4335,7 +4361,7 @@ export default function DeliveryHome() {
       const orderId = newOrder.orderMongoId || newOrder.orderId;
       
       // Check if this order has already been accepted
-      if (acceptedOrderIdsRef.current.has(orderId)) {
+      if (isOrderAlreadyAccepted(orderId, newOrder?.orderMongoId, newOrder?.orderId)) {
         console.log('⚠️ Order already accepted, ignoring duplicate notification:', orderId);
         clearNewOrder();
         return;
@@ -4347,9 +4373,9 @@ export default function DeliveryHome() {
         if (activeOrderData) {
           const activeOrder = JSON.parse(activeOrderData);
           const activeOrderId = activeOrder.orderId || activeOrder.restaurantInfo?.id || activeOrder.restaurantInfo?.orderId;
-          if (activeOrderId === orderId) {
+          if (activeOrderId && String(activeOrderId) === String(orderId)) {
             console.log('⚠️ Order already accepted (found in localStorage), ignoring notification:', orderId);
-            acceptedOrderIdsRef.current.add(orderId);
+            markOrderAsAccepted(orderId, newOrder?.orderMongoId, newOrder?.orderId);
             clearNewOrder();
             return;
           }
@@ -4450,7 +4476,7 @@ export default function DeliveryHome() {
       setShowNewOrderPopup(true)
       setCountdownSeconds(300) // Reset countdown to 5 minutes
     }
-  }, [newOrder, calculateTimeAway, riderLocation])
+  }, [newOrder, calculateTimeAway, riderLocation, isOrderAlreadyAccepted, markOrderAsAccepted])
 
   // Recalculate distance when rider location becomes available
   useEffect(() => {
@@ -4757,7 +4783,7 @@ export default function DeliveryHome() {
           const orderId = firstOrder.orderId || firstOrder._id?.toString()
           
           // Check if this order is already being shown or accepted
-          if (acceptedOrderIdsRef.current.has(orderId)) {
+          if (isOrderAlreadyAccepted(orderId, firstOrder?.orderId, firstOrder?._id?.toString())) {
             console.log('⚠️ Order already accepted, skipping:', orderId)
             return
           }
@@ -4856,7 +4882,7 @@ export default function DeliveryHome() {
       console.error('❌ Error fetching assigned orders:', error)
       // Don't show error to user, just log it
     }
-  }, [isOnline, calculateTimeAway])
+  }, [isOnline, calculateTimeAway, isOrderAlreadyAccepted])
 
   // Fetch assigned orders when delivery person goes online
   useEffect(() => {

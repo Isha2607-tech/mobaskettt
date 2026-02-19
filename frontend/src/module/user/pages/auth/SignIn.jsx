@@ -541,6 +541,18 @@ export default function SignIn() {
     return ""
   }
 
+  const sanitizeOtpErrorMessage = (message) => {
+    const text = String(message || "")
+    const looksLikeInfraError =
+      /ssl|tls|alert number|routines|socket hang up|econnreset|ehostunreach|etimedout|enotfound/i.test(text)
+
+    if (looksLikeInfraError) {
+      return "OTP service is temporarily unavailable. Please try again in a few minutes."
+    }
+
+    return text || "Failed to send OTP. Please try again."
+  }
+
   const handleChange = (e) => {
     const { name } = e.target
     const value = name === "phone" ? e.target.value.replace(/\D/g, "") : e.target.value
@@ -621,11 +633,11 @@ export default function SignIn() {
       // Navigate to OTP page
       navigate("/user/auth/otp")
     } catch (error) {
-      const message =
+      const rawMessage =
         error?.response?.data?.message ||
         error?.response?.data?.error ||
         "Failed to send OTP. Please try again."
-      setApiError(message)
+      setApiError(sanitizeOtpErrorMessage(rawMessage))
     } finally {
       setIsLoading(false)
     }
