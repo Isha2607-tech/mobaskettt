@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { adminAPI } from "@/lib/api"
 import { setAuthData, isModuleAuthenticated } from "@/lib/utils/auth"
+import { loadBusinessSettings } from "@/lib/utils/businessSettings"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -22,6 +23,7 @@ export default function AdminLogin() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
+  const [logoUrl, setLogoUrl] = useState("")
 
   // Redirect to admin dashboard if already authenticated
   useEffect(() => {
@@ -29,6 +31,22 @@ export default function AdminLogin() {
       navigate("/admin", { replace: true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Fetch dynamic business logo (no static fallback logo)
+  useEffect(() => {
+    const fetchLogo = async () => {
+      try {
+        const settings = await loadBusinessSettings()
+        if (settings?.logo?.url) {
+          setLogoUrl(settings.logo.url)
+        }
+      } catch {
+        // Keep logo hidden if settings are unavailable
+      }
+    }
+
+    fetchLogo()
   }, [])
 
   const handleSubmit = async (e) => {
@@ -80,6 +98,16 @@ export default function AdminLogin() {
         <Card className="w-full max-w-lg bg-white/90 backdrop-blur border-neutral-200 shadow-2xl">
           <CardHeader className="pb-4">
             <div className="flex w-full items-center gap-4 sm:gap-5">
+              {logoUrl ? (
+                <div className="flex h-14 w-28 shrink-0 items-center justify-center rounded-xl bg-gray-900/5 ring-1 ring-neutral-200">
+                  <img
+                    src={logoUrl}
+                    alt="MoBasket Logo"
+                    className="h-10 w-24 object-contain"
+                    loading="lazy"
+                  />
+                </div>
+              ) : null}
               <div className="flex flex-col gap-1">
                 <CardTitle className="text-3xl leading-tight text-gray-900">Admin Login</CardTitle>
                 <CardDescription className="text-base text-gray-600">
