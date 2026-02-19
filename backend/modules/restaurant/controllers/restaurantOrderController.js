@@ -9,6 +9,33 @@ import { notifyDeliveryBoyNewOrder, notifyMultipleDeliveryBoys } from '../../ord
 import { restoreGroceryStockForOrder } from '../../order/services/groceryStockService.js';
 import mongoose from 'mongoose';
 
+const emitOrderTrackingUpdate = async (orderLike, payload = {}) => {
+  try {
+    const serverModule = await import('../../../server.js');
+    const getIO = serverModule.getIO;
+    const io = getIO ? getIO() : null;
+    if (!io) return;
+
+    const aliases = Array.from(new Set([
+      orderLike?._id?.toString?.(),
+      orderLike?._id,
+      orderLike?.id,
+      orderLike?.orderId
+    ].filter(Boolean).map((value) => String(value))));
+
+    if (aliases.length === 0) return;
+
+    aliases.forEach((alias) => {
+      io.to(`order:${alias}`).emit('order_status_update', {
+        orderId: orderLike?.orderId || alias,
+        ...payload
+      });
+    });
+  } catch (emitError) {
+    console.warn(`Failed to emit order tracking update: ${emitError.message}`);
+  }
+};
+
 /**
  * Get all orders for restaurant
  * GET /api/restaurant/orders
@@ -318,6 +345,65 @@ export const acceptOrder = asyncHandler(async (req, res) => {
       console.error('Error sending notification:', notifError);
     }
 
+    // Notify user tracking room that restaurant accepted the order
+    try {
+      await emitOrderTrackingUpdate(order, {
+        status: 'preparing',
+        message: 'Restaurant accepted your order'
+      });
+    } catch (userNotifError) {
+      console.error('Error sending user accepted notification:', userNotifError);
+    }
+
+    // Direct assignment fallback from restaurant accept flow.
+    // This restores the expected behavior where accepting from /restaurant immediately pushes to a delivery partner.
+    if (!order.deliveryPartnerId) {
+      try {
+        let restaurantDoc = null;
+        if (mongoose.Types.ObjectId.isValid(restaurantId)) {
+          restaurantDoc = await Restaurant.findById(restaurantId).lean();
+        }
+        if (!restaurantDoc) {
+          restaurantDoc = await Restaurant.findOne({
+            $or: [
+              { restaurantId: restaurantId },
+              { _id: restaurantId }
+            ]
+          }).lean();
+        }
+
+        const hasValidRestaurantCoords = Boolean(
+          restaurantDoc?.location?.coordinates &&
+          restaurantDoc.location.coordinates.length >= 2 &&
+          !(restaurantDoc.location.coordinates[0] === 0 && restaurantDoc.location.coordinates[1] === 0)
+        );
+
+        if (hasValidRestaurantCoords) {
+          const [restaurantLng, restaurantLat] = restaurantDoc.location.coordinates;
+          const assignmentResult = await assignOrderToDeliveryBoy(order, restaurantLat, restaurantLng, restaurantId);
+
+          if (assignmentResult?.success && assignmentResult.deliveryPartnerId) {
+            const assignedOrder = await Order.findById(order._id)
+              .populate('userId', 'name phone')
+              .lean();
+
+            if (assignedOrder) {
+              await notifyDeliveryBoyNewOrder(assignedOrder, assignmentResult.deliveryPartnerId);
+              console.log(`✅ Direct assignment completed from accept flow for order ${order.orderId}`);
+            }
+          }
+        }
+      } catch (directAssignError) {
+        console.error('❌ Error in direct assignment from accept flow:', directAssignError);
+      }
+
+      // Refresh order state after direct assignment attempt
+      const latestOrder = await Order.findById(order._id);
+      if (latestOrder) {
+        order = latestOrder;
+      }
+    }
+
     // Priority-based order notification: First notify nearest delivery boys, then expand after 30 seconds
     if (!order.deliveryPartnerId) {
       try {
@@ -594,6 +680,16 @@ export const rejectOrder = asyncHandler(async (req, res) => {
       await notifyRestaurantOrderUpdate(order._id.toString(), 'cancelled');
     } catch (notifError) {
       console.error('Error sending notification:', notifError);
+    }
+
+    // Notify user tracking room that restaurant cancelled the order
+    try {
+      await emitOrderTrackingUpdate(order, {
+        status: 'cancelled',
+        message: 'Restaurant cancelled your order'
+      });
+    } catch (userNotifError) {
+      console.error('Error sending user cancellation notification:', userNotifError);
     }
 
     return successResponse(res, 200, 'Order rejected successfully', {
@@ -914,6 +1010,15 @@ export const markOrderReady = asyncHandler(async (req, res) => {
       await notifyRestaurantOrderUpdate(order._id.toString(), 'ready');
     } catch (notifError) {
       console.error('Error sending restaurant notification:', notifError);
+    }
+
+    try {
+      await emitOrderTrackingUpdate(order, {
+        status: 'ready',
+        message: 'Your food is ready'
+      });
+    } catch (userNotifError) {
+      console.error('Error sending user ready notification:', userNotifError);
     }
 
     // Notify delivery boy that order is ready for pickup

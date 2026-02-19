@@ -273,7 +273,7 @@ export const getOrders = asyncHandler(async (req, res) => {
     // Fetch orders with population
     const orders = await Order.find(query)
       .populate('userId', 'name email phone')
-      .populate('restaurantId', 'name slug')
+      .populate('restaurantId', 'name slug platform')
       .populate('deliveryPartnerId', 'name phone')
       .sort({ createdAt: -1 })
       .limit(parseInt(limit))
@@ -428,6 +428,7 @@ export const getOrders = asyncHandler(async (req, res) => {
         customerEmail: order.userId?.email || '',
         restaurant: order.restaurantName || order.restaurantId?.name || 'Unknown Restaurant',
         restaurantId: order.restaurantId?.toString() || order.restaurantId || '',
+        restaurantPlatform: String(order.restaurantId?.platform || 'mofood').toLowerCase(),
         // Report-specific fields
         totalItemAmount: totalItemAmount,
         itemDiscount: itemDiscount,
@@ -456,6 +457,7 @@ export const getOrders = asyncHandler(async (req, res) => {
         orderStatus: orderStatusDisplay,
         status: order.status, // Backend status
         adminApprovalStatus: order.adminApproval?.status || null,
+        canAdminApprove: String(order.restaurantId?.platform || 'mofood').toLowerCase() === 'mogrocery',
         adminApprovalReason: order.adminApproval?.reason || null,
         adminReviewedAt: order.adminApproval?.reviewedAt || null,
         deliveryType: deliveryType,
@@ -572,6 +574,9 @@ const resolveRestaurantForOrder = async (order) => {
     ]
   }).lean();
 };
+
+const isOrderAdminApprovalAllowed = (restaurantDoc) =>
+  String(restaurantDoc?.platform || 'mofood').toLowerCase() === 'mogrocery';
 
 const triggerDeliveryBroadcastForApprovedOrder = async (order, restaurantDoc) => {
   try {
@@ -696,6 +701,10 @@ export const approveOrderRequest = asyncHandler(async (req, res) => {
       await import('../../order/services/restaurantNotificationService.js');
     const restaurantDoc = await resolveRestaurantForOrder(order);
 
+    if (!isOrderAdminApprovalAllowed(restaurantDoc)) {
+      return errorResponse(res, 400, 'MoFood orders must be accepted/rejected by restaurant only');
+    }
+
     order.adminApproval = {
       status: 'approved',
       reason: '',
@@ -752,6 +761,11 @@ export const rejectOrderRequest = asyncHandler(async (req, res) => {
 
     if (order.adminApproval?.status === 'rejected' || order.status === 'cancelled') {
       return errorResponse(res, 400, 'Order is already rejected/cancelled');
+    }
+
+    const restaurantDoc = await resolveRestaurantForOrder(order);
+    if (!isOrderAdminApprovalAllowed(restaurantDoc)) {
+      return errorResponse(res, 400, 'MoFood orders must be accepted/rejected by restaurant only');
     }
 
     order.adminApproval = {

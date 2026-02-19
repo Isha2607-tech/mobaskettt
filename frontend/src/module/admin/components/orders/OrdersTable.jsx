@@ -337,6 +337,7 @@ export default function OrdersTable({
                       {enableApprovalActions &&
                         typeof onAcceptOrder === "function" &&
                         typeof onRejectOrder === "function" &&
+                        Boolean(order.canAdminApprove) &&
                         (order.status === "confirmed" || order.status === "pending" || order.status === "scheduled") &&
                         (order.adminApprovalStatus === "pending" || !order.adminApprovalStatus) && (
                           <>

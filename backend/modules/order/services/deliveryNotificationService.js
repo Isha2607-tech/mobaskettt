@@ -592,7 +592,7 @@ export async function notifyDeliveryBoyOrderReady(order, deliveryPartnerId) {
       status: 'ready',
       restaurantName: order.restaurantName || order.restaurantId?.name,
       restaurantAddress: order.restaurantId?.address || order.restaurantId?.location?.address,
-      message: `Order ${order.orderId} is ready for pickup`,
+      message: 'Food is ready please collect it',
       timestamp: new Date().toISOString(),
       // Include restaurant coords so delivery app can show Reached Pickup when rider is near (coordinates: [lng, lat])
       restaurantLat: coords?.[1],
