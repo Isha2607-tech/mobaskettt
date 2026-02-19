@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Search, Share2, Clock, ChevronDown, CheckCircle, X, Minus, Plus, Star } from "lucide-react";
+import { ArrowLeft, Search, Share2, Clock, ChevronDown, CheckCircle, X, Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import WishlistButton from "@/components/WishlistButton";
@@ -438,16 +438,6 @@ export default function FoodDetailPage() {
                 <p className="text-[12px] font-bold text-slate-900 leading-tight line-clamp-2 min-h-[32px] mb-1">
                   {item.name}
                 </p>
-
-                {/* Mock Rating */}
-                <div className="flex items-center gap-1 mb-1">
-                  <div className="flex text-yellow-400">
-                    {[...Array(5)].map((_, i) => (
-                      <Star key={i} size={8} fill="currentColor" />
-                    ))}
-                  </div>
-                  <span className="text-[9px] text-slate-400 font-medium">({Math.floor(Math.random() * 200) + 50})</span>
-                </div>
 
                 {/* Time with Icon */}
                 <div className="flex items-center gap-1 mb-1.5">
