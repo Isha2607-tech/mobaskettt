@@ -277,12 +277,12 @@ const GroceryCartPage = () => {
 
   if (isCartEmpty) {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 pb-24">
-        <div className="w-48 h-48 bg-gray-50 rounded-full flex items-center justify-center mb-6">
-          <ShoppingBag size={80} className="text-gray-200" />
+      <div className="min-h-screen bg-white dark:bg-[#0a0a0a] flex flex-col items-center justify-center p-6 pb-24">
+        <div className="w-48 h-48 bg-gray-50 dark:bg-[#1a1a1a] rounded-full flex items-center justify-center mb-6">
+          <ShoppingBag size={80} className="text-gray-200 dark:text-gray-600" />
         </div>
-        <h2 className="text-xl font-bold text-gray-900 mb-2">Your cart is empty</h2>
-        <p className="text-gray-500 text-center mb-8">
+        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Your cart is empty</h2>
+        <p className="text-gray-500 dark:text-gray-400 text-center mb-8">
           Looks like you haven&apos;t added anything to your cart yet.
         </p>
         <button
@@ -296,17 +296,17 @@ const GroceryCartPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#fefce8] pb-32">
+    <div className="min-h-screen bg-[#fefce8] dark:bg-[#0a0a0a] pb-32">
       {/* Header */}
-      <div className="bg-white sticky top-0 z-50 px-4 py-4 flex items-center justify-between border-b border-gray-100">
+      <div className="bg-white dark:bg-[#111111] sticky top-0 z-50 px-4 py-4 flex items-center justify-between border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate(-1)}
-            className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+            className="p-1 hover:bg-gray-100 dark:hover:bg-[#1f1f1f] rounded-full transition-colors"
           >
-            <X size={24} className="text-gray-800" />
+            <X size={24} className="text-gray-800 dark:text-gray-100" />
           </button>
-          <h1 className="text-lg font-bold text-gray-900">My Cart</h1>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">My Cart</h1>
         </div>
         <button
           type="button"
@@ -329,24 +329,24 @@ const GroceryCartPage = () => {
         )}
 
         {/* Status Message */}
-        <div className="bg-white mx-4 mt-4 rounded-xl p-4 flex items-start gap-3 shadow-sm border border-yellow-50">
+        <div className="bg-white dark:bg-[#1a1a1a] mx-4 mt-4 rounded-xl p-4 flex items-start gap-3 shadow-sm border border-yellow-50 dark:border-gray-800">
           <div className="bg-yellow-100 p-1.5 rounded-full">
             <Clock size={18} className="text-yellow-600" />
           </div>
           <div className="flex-1">
-            <h3 className="text-sm font-bold text-gray-900 leading-tight">Delivery in 8 minutes</h3>
-            <p className="text-[11px] text-gray-500 mt-0.5">Shipment of {groceryItems.length} items</p>
+            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 leading-tight">Delivery in 8 minutes</h3>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">Shipment of {groceryItems.length} items</p>
           </div>
         </div>
 
         {/* Item List */}
-        <div className="bg-white mx-4 mt-4 rounded-xl overflow-hidden shadow-sm border border-gray-50">
+        <div className="bg-white dark:bg-[#1a1a1a] mx-4 mt-4 rounded-xl overflow-hidden shadow-sm border border-gray-50 dark:border-gray-800">
           {groceryItems.map((item) => (
             <div
               key={item.id}
-              className="p-4 flex items-center gap-4 border-b border-gray-50 last:border-0"
+              className="p-4 flex items-center gap-4 border-b border-gray-50 dark:border-gray-800 last:border-0"
             >
-              <div className="w-16 h-16 flex-shrink-0 bg-gray-50 rounded-lg overflow-hidden border border-gray-100">
+              <div className="w-16 h-16 flex-shrink-0 bg-gray-50 dark:bg-[#242424] rounded-lg overflow-hidden border border-gray-100 dark:border-gray-700">
                 <img
                   src={item.image}
                   alt={item.name}
@@ -354,14 +354,14 @@ const GroceryCartPage = () => {
                 />
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="text-sm font-bold text-gray-900 leading-tight line-clamp-2">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 leading-tight line-clamp-2">
                   {item.name}
                 </h3>
-                <p className="text-[11px] text-gray-500 mt-0.5">{item.weight || "1 unit"}</p>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{item.weight || "1 unit"}</p>
                 <div className="flex items-center gap-2 mt-2">
-                  <span className="text-sm font-bold text-gray-900">Rs {item.price}</span>
+                  <span className="text-sm font-bold text-gray-900 dark:text-gray-100">Rs {item.price}</span>
                   {item.mrp && item.mrp > item.price && (
-                    <span className="text-[10px] text-gray-400 line-through">Rs {item.mrp}</span>
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500 line-through">Rs {item.mrp}</span>
                   )}
                 </div>
               </div>
@@ -387,8 +387,8 @@ const GroceryCartPage = () => {
         </div>
 
         {/* Bill Details */}
-        <div className="bg-white mx-4 mt-4 rounded-xl p-4 shadow-sm border border-gray-50 mb-6">
-          <h2 className="text-sm font-bold text-gray-900 mb-3">Bill details</h2>
+        <div className="bg-white dark:bg-[#1a1a1a] mx-4 mt-4 rounded-xl p-4 shadow-sm border border-gray-50 dark:border-gray-800 mb-6">
+          <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-3">Bill details</h2>
           {shouldShowPlanAnimation && (
             <motion.div
               initial={{ opacity: 0, y: 10, scale: 0.98 }}
@@ -442,7 +442,7 @@ const GroceryCartPage = () => {
                 {itemsTotal > Number(subtotal || 0) && (
                   <span className="text-gray-400 line-through">Rs {itemsTotal}</span>
                 )}
-                <span className="font-bold text-gray-900">Rs {subtotal}</span>
+                <span className="font-bold text-gray-900 dark:text-gray-100">Rs {subtotal}</span>
               </div>
             </div>
 
@@ -451,7 +451,7 @@ const GroceryCartPage = () => {
                 Delivery charge
                 <AlertCircle size={12} className="text-gray-400" />
               </div>
-              <span className="font-bold text-gray-900">
+              <span className="font-bold text-gray-900 dark:text-gray-100">
                 {loadingPricing && !calculatedPricing
                   ? "Calculating..."
                   : summaryDeliveryFee > 0
@@ -465,7 +465,7 @@ const GroceryCartPage = () => {
                 Platform fee
                 <AlertCircle size={12} className="text-gray-400" />
               </div>
-              <span className="font-bold text-gray-900">
+              <span className="font-bold text-gray-900 dark:text-gray-100">
                 {loadingPricing && !calculatedPricing ? "Calculating..." : `Rs ${summaryPlatformFee}`}
               </span>
             </div>
@@ -481,9 +481,9 @@ const GroceryCartPage = () => {
               </div>
             )}
 
-            <div className="border-t border-gray-100 pt-3 flex items-center justify-between">
-              <span className="text-sm font-bold text-gray-900">Grand total</span>
-              <span className="text-sm font-bold text-gray-900">Rs {grandTotal}</span>
+            <div className="border-t border-gray-100 dark:border-gray-800 pt-3 flex items-center justify-between">
+              <span className="text-sm font-bold text-gray-900 dark:text-gray-100">Grand total</span>
+              <span className="text-sm font-bold text-gray-900 dark:text-gray-100">Rs {grandTotal}</span>
             </div>
           </div>
         </div>
@@ -497,9 +497,9 @@ const GroceryCartPage = () => {
         )}
 
         {/* Cancellation Policy */}
-        <div className="bg-white mx-4 mb-32 rounded-xl p-4 shadow-sm border border-gray-50">
-          <h3 className="text-xs font-bold text-gray-900 mb-2">Cancellation Policy</h3>
-          <p className="text-[10px] text-gray-500 leading-relaxed">
+        <div className="bg-white dark:bg-[#1a1a1a] mx-4 mb-32 rounded-xl p-4 shadow-sm border border-gray-50 dark:border-gray-800">
+          <h3 className="text-xs font-bold text-gray-900 dark:text-gray-100 mb-2">Cancellation Policy</h3>
+          <p className="text-[10px] text-gray-500 dark:text-gray-400 leading-relaxed">
             Orders cannot be cancelled once packed for delivery. In case of unexpected delays, a
             refund will be provided if applicable.
           </p>
@@ -507,7 +507,7 @@ const GroceryCartPage = () => {
       </div>
 
       {/* Sticky Bottom Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4 pb-6 z-[100] md:max-w-md md:mx-auto">
+      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-[#111111] border-t border-gray-100 dark:border-gray-800 p-4 pb-6 z-[100] md:max-w-md md:mx-auto">
         <div className="bg-[#facd01] rounded-xl flex items-center justify-between px-4 py-3 shadow-lg active:scale-[0.98] transition-all cursor-pointer overflow-hidden group border border-yellow-400">
           <div className="flex flex-col">
             <span className="text-gray-900 font-bold text-sm">Rs {grandTotal}</span>

@@ -1009,13 +1009,13 @@ const GroceryPage = () => {
   return (
     // Main Container with White Background
     <div
-      className={`min-h-screen text-slate-800 pb-24 font-sans w-full shadow-none overflow-x-hidden relative bg-white ${isGroceryUnavailable ? "grayscale-[0.95] opacity-70" : ""
+      className={`min-h-screen text-slate-800 dark:text-slate-100 pb-24 font-sans w-full shadow-none overflow-x-hidden relative bg-white dark:bg-[#0a0a0a] ${isGroceryUnavailable ? "grayscale-[0.95] opacity-70" : ""
         }`}
     >
       {isGroceryUnavailable && (
         <div className="fixed top-[88px] left-1/2 -translate-x-1/2 z-[95] px-4">
-          <div className="rounded-xl border border-slate-300 bg-white/95 backdrop-blur px-4 py-2 shadow-sm">
-            <p className="text-xs font-semibold text-slate-700 text-center">
+          <div className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white/95 dark:bg-[#1a1a1a]/95 backdrop-blur px-4 py-2 shadow-sm">
+            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 text-center">
               MoGrocery is currently unavailable. Store is offline.
             </p>
           </div>
@@ -1053,7 +1053,7 @@ const GroceryPage = () => {
       </AnimatePresence>
       {/* --- 1. HEADER (Yellow) --- */}
       <div
-        className={`sticky top-0 z-40 transition-all duration-300 bg-white ${isScrolled ? "shadow-sm" : ""}`}
+        className={`sticky top-0 z-40 transition-all duration-300 bg-white dark:bg-[#111111] ${isScrolled ? "shadow-sm" : ""}`}
       >
         <div className="relative z-20">
           {/* Top Info Row - YELLOW BACKGROUND ADDED HERE */}
@@ -1648,7 +1648,7 @@ const GroceryPage = () => {
       {/* --- 8. BOTTOM FLOATING OFFER --- */}
 
       {/* --- 6. BOTTOM NAVIGATION (Fixed) --- */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white/85 backdrop-blur-md border-t border-slate-100 py-2 px-6 flex justify-between md:justify-center md:gap-28 items-end z-50 w-full pb-4">
+      <div className="fixed bottom-0 left-0 right-0 bg-white/85 dark:bg-[#111111]/95 backdrop-blur-md border-t border-slate-100 dark:border-slate-800 py-2 px-6 flex justify-between md:justify-center md:gap-28 items-end z-50 w-full pb-4">
         <div
           className={`flex flex-col items-center gap-1 cursor-pointer ${isGroceryCategoriesRoute ? "text-slate-400 hover:text-slate-600" : ""}`}
           onClick={handleHomeNavClick}

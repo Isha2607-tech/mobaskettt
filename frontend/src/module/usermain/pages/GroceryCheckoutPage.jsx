@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -55,6 +55,13 @@ export default function GroceryCheckoutPage() {
 
   // Filter grocery items
   const groceryItems = cart.filter((item) => isGroceryItem(item));
+  const groceryItemsKey = useMemo(
+    () =>
+      groceryItems
+        .map((item) => `${item?.id || item?._id || ""}:${item?.quantity || 0}:${item?.restaurantId || ""}`)
+        .join("|"),
+    [groceryItems],
+  );
 
   const deliveryAddress =
     "Select delivery address";
@@ -97,6 +104,19 @@ export default function GroceryCheckoutPage() {
 
     return parts.join(", ") || deliveryAddress;
   }, [selectedAddress]);
+  const selectedAddressKey = useMemo(() => {
+    if (!selectedAddress) return "none";
+    const coords = selectedAddress?.location?.coordinates || [];
+    return [
+      selectedAddress.formattedAddress || "",
+      selectedAddress.street || "",
+      selectedAddress.city || "",
+      selectedAddress.state || "",
+      selectedAddress.zipCode || "",
+      coords[0] || "",
+      coords[1] || "",
+    ].join("|");
+  }, [selectedAddress]);
 
   const itemsTotal = groceryItems.reduce(
     (sum, item) => sum + (item.mrp || item.price) * item.quantity,
@@ -107,6 +127,8 @@ export default function GroceryCheckoutPage() {
     0,
   );
   const totalSavings = itemsTotal - subtotal;
+  const cartRestaurantId = groceryItems[0]?.restaurantId;
+  const cartRestaurantName = groceryItems[0]?.restaurant || "MoGrocery";
 
   const cartCategoryIds = useMemo(() => {
     const ids = groceryItems
@@ -146,17 +168,18 @@ export default function GroceryCheckoutPage() {
     fetchFeeSettings();
   }, []);
 
-  const resolveGroceryRestaurant = async () => {
+  const resolveGroceryRestaurant = useCallback(async () => {
     if (resolvedRestaurant?.restaurantId) {
       return resolvedRestaurant;
     }
 
-    const cartRestaurantId = groceryItems[0]?.restaurantId;
-    const cartRestaurantName = groceryItems[0]?.restaurant || "MoGrocery";
-
     if (cartRestaurantId && cartRestaurantId !== "grocery-store") {
       const resolved = { restaurantId: cartRestaurantId, restaurantName: cartRestaurantName };
-      setResolvedRestaurant(resolved);
+      setResolvedRestaurant((prev) =>
+        prev?.restaurantId === resolved.restaurantId && prev?.restaurantName === resolved.restaurantName
+          ? prev
+          : resolved,
+      );
       return resolved;
     }
 
@@ -180,9 +203,13 @@ export default function GroceryCheckoutPage() {
       restaurantId: resolvedRestaurantId,
       restaurantName: groceryLikeStore?.name || cartRestaurantName,
     };
-    setResolvedRestaurant(resolved);
+    setResolvedRestaurant((prev) =>
+      prev?.restaurantId === resolved.restaurantId && prev?.restaurantName === resolved.restaurantName
+        ? prev
+        : resolved,
+    );
     return resolved;
-  };
+  }, [cartRestaurantId, cartRestaurantName, resolvedRestaurant]);
 
   const buildOrderItems = () =>
     groceryItems.map((item) => ({
@@ -198,7 +225,7 @@ export default function GroceryCheckoutPage() {
   useEffect(() => {
     const resolveRestaurantForPreview = async () => {
       if (!groceryItems.length) {
-        setResolvedRestaurant(null);
+        setResolvedRestaurant((prev) => (prev ? null : prev));
         return;
       }
       try {
@@ -209,7 +236,7 @@ export default function GroceryCheckoutPage() {
     };
 
     resolveRestaurantForPreview();
-  }, [groceryItems]);
+  }, [groceryItemsKey, resolveGroceryRestaurant]);
 
   useEffect(() => {
     const calculatePricingPreview = async () => {
@@ -239,7 +266,7 @@ export default function GroceryCheckoutPage() {
     };
 
     calculatePricingPreview();
-  }, [groceryItems, selectedAddress, resolvedRestaurant, zoneId]);
+  }, [groceryItemsKey, selectedAddressKey, resolvedRestaurant?.restaurantId, zoneId]);
 
   useEffect(() => {
     const fetchCategoryAddons = async () => {
@@ -511,32 +538,32 @@ export default function GroceryCheckoutPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#fefce8] pb-24">
+    <div className="min-h-screen bg-[#fefce8] dark:bg-[#0a0a0a] pb-24">
       {/* Header */}
-      <div className="bg-white sticky top-0 z-50 rounded-b-3xl shadow-sm">
+      <div className="bg-white dark:bg-[#111111] sticky top-0 z-50 rounded-b-3xl shadow-sm border-b border-transparent dark:border-gray-800">
         <div className="px-4 py-4 flex items-center gap-3">
           <button
             onClick={() => navigate(-1)}
-            className="p-2 hover:bg-yellow-50 rounded-full transition-colors"
+            className="p-2 hover:bg-yellow-50 dark:hover:bg-[#1f1f1f] rounded-full transition-colors"
           >
-            <ArrowLeft className="w-5 h-5 text-gray-800" />
+            <ArrowLeft className="w-5 h-5 text-gray-800 dark:text-gray-100" />
           </button>
-          <h1 className="text-lg font-bold text-gray-900">Checkout</h1>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">Checkout</h1>
         </div>
       </div>
 
       {/* Delivery Address */}
       <div className="px-4 py-4">
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-yellow-50">
+        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl p-4 shadow-sm border border-yellow-50 dark:border-gray-800">
           <div className="flex items-start gap-3">
             <div className="bg-[#facd01] rounded-lg p-2">
-              <MapPin className="w-5 h-5 text-gray-900" />
+              <MapPin className="w-5 h-5 text-gray-900 dark:text-gray-100" />
             </div>
             <div className="flex-1">
-              <h3 className="text-sm font-bold text-gray-900 mb-1">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-1">
                 Delivery Address
               </h3>
-              <p className="text-xs text-gray-600">{formattedDeliveryAddress}</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400">{formattedDeliveryAddress}</p>
               <button
                 onClick={() => navigate("/profile/addresses")}
                 className="text-yellow-700 text-xs font-bold mt-2 hover:underline"
@@ -550,8 +577,8 @@ export default function GroceryCheckoutPage() {
 
       {/* Order Items */}
       <div className="px-4 mb-4">
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-yellow-50">
-          <h3 className="text-sm font-bold text-gray-900 mb-3 border-b border-gray-50 pb-2">
+        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl p-4 shadow-sm border border-yellow-50 dark:border-gray-800">
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-3 border-b border-gray-50 dark:border-gray-800 pb-2">
             Order Items
           </h3>
           <div className="space-y-3">
@@ -561,12 +588,12 @@ export default function GroceryCheckoutPage() {
                 className="flex items-center justify-between pb-3 border-b border-gray-50 last:border-0 last:pb-0"
               >
                 <div className="flex-1">
-                  <p className="text-sm font-bold text-gray-900">{item.name}</p>
+                  <p className="text-sm font-bold text-gray-900 dark:text-gray-100">{item.name}</p>
                   <p className="text-xs text-gray-500">
                     Quantity: {item.quantity}
                   </p>
                 </div>
-                <p className="text-sm font-bold text-gray-900">
+                <p className="text-sm font-bold text-gray-900 dark:text-gray-100">
                   ₹{(item.price * item.quantity).toFixed(2)}
                 </p>
               </div>
@@ -577,8 +604,8 @@ export default function GroceryCheckoutPage() {
 
       {(loadingCategoryAddons || categoryAddons.length > 0) && (
         <div className="px-4 mb-4">
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-yellow-50">
-            <h3 className="text-sm font-bold text-gray-900 mb-3 border-b border-gray-50 pb-2">
+          <div className="bg-white dark:bg-[#1a1a1a] rounded-xl p-4 shadow-sm border border-yellow-50 dark:border-gray-800">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-3 border-b border-gray-50 dark:border-gray-800 pb-2">
               Suggested Add-ons
             </h3>
             {loadingCategoryAddons ? (
@@ -603,7 +630,7 @@ export default function GroceryCheckoutPage() {
                           <span className="text-[10px] text-gray-400">No image</span>
                         )}
                       </div>
-                      <p className="text-xs font-semibold text-gray-900 line-clamp-2">{addon?.name || "Addon"}</p>
+                      <p className="text-xs font-semibold text-gray-900 dark:text-gray-100 line-clamp-2">{addon?.name || "Addon"}</p>
                       <p className="text-[11px] text-gray-600 mt-1">Rs {Number(addon?.price || 0).toFixed(2)}</p>
                     </div>
                   );
@@ -616,8 +643,8 @@ export default function GroceryCheckoutPage() {
 
       {/* Order Summary */}
       <div className="px-4 mb-4">
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-yellow-50">
-          <h3 className="text-sm font-bold text-gray-900 mb-3 border-b border-gray-50 pb-2">
+        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl p-4 shadow-sm border border-yellow-50 dark:border-gray-800">
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-3 border-b border-gray-50 dark:border-gray-800 pb-2">
             Order Summary
           </h3>
           {isMoGoldPlanApplied && (
@@ -660,13 +687,13 @@ export default function GroceryCheckoutPage() {
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600">Subtotal</span>
-              <span className="text-gray-900 font-bold">
+              <span className="text-gray-900 dark:text-gray-100 font-bold">
                 {showPricingLoading ? "Calculating..." : `Rs ${subtotal.toFixed(2)}`}
               </span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600">Delivery Fee</span>
-              <span className="text-gray-900 font-bold">
+              <span className="text-gray-900 dark:text-gray-100 font-bold">
                 {showPricingLoading
                   ? "Calculating..."
                   : summaryDeliveryFee > 0
@@ -676,13 +703,13 @@ export default function GroceryCheckoutPage() {
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600">Platform Fee</span>
-              <span className="text-gray-900 font-bold">
+              <span className="text-gray-900 dark:text-gray-100 font-bold">
                 {showPricingLoading ? "Calculating..." : `Rs ${summaryPlatformFee.toFixed(2)}`}
               </span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600">GST & Taxes</span>
-              <span className="text-gray-900 font-bold">
+              <span className="text-gray-900 dark:text-gray-100 font-bold">
                 {showPricingLoading ? "Calculating..." : `Rs ${summaryTax.toFixed(2)}`}
               </span>
             </div>
@@ -706,10 +733,10 @@ export default function GroceryCheckoutPage() {
             )}
             <div className="border-t border-gray-100 pt-3 mt-2">
               <div className="flex items-center justify-between">
-                <span className="text-base font-black text-gray-900">
+                <span className="text-base font-black text-gray-900 dark:text-gray-100">
                   Grand Total
                 </span>
-                <span className="text-xl font-black text-gray-900">
+                <span className="text-xl font-black text-gray-900 dark:text-gray-100">
                   {showPricingLoading ? "Calculating..." : `Rs ${grandTotal.toFixed(2)}`}
                 </span>
               </div>
@@ -720,10 +747,10 @@ export default function GroceryCheckoutPage() {
 
       {/* Delivery Options */}
       <div className="px-4 mb-4">
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-yellow-50">
+        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl p-4 shadow-sm border border-yellow-50 dark:border-gray-800">
           <div className="flex items-center gap-2 mb-3">
             <Truck className="w-4 h-4 text-orange-500" />
-            <h3 className="text-sm font-bold text-gray-900 uppercase tracking-tight">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-tight">
               Delivery Options
             </h3>
           </div>
@@ -872,8 +899,8 @@ export default function GroceryCheckoutPage() {
 
       {/* Payment Method */}
       <div className="px-4 mb-4">
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-yellow-50">
-          <h3 className="text-sm font-bold text-gray-900 mb-3 border-b border-gray-50 pb-2">
+        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl p-4 shadow-sm border border-yellow-50 dark:border-gray-800">
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-3 border-b border-gray-50 dark:border-gray-800 pb-2">
             Payment Method
           </h3>
           <div className="space-y-2 mt-3">
@@ -963,7 +990,7 @@ export default function GroceryCheckoutPage() {
       </div>
 
       {/* Proceed Button */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4 pb-6 z-50 md:max-w-md md:mx-auto">
+      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-[#111111] border-t border-gray-100 dark:border-gray-800 p-4 pb-6 z-50 md:max-w-md md:mx-auto">
         <button
           className="w-full bg-[#facd01] hover:bg-[#e6bc01] text-gray-900 font-black py-4 rounded-2xl text-base shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"
           onClick={handlePlaceOrder}
