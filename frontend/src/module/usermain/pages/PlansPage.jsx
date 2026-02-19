@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronRight,
   MapPin,
@@ -20,6 +20,8 @@ import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import { orderAPI, restaurantAPI } from "@/lib/api";
 import { initRazorpayPayment } from "@/lib/utils/razorpay";
+import { getCachedSettings, loadBusinessSettings } from "@/lib/utils/businessSettings";
+import appzetoLogo from "@/assets/appzetologo.png";
 import { useProfile } from "../../user/context/ProfileContext";
 import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
 import { useZone } from "../../user/hooks/useZone";
@@ -38,9 +40,41 @@ const PlansPage = () => {
   const [selectedOfferIds, setSelectedOfferIds] = useState([]);
   const [boughtPlans, setBoughtPlans] = useState([]);
   const [boughtPlansLoading, setBoughtPlansLoading] = useState(true);
+  const [logoUrl, setLogoUrl] = useState(appzetoLogo);
   const { getDefaultAddress, userProfile } = useProfile();
   const { location: liveLocation } = useUserLocation();
   const { zoneId } = useZone(liveLocation, "mogrocery");
+
+  useEffect(() => {
+    const loadLogo = async () => {
+      try {
+        const cached = getCachedSettings();
+        if (cached?.logo?.url) {
+          setLogoUrl(cached.logo.url);
+          return;
+        }
+
+        const settings = await loadBusinessSettings();
+        if (settings?.logo?.url) {
+          setLogoUrl(settings.logo.url);
+        }
+      } catch {
+        // Keep fallback logo
+      }
+    };
+
+    loadLogo();
+
+    const onBusinessSettingsUpdate = () => {
+      const cached = getCachedSettings();
+      if (cached?.logo?.url) {
+        setLogoUrl(cached.logo.url);
+      }
+    };
+
+    window.addEventListener("businessSettingsUpdated", onBusinessSettingsUpdate);
+    return () => window.removeEventListener("businessSettingsUpdated", onBusinessSettingsUpdate);
+  }, []);
 
   useEffect(() => {
     const fetchPlans = async () => {
@@ -76,56 +110,62 @@ const PlansPage = () => {
     fetchPlans();
   }, []);
 
-  useEffect(() => {
-    const fetchBoughtPlans = async () => {
-      try {
-        setBoughtPlansLoading(true);
-        const response = await orderAPI.getOrders({ page: 1, limit: 200 });
-        const orders =
-          response?.data?.data?.orders ||
-          response?.data?.orders ||
-          (Array.isArray(response?.data?.data) ? response.data.data : []);
+  const fetchBoughtPlans = useCallback(async () => {
+    try {
+      setBoughtPlansLoading(true);
+      const response = await orderAPI.getOrders({ page: 1, limit: 200 });
+      const orders =
+        response?.data?.data?.orders ||
+        response?.data?.orders ||
+        (Array.isArray(response?.data?.data) ? response.data.data : []);
 
-        const now = new Date();
-        const normalized = (Array.isArray(orders) ? orders : [])
-          .filter((order) => order?.planSubscription?.planId)
-          .filter((order) => String(order?.payment?.status || "").toLowerCase() === "completed")
-          .filter((order) => String(order?.status || "").toLowerCase() !== "cancelled")
-          .map((order) => {
-            const purchasedAt = order?.deliveredAt || order?.createdAt || null;
-            const startDate = purchasedAt ? new Date(purchasedAt) : null;
-            const durationDays = Number(order?.planSubscription?.durationDays || 0);
-            const expiresAt =
-              startDate && durationDays > 0
-                ? new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000)
-                : null;
-            const isActive = expiresAt ? expiresAt > now : false;
+      const now = new Date();
+      const normalized = (Array.isArray(orders) ? orders : [])
+        .filter((order) => order?.planSubscription?.planId)
+        .filter((order) => {
+          const paymentStatus = String(order?.payment?.status || "").toLowerCase();
+          const hasPaymentId = Boolean(order?.payment?.razorpayPaymentId);
+          const paymentCompleted = paymentStatus === "completed" || hasPaymentId;
+          return paymentCompleted && paymentStatus !== "failed" && paymentStatus !== "refunded";
+        })
+        .filter((order) => String(order?.status || "").toLowerCase() !== "cancelled")
+        .map((order) => {
+          const purchasedAt = order?.createdAt || order?.deliveredAt || null;
+          const startDate = purchasedAt ? new Date(purchasedAt) : null;
+          const durationDays = Number(order?.planSubscription?.durationDays || 0);
+          const expiresAt =
+            startDate && durationDays > 0
+              ? new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000)
+              : null;
+          const isActive = expiresAt ? expiresAt > now : false;
 
-            return {
-              id: order?._id || order?.id || order?.orderId,
-              orderId: order?.orderId || order?._id || order?.id,
-              planName: order?.planSubscription?.planName || "MoGrocery Plan",
-              durationDays,
-              selectedOfferCount: Array.isArray(order?.planSubscription?.selectedOfferIds)
-                ? order.planSubscription.selectedOfferIds.length
-                : 0,
-              purchasedAt,
-              expiresAt: expiresAt ? expiresAt.toISOString() : null,
-              isActive,
-            };
-          })
-          .sort((a, b) => new Date(b.purchasedAt || 0) - new Date(a.purchasedAt || 0));
+          return {
+            id: order?._id || order?.id || order?.orderId,
+            orderId: order?.orderId || order?._id || order?.id,
+            planId: String(order?.planSubscription?.planId || ""),
+            planName: order?.planSubscription?.planName || "MoGrocery Plan",
+            durationDays,
+            selectedOfferCount: Array.isArray(order?.planSubscription?.selectedOfferIds)
+              ? order.planSubscription.selectedOfferIds.length
+              : 0,
+            purchasedAt,
+            expiresAt: expiresAt ? expiresAt.toISOString() : null,
+            isActive,
+          };
+        })
+        .sort((a, b) => new Date(b.purchasedAt || 0) - new Date(a.purchasedAt || 0));
 
-        setBoughtPlans(normalized);
-      } catch {
-        setBoughtPlans([]);
-      } finally {
-        setBoughtPlansLoading(false);
-      }
-    };
-
-    fetchBoughtPlans();
+      setBoughtPlans(normalized);
+    } catch {
+      setBoughtPlans([]);
+    } finally {
+      setBoughtPlansLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchBoughtPlans();
+  }, [fetchBoughtPlans]);
 
   useEffect(() => {
     // Guard against stale scroll locks left by other screens/modals.
@@ -375,6 +415,7 @@ const PlansPage = () => {
                 razorpayPaymentId: response.razorpay_payment_id,
                 razorpaySignature: response.razorpay_signature,
               });
+              await fetchBoughtPlans();
               toast.success("Plan purchased successfully.");
               setSelectedPlan(null);
               navigate(`/orders/${orderIdentifier}?confirmed=true`);
@@ -416,17 +457,43 @@ const PlansPage = () => {
     });
   };
 
+  const activeBoughtPlan = useMemo(
+    () => boughtPlans.find((plan) => plan.isActive) || null,
+    [boughtPlans]
+  );
+
+  const displayPlans = useMemo(() => {
+    if (!activeBoughtPlan) return plans;
+    const currentPlan = plans.find((plan) => String(plan.id) === String(activeBoughtPlan.planId));
+    return currentPlan ? [currentPlan] : [];
+  }, [plans, activeBoughtPlan]);
+
   return (
     <div className="bg-gray-50 min-h-screen font-sans w-full relative pb-20 overflow-x-hidden">
       <div className="bg-[#FACC15] pb-10 rounded-b-[2.5rem] shadow-sm">
         <div className="p-4 pt-6 flex justify-between items-start md:max-w-7xl md:mx-auto">
-          <div>
-            <h1 className="text-xl font-black text-slate-900 leading-none tracking-tight">
-              MoGold
-            </h1>
-            <p className="text-xs font-bold text-slate-800 mt-0.5 opacity-80">
-              Membership plans
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-white/80 border border-yellow-200 shadow-sm flex items-center justify-center overflow-hidden">
+              <img
+                src={logoUrl}
+                alt="Company logo"
+                className="w-10 h-10 object-contain"
+                loading="lazy"
+                onError={(e) => {
+                  if (e.currentTarget.src !== appzetoLogo) {
+                    e.currentTarget.src = appzetoLogo;
+                  }
+                }}
+              />
+            </div>
+            <div>
+              <h1 className="text-xl font-black text-slate-900 leading-none tracking-tight">
+                MoGold
+              </h1>
+              <p className="text-xs font-bold text-slate-800 mt-0.5 opacity-80">
+                Membership plans
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -487,24 +554,32 @@ const PlansPage = () => {
 
         <div className="flex justify-between items-center mb-5">
           <div className="flex items-center gap-3">
-            <h2 className="text-xl font-black text-slate-900">Monthly Plans</h2>
-            <span className="bg-yellow-100 text-yellow-800 text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 border border-yellow-200">
-              <Zap size={10} className="fill-yellow-800" /> SAVE 40%
-            </span>
+            <h2 className="text-xl font-black text-slate-900">
+              {activeBoughtPlan ? "Current Plan" : "Monthly Plans"}
+            </h2>
+            {!activeBoughtPlan ? (
+              <span className="bg-yellow-100 text-yellow-800 text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 border border-yellow-200">
+                <Zap size={10} className="fill-yellow-800" /> SAVE 40%
+              </span>
+            ) : null}
           </div>
-          <span className="text-emerald-700 text-xs font-bold flex items-center cursor-pointer hover:underline">
-            All plans <ChevronRight size={14} />
-          </span>
+          {!activeBoughtPlan ? (
+            <span className="text-emerald-700 text-xs font-bold flex items-center cursor-pointer hover:underline">
+              All plans <ChevronRight size={14} />
+            </span>
+          ) : null}
         </div>
 
         {loading && <p className="text-sm text-slate-500">Loading plans...</p>}
         {!loading && error && <p className="text-sm text-red-500">{error}</p>}
-        {!loading && !error && plans.length === 0 && (
-          <p className="text-sm text-slate-500">No plans available right now.</p>
+        {!loading && !error && displayPlans.length === 0 && (
+          <p className="text-sm text-slate-500">
+            {activeBoughtPlan ? "Your active plan details are not available right now." : "No plans available right now."}
+          </p>
         )}
 
         <div className="flex flex-col gap-4 md:grid md:grid-cols-2 lg:grid-cols-4">
-          {plans.map((plan) => (
+          {displayPlans.map((plan) => (
             <div
               key={plan.id}
               className={`bg-white rounded-2xl p-4 shadow-sm border cursor-pointer active:scale-95 transition-transform duration-200 ${plan.popular ? "border-yellow-400 ring-1 ring-yellow-400 relative" : "border-gray-100"} hover:shadow-md h-full flex flex-col justify-between`}

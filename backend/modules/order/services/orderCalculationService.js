@@ -192,9 +192,13 @@ const getActivePlanContext = async (userId) => {
   const now = new Date();
   const recentPlanOrders = await Order.find({
     userId: new mongoose.Types.ObjectId(userId),
-    'payment.status': 'completed',
     'planSubscription.planId': { $exists: true, $ne: null },
-    status: { $ne: 'cancelled' }
+    status: { $ne: 'cancelled' },
+    'payment.status': { $nin: ['failed', 'refunded'] },
+    $or: [
+      { 'payment.status': 'completed' },
+      { 'payment.razorpayPaymentId': { $exists: true, $ne: null } }
+    ]
   })
     .select('planSubscription createdAt deliveredAt')
     .sort({ createdAt: -1 })
@@ -223,7 +227,8 @@ const getActivePlanContext = async (userId) => {
     const plan = planById.get(planId);
     if (!plan) continue;
 
-    const durationDays = Number(order?.planSubscription?.durationDays || plan.durationDays || 0);
+    const durationFromOrder = Number(order?.planSubscription?.durationDays || 0);
+    const durationDays = durationFromOrder > 0 ? durationFromOrder : Number(plan.durationDays || 0);
     if (durationDays <= 0) continue;
 
     const startedAt = order.deliveredAt ? new Date(order.deliveredAt) : new Date(order.createdAt);
@@ -235,7 +240,9 @@ const getActivePlanContext = async (userId) => {
         plan,
         planId,
         startedAt,
-        expiresAt
+        expiresAt,
+        durationDays,
+        selectedOfferIds: Array.from(toObjectIdStringSet(order?.planSubscription?.selectedOfferIds || []))
       };
     }
   }
@@ -337,9 +344,12 @@ const getPlanBenefitAdjustment = async ({ userId, items, subtotal }) => {
   const activePlanContext = await getActivePlanContext(userId);
   if (!activePlanContext?.plan) return null;
 
-  const { plan, planId, expiresAt } = activePlanContext;
+  const { plan, planId, expiresAt, selectedOfferIds = [] } = activePlanContext;
   const now = new Date();
+  const selectedOfferIdSet = new Set(selectedOfferIds.map((id) => String(id)));
+  const hasSelectedOffers = selectedOfferIdSet.size > 0;
   const planOfferIds = Array.from(toObjectIdStringSet(plan.offerIds));
+  const planOfferIdSet = new Set(planOfferIds);
   const offerQuery = {
     isActive: true,
     $and: [
@@ -348,13 +358,28 @@ const getPlanBenefitAdjustment = async ({ userId, items, subtotal }) => {
     ]
   };
 
-  const orFilters = [{ planIds: new mongoose.Types.ObjectId(planId) }];
-  if (planOfferIds.length) {
-    orFilters.push({ _id: { $in: planOfferIds.map((id) => new mongoose.Types.ObjectId(id)) } });
+  if (hasSelectedOffers) {
+    offerQuery._id = {
+      $in: Array.from(selectedOfferIdSet).map((id) => new mongoose.Types.ObjectId(id))
+    };
+  } else {
+    const orFilters = [{ planIds: new mongoose.Types.ObjectId(planId) }];
+    if (planOfferIds.length) {
+      orFilters.push({ _id: { $in: planOfferIds.map((id) => new mongoose.Types.ObjectId(id)) } });
+    }
+    offerQuery.$or = orFilters;
   }
-  offerQuery.$or = orFilters;
 
-  const offers = await GroceryPlanOffer.find(offerQuery).sort({ order: 1, createdAt: -1 }).lean();
+  const rawOffers = await GroceryPlanOffer.find(offerQuery).sort({ order: 1, createdAt: -1 }).lean();
+  const offers = rawOffers.filter((offer) => {
+    const offerId = toObjectIdString(offer?._id);
+    if (!offerId) return false;
+    const offerPlanIds = toObjectIdStringSet(offer?.planIds);
+    const belongsToPlan = offerPlanIds.has(planId) || planOfferIdSet.has(offerId);
+    if (!belongsToPlan) return false;
+    if (hasSelectedOffers && !selectedOfferIdSet.has(offerId)) return false;
+    return true;
+  });
   const itemProductIds = Array.from(
     new Set(items.map((item) => toObjectIdString(item?.itemId)).filter(Boolean))
   );
