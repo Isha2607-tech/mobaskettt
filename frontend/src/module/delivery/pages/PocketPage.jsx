@@ -373,6 +373,7 @@ export default function PocketPage() {
     Number(walletState?.availableCashLimit) >= 0
       ? Number(walletState.availableCashLimit)
       : Math.max(0, totalCashLimit - (Number(balances.cashInHand) || 0))
+  const isPocketEligibleForRequests = pocketBalance > availableCashLimit
   const depositAmount = pocketBalance < 0 ? Math.abs(pocketBalance) : 0
 
   // Customer tips balance - calculate from transactions
@@ -956,6 +957,18 @@ export default function PocketPage() {
               <div className="flex items-center justify-between">
                 <span className="text-black text-sm">Total cash limit (admin)</span>
                 <span className="text-black text-sm font-medium">₹{totalCashLimit.toFixed(2)}</span>
+              </div>
+
+              <div
+                className={`rounded-lg p-3 text-xs font-medium ${
+                  isPocketEligibleForRequests
+                    ? "bg-green-50 text-green-700"
+                    : "bg-red-50 text-red-700"
+                }`}
+              >
+                {isPocketEligibleForRequests
+                  ? "Eligible for order requests: Pocket balance is above available cash limit."
+                  : `Not eligible for order requests: Keep pocket balance above ₹${availableCashLimit.toFixed(2)}.`}
               </div>
 
               {/* Warning Message */}

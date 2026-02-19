@@ -21,6 +21,7 @@ export default function BottomNavigation() {
   const navigate = useNavigate()
   const location = useLocation()
   const [profileImage, setProfileImage] = useState(null)
+  const [profileName, setProfileName] = useState("")
   const [imageError, setImageError] = useState(false)
 
   const isActive = (path) => {
@@ -48,10 +49,15 @@ export default function BottomNavigation() {
         const response = await deliveryAPI.getProfile()
         if (response?.data?.success && response?.data?.data?.profile) {
           const profile = response.data.data.profile
+          setProfileName(profile?.name || "")
           // Use profileImage.url first, fallback to documents.photo
           const imageUrl = profile.profileImage?.url || profile.documents?.photo
           if (imageUrl) {
             setProfileImage(imageUrl)
+            setImageError(false)
+          } else {
+            setProfileImage(null)
+            setImageError(false)
           }
         }
       } catch (error) {
@@ -78,6 +84,8 @@ export default function BottomNavigation() {
       window.removeEventListener('deliveryProfileRefresh', handleProfileRefresh)
     }
   }, [])
+
+  const profileInitial = (profileName || "U").trim().charAt(0).toUpperCase()
 
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
@@ -124,13 +132,14 @@ export default function BottomNavigation() {
               }`}
               onError={() => {
                 setImageError(true)
+                setProfileImage(null)
               }}
             />
           ) : (
-            <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center bg-gray-200 ${
+            <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center bg-orange-100 text-orange-700 ${
               isActive("/delivery/profile") ? "border-black" : "border-gray-300"
             }`}>
-              <User className="w-4 h-4 text-gray-500" />
+              {profileInitial || <User className="w-4 h-4 text-gray-500" />}
             </div>
           )}
           {TabLabel(isActive("/delivery/profile"), "Profile")}

@@ -1674,6 +1674,14 @@ export const adminAPI = {
     return apiClient.post(`/admin/orders/${id}/reject`, { reason });
   },
 
+  resendOrderRiderNotification: (id) => {
+    return apiClient.post(`/admin/orders/${id}/resend-rider-notification`);
+  },
+
+  getOrderRiderAssignmentDetails: (id) => {
+    return apiClient.get(`/admin/orders/${id}/rider-assignment`);
+  },
+
   // Grocery Approval Management
   getPendingGroceryApprovals: (params = {}) => {
     return apiClient.get(API_ENDPOINTS.ADMIN.GROCERY_APPROVALS, { params });

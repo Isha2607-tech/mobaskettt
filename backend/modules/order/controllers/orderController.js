@@ -32,6 +32,25 @@ const logger = winston.createLogger({
 
 const ORDER_MODIFICATION_WINDOW_MS = 2 * 60 * 1000;
 
+const normalizePlatform = (value) => (value === 'mogrocery' ? 'mogrocery' : 'mofood');
+
+const resolveOrderPlatform = async (restaurantId) => {
+  if (!restaurantId) return 'mofood';
+
+  const restaurantIdString = String(restaurantId);
+  const query = {
+    $or: [
+      ...(mongoose.Types.ObjectId.isValid(restaurantIdString)
+        ? [{ _id: new mongoose.Types.ObjectId(restaurantIdString) }]
+        : []),
+      { restaurantId: restaurantIdString }
+    ]
+  };
+
+  const restaurant = await Restaurant.findOne(query).select('platform').lean();
+  return normalizePlatform(restaurant?.platform);
+};
+
 const getDefaultPendingCartEdit = () => ({
   items: [],
   subtotal: 0,
@@ -434,6 +453,7 @@ export const createOrder = async (req, res) => {
       };
     })();
     const isPlanSubscriptionOrder = Boolean(normalizedPlanSubscription?.planId);
+    let requiresAdminApproval = false;
 
     // Ensure user has mandatory profile details before placing order
     const userProfile = await User.findById(userId).select('phone addresses').lean();
@@ -563,6 +583,7 @@ export const createOrder = async (req, res) => {
     }
 
     const restaurantPlatform = restaurant.platform === 'mogrocery' ? 'mogrocery' : 'mofood';
+    requiresAdminApproval = restaurantPlatform === 'mogrocery' && !isPlanSubscriptionOrder;
 
     // CRITICAL: Validate that restaurant/store location (pin) is within an active zone for its platform
     const restaurantLat = restaurant.location?.latitude || restaurant.location?.coordinates?.[1];
@@ -935,12 +956,16 @@ export const createOrder = async (req, res) => {
         order.payment.method = 'wallet';
         order.payment.status = 'completed';
         if (!isFutureScheduledOrder) {
-          order.status = 'confirmed';
-          order.tracking.confirmed = {
-            status: true,
-            timestamp: new Date()
-          };
-          startOrderModificationWindow(order);
+          if (requiresAdminApproval) {
+            order.status = 'pending';
+          } else {
+            order.status = 'confirmed';
+            order.tracking.confirmed = {
+              status: true,
+              timestamp: new Date()
+            };
+            startOrderModificationWindow(order);
+          }
         } else {
           order.status = 'scheduled';
         }
@@ -948,7 +973,7 @@ export const createOrder = async (req, res) => {
         await saveOrderWithIdRetry(order);
 
         // Notify restaurant only for non-scheduled orders.
-        if (!isFutureScheduledOrder && !isPlanSubscriptionOrder) {
+        if (!isFutureScheduledOrder && !isPlanSubscriptionOrder && !requiresAdminApproval) {
           try {
             const notifyRestaurantResult = await notifyRestaurantNewOrder(order, assignedRestaurantId, 'wallet');
             logger.info('✅ Wallet payment order notification sent to restaurant', {
@@ -1027,19 +1052,23 @@ export const createOrder = async (req, res) => {
       order.payment.method = 'cash';
       order.payment.status = 'pending';
       if (!isFutureScheduledOrder) {
-        order.status = 'confirmed';
-        order.tracking.confirmed = {
-          status: true,
-          timestamp: new Date()
-        };
-        startOrderModificationWindow(order);
+        if (requiresAdminApproval) {
+          order.status = 'pending';
+        } else {
+          order.status = 'confirmed';
+          order.tracking.confirmed = {
+            status: true,
+            timestamp: new Date()
+          };
+          startOrderModificationWindow(order);
+        }
       } else {
         order.status = 'scheduled';
       }
       await saveOrderWithIdRetry(order);
 
       // Notify restaurant only for non-scheduled orders.
-      if (!isFutureScheduledOrder && !isPlanSubscriptionOrder) {
+      if (!isFutureScheduledOrder && !isPlanSubscriptionOrder && !requiresAdminApproval) {
         try {
           const notifyRestaurantResult = await notifyRestaurantNewOrder(order, assignedRestaurantId, 'cash');
           logger.info('✅ COD order notification sent to restaurant', {
@@ -1264,7 +1293,11 @@ export const switchOrderToCash = async (req, res) => {
       new Date(order.scheduledDelivery.scheduledFor).getTime() > Date.now()
     );
 
-    if (!isFutureScheduledOrder && order.status === 'pending') {
+    const isPlanSubscriptionOrder = Boolean(order?.planSubscription?.planId);
+    const orderPlatform = await resolveOrderPlatform(order.restaurantId);
+    const requiresAdminApproval = orderPlatform === 'mogrocery' && !isPlanSubscriptionOrder;
+
+    if (!isFutureScheduledOrder && order.status === 'pending' && !requiresAdminApproval) {
       order.status = 'confirmed';
       order.tracking.confirmed = {
         status: true,
@@ -1323,7 +1356,7 @@ export const switchOrderToCash = async (req, res) => {
       });
     }
 
-    if (!isFutureScheduledOrder && !order?.planSubscription?.planId) {
+    if (!isFutureScheduledOrder && !isPlanSubscriptionOrder && !requiresAdminApproval) {
       try {
         await notifyRestaurantNewOrder(order, order.restaurantId, 'cash');
       } catch (notifyError) {
@@ -1467,12 +1500,20 @@ export const verifyOrderPayment = async (req, res) => {
     order.payment.razorpayPaymentId = razorpayPaymentId;
     order.payment.razorpaySignature = razorpaySignature;
     order.payment.transactionId = razorpayPaymentId;
+    const isPlanSubscriptionOrder = Boolean(order?.planSubscription?.planId);
+    const orderPlatform = await resolveOrderPlatform(order.restaurantId);
+    const requiresAdminApproval = orderPlatform === 'mogrocery' && !isPlanSubscriptionOrder;
+
     if (isFutureScheduledOrder) {
       order.status = 'scheduled';
     } else {
-      order.status = 'confirmed';
-      order.tracking.confirmed = { status: true, timestamp: new Date() };
-      startOrderModificationWindow(order);
+      if (requiresAdminApproval) {
+        order.status = 'pending';
+      } else {
+        order.status = 'confirmed';
+        order.tracking.confirmed = { status: true, timestamp: new Date() };
+        startOrderModificationWindow(order);
+      }
     }
 
     await saveOrderWithIdRetry(order);
@@ -1493,8 +1534,7 @@ export const verifyOrderPayment = async (req, res) => {
     }
 
     // Notify restaurant only when order is active (not future-scheduled).
-    const isPlanSubscriptionOrder = Boolean(order?.planSubscription?.planId);
-    if (!isFutureScheduledOrder && !isPlanSubscriptionOrder) {
+    if (!isFutureScheduledOrder && !isPlanSubscriptionOrder && !requiresAdminApproval) {
       try {
         const restaurantId = order.restaurantId?.toString() || order.restaurantId;
         const restaurantName = order.restaurantName;
@@ -1650,7 +1690,7 @@ export const getUserOrders = async (req, res) => {
       .limit(parseInt(limit))
       .skip(skip)
       .select('-__v')
-      .populate('restaurantId', 'name slug profileImage address location phone ownerPhone')
+      .populate('restaurantId', 'name slug profileImage address location phone ownerPhone platform')
       .populate('userId', 'name phone email')
       .lean();
 

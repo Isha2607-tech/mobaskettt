@@ -3,12 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   Clock,
-  CheckCircle,
-  Home,
-  Heart,
   ShoppingBag,
-  Menu,
-  ChefHat,
   Loader2,
   AlertCircle,
 } from "lucide-react";
@@ -342,41 +337,6 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* Bottom Navigation Bar - Mobile Only */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
-        <div className="flex items-center justify-around py-2 px-4">
-          <button
-            onClick={() => navigate("/grocery")}
-            className="flex flex-col items-center gap-1 p-2 text-gray-600 hover:text-[#ff8100] transition-colors"
-          >
-            <Home className="w-6 h-6" />
-            <span className="text-xs text-gray-600 font-medium">Home</span>
-          </button>
-          <button
-            onClick={() => navigate("/wishlist")}
-            className="flex flex-col items-center gap-1 p-2 text-gray-600 hover:text-[#ff8100] transition-colors"
-          >
-            <Heart className="w-6 h-6" />
-            <span className="text-xs text-gray-600 font-medium">Wishlist</span>
-          </button>
-          <button className="flex flex-col items-center gap-1 p-2 -mt-8">
-            <div className="bg-white rounded-full p-3 shadow-lg border-2 border-gray-200">
-              <ChefHat className="w-6 h-6 text-gray-600" />
-            </div>
-          </button>
-          <button
-            onClick={() => navigate("/orders")}
-            className="flex flex-col items-center gap-1 p-2 text-[#ff8100]"
-          >
-            <ShoppingBag className="w-6 h-6" />
-            <span className="text-xs text-[#ff8100] font-medium">Orders</span>
-          </button>
-          <button className="flex flex-col items-center gap-1 p-2 text-gray-600">
-            <Menu className="w-6 h-6" />
-            <span className="text-xs text-gray-600 font-medium">Menu</span>
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

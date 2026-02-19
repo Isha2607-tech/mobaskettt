@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from "react"
-import { FileText, Calendar, Package } from "lucide-react"
+import { FileText, Calendar, Package, BellRing } from "lucide-react"
 import { adminAPI } from "@/lib/api"
 import { toast } from "sonner"
 import alertSound from "@/assets/audio/alert.mp3"
@@ -42,7 +42,10 @@ export default function OrdersPage({ statusKey = "all", platformOverride }) {
   const pendingSoundRef = useRef(false)
 
   const playIncomingSound = () => {
-    if (!audioRef.current) return
+    if (!audioRef.current) {
+      pendingSoundRef.current = true
+      return
+    }
     audioRef.current.currentTime = 0
     audioRef.current.play().catch(() => {
       pendingSoundRef.current = true
@@ -131,6 +134,8 @@ export default function OrdersPage({ statusKey = "all", platformOverride }) {
 
     window.addEventListener("pointerdown", unlockAudio, { once: true })
     window.addEventListener("keydown", unlockAudio, { once: true })
+    // Try immediate unlock once (works when browser already has prior user gesture).
+    unlockAudio()
 
     const pollTimer = setInterval(() => {
       fetchOrders({ showLoader: false })
@@ -184,6 +189,86 @@ export default function OrdersPage({ statusKey = "all", platformOverride }) {
     } catch (error) {
       console.error("Error rejecting order request:", error)
       toast.error(error?.response?.data?.message || "Failed to reject order")
+    }
+  }
+
+  const handleResendRiderNotification = async (order) => {
+    const orderIdToUse = order.id || order._id || order.orderId
+    if (!orderIdToUse) {
+      toast.error("Order ID not found")
+      return
+    }
+
+    try {
+      const response = await adminAPI.resendOrderRiderNotification(orderIdToUse)
+      const data = response?.data?.data || {}
+      if (data.accepted) {
+        toast.success("Order already accepted by a rider")
+      } else {
+        toast.success("Rider notification resent")
+      }
+      await fetchOrders({ showLoader: false })
+    } catch (error) {
+      console.error("Error resending rider notification:", error)
+      toast.error(error?.response?.data?.message || "Failed to resend rider notification")
+    }
+  }
+
+  const handleCancelApprovedOrder = async (order) => {
+    const orderIdToUse = order.id || order._id || order.orderId
+    if (!orderIdToUse) {
+      toast.error("Order ID not found")
+      return
+    }
+
+    const reason = prompt(`Cancel order ${order.orderId}\n\nEnter cancellation reason:`)
+    if (!reason || !reason.trim()) return
+
+    try {
+      await adminAPI.rejectOrderRequest(orderIdToUse, reason.trim())
+      toast.success(`Order ${order.orderId} cancelled`)
+      await fetchOrders({ showLoader: false })
+    } catch (error) {
+      console.error("Error cancelling approved order:", error)
+      toast.error(error?.response?.data?.message || "Failed to cancel order")
+    }
+  }
+
+  const handleShowRiderDetails = async (order) => {
+    const orderIdToUse = order.id || order._id || order.orderId
+    if (!orderIdToUse) {
+      toast.error("Order ID not found")
+      return
+    }
+
+    try {
+      const response = await adminAPI.getOrderRiderAssignmentDetails(orderIdToUse)
+      const data = response?.data?.data || {}
+
+      if (data.accepted && data.rider) {
+        const acceptedAt = data.acceptedAt ? new Date(data.acceptedAt).toLocaleString("en-IN") : "N/A"
+        alert(
+          `Rider Accepted\n\n` +
+          `Name: ${data.rider.name || "N/A"}\n` +
+          `Phone: ${data.rider.phone || "N/A"}\n` +
+          `Delivery ID: ${data.rider.deliveryId || "N/A"}\n` +
+          `Accepted At: ${acceptedAt}\n` +
+          `Phase: ${data.currentPhase || "N/A"}\n` +
+          `Status: ${data.deliveryStatus || "N/A"}`
+        )
+      } else {
+        const notifiedAt = data.assignmentInfo?.expandedNotifiedAt || data.assignmentInfo?.priorityNotifiedAt
+        alert(
+          `No rider has accepted this order yet.\n\n` +
+          `Approval Status: ${data.adminApprovalStatus || "N/A"}\n` +
+          `Order Status: ${data.status || "N/A"}\n` +
+          `Last Notify Phase: ${data.assignmentInfo?.notificationPhase || "N/A"}\n` +
+          `Last Notified At: ${notifiedAt ? new Date(notifiedAt).toLocaleString("en-IN") : "N/A"}`
+        )
+      }
+    } catch (error) {
+      console.error("Error fetching rider assignment details:", error)
+      toast.error(error?.response?.data?.message || "Failed to fetch rider details")
     }
   }
 
@@ -364,6 +449,16 @@ export default function OrdersPage({ statusKey = "all", platformOverride }) {
     resetColumns,
   } = useOrdersManagement(orders, statusKey, config.title)
 
+  const pendingApprovalCount = useMemo(() => {
+    if (platformOverride !== "mogrocery") return 0
+
+    return filteredOrders.filter((order) =>
+      order.canAdminApprove &&
+      (order.status === "confirmed" || order.status === "pending" || order.status === "scheduled") &&
+      (order.adminApprovalStatus === "pending" || !order.adminApprovalStatus)
+    ).length
+  }, [filteredOrders, platformOverride])
+
   if (isLoading) {
     return (
       <div className="p-4 lg:p-6 bg-slate-50 min-h-screen w-full max-w-full overflow-x-hidden flex items-center justify-center">
@@ -387,6 +482,15 @@ export default function OrdersPage({ statusKey = "all", platformOverride }) {
         onExport={handleExport}
         onSettingsClick={() => setIsSettingsOpen(true)}
       />
+      {platformOverride === "mogrocery" && pendingApprovalCount > 0 && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-center gap-3">
+          <BellRing className="w-5 h-5 text-amber-700 shrink-0" />
+          <div className="text-sm text-amber-900">
+            <span className="font-bold">{pendingApprovalCount}</span>{" "}
+            order{pendingApprovalCount > 1 ? "s are" : " is"} awaiting admin approval.
+          </div>
+        </div>
+      )}
       <FilterPanel
         isOpen={isFilterOpen}
         onClose={() => setIsFilterOpen(false)}
@@ -424,6 +528,10 @@ export default function OrdersPage({ statusKey = "all", platformOverride }) {
         onAcceptOrder={handleApproveOrderRequest}
         onRejectOrder={handleRejectOrderRequest}
         enableApprovalActions={platformOverride === "mogrocery" && (statusKey === "all" || statusKey === "scheduled")}
+        enableRiderActions={platformOverride === "mogrocery" && statusKey === "all"}
+        onResendRiderNotification={handleResendRiderNotification}
+        onShowRiderDetails={handleShowRiderDetails}
+        onCancelOrder={handleCancelApprovedOrder}
       />
     </div>
   )

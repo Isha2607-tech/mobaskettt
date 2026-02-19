@@ -417,6 +417,13 @@ export const getOrders = asyncHandler(async (req, res) => {
         ? scheduledFor.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase()
         : '';
 
+      const derivedRestaurantPlatform = String(
+        normalizedPlatform ||
+        order.restaurantId?.platform ||
+        order.restaurantPlatform ||
+        'mofood'
+      ).toLowerCase();
+
       return {
         sl: skip + index + 1,
         orderId: order.orderId,
@@ -428,7 +435,7 @@ export const getOrders = asyncHandler(async (req, res) => {
         customerEmail: order.userId?.email || '',
         restaurant: order.restaurantName || order.restaurantId?.name || 'Unknown Restaurant',
         restaurantId: order.restaurantId?.toString() || order.restaurantId || '',
-        restaurantPlatform: String(order.restaurantId?.platform || 'mofood').toLowerCase(),
+        restaurantPlatform: derivedRestaurantPlatform,
         // Report-specific fields
         totalItemAmount: totalItemAmount,
         itemDiscount: itemDiscount,
@@ -457,12 +464,13 @@ export const getOrders = asyncHandler(async (req, res) => {
         orderStatus: orderStatusDisplay,
         status: order.status, // Backend status
         adminApprovalStatus: order.adminApproval?.status || null,
-        canAdminApprove: String(order.restaurantId?.platform || 'mofood').toLowerCase() === 'mogrocery',
+        canAdminApprove: derivedRestaurantPlatform === 'mogrocery',
         adminApprovalReason: order.adminApproval?.reason || null,
         adminReviewedAt: order.adminApproval?.reviewedAt || null,
         deliveryType: deliveryType,
         items: order.items || [],
         address: order.address || {},
+        deliveryPartnerId: order.deliveryPartnerId?._id?.toString?.() || order.deliveryPartnerId?.toString?.() || null,
         deliveryPartnerName: order.deliveryPartnerId?.name || null,
         deliveryPartnerPhone: order.deliveryPartnerId?.phone || null,
         estimatedDeliveryTime: order.estimatedDeliveryTime || 30,
@@ -763,6 +771,10 @@ export const rejectOrderRequest = asyncHandler(async (req, res) => {
       return errorResponse(res, 400, 'Order is already rejected/cancelled');
     }
 
+    if (order.status === 'delivered') {
+      return errorResponse(res, 400, 'Cannot reject/cancel a delivered order');
+    }
+
     const restaurantDoc = await resolveRestaurantForOrder(order);
     if (!isOrderAdminApprovalAllowed(restaurantDoc)) {
       return errorResponse(res, 400, 'MoFood orders must be accepted/rejected by restaurant only');
@@ -802,6 +814,125 @@ export const rejectOrderRequest = asyncHandler(async (req, res) => {
   } catch (error) {
     console.error('Error rejecting order request:', error);
     return errorResponse(res, 500, 'Failed to reject order');
+  }
+});
+
+/**
+ * Resend rider notification for a specific order
+ * POST /api/admin/orders/:id/resend-rider-notification
+ */
+export const resendRiderNotification = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const order = await resolveAdminOrderById(id);
+    if (!order) {
+      return errorResponse(res, 404, 'Order not found');
+    }
+
+    const restaurantDoc = await resolveRestaurantForOrder(order);
+    if (!isOrderAdminApprovalAllowed(restaurantDoc)) {
+      return errorResponse(res, 400, 'Rider resend is allowed only for MoGrocery orders');
+    }
+
+    if (order.status === 'cancelled' || order.status === 'delivered') {
+      return errorResponse(res, 400, 'Cannot resend rider notification for cancelled or delivered order');
+    }
+
+    if (order.status !== 'preparing') {
+      return errorResponse(res, 400, 'Rider notification resend is allowed only when order is in processing state');
+    }
+
+    // If already accepted by a rider, return acceptance details instead of re-broadcasting.
+    const acceptedOrder = await Order.findById(order._id)
+      .populate('deliveryPartnerId', 'name phone deliveryId')
+      .lean();
+
+    if (acceptedOrder?.deliveryPartnerId) {
+      return successResponse(res, 200, 'Order already accepted by a rider', {
+        orderId: acceptedOrder.orderId,
+        accepted: true,
+        rider: {
+          id: acceptedOrder.deliveryPartnerId?._id?.toString?.() || acceptedOrder.deliveryPartnerId?._id || null,
+          name: acceptedOrder.deliveryPartnerId?.name || null,
+          phone: acceptedOrder.deliveryPartnerId?.phone || null,
+          deliveryId: acceptedOrder.deliveryPartnerId?.deliveryId || null
+        },
+        acceptedAt: acceptedOrder.deliveryState?.acceptedAt || acceptedOrder.assignmentInfo?.assignedAt || null,
+        currentPhase: acceptedOrder.deliveryState?.currentPhase || null,
+        deliveryStatus: acceptedOrder.deliveryState?.status || null
+      });
+    }
+
+    if (String(order.adminApproval?.status || 'pending') !== 'approved') {
+      return errorResponse(res, 400, 'Order must be approved before notifying riders');
+    }
+
+    await triggerDeliveryBroadcastForApprovedOrder(order, restaurantDoc);
+
+    const refreshed = await Order.findById(order._id).lean();
+    return successResponse(res, 200, 'Rider notifications resent successfully', {
+      orderId: refreshed?.orderId || order.orderId,
+      accepted: Boolean(refreshed?.deliveryPartnerId),
+      notificationPhase: refreshed?.assignmentInfo?.notificationPhase || null,
+      priorityNotifiedAt: refreshed?.assignmentInfo?.priorityNotifiedAt || null,
+      expandedNotifiedAt: refreshed?.assignmentInfo?.expandedNotifiedAt || null
+    });
+  } catch (error) {
+    console.error('Error resending rider notification:', error);
+    return errorResponse(res, 500, 'Failed to resend rider notification');
+  }
+});
+
+/**
+ * Get rider assignment details for a specific order
+ * GET /api/admin/orders/:id/rider-assignment
+ */
+export const getRiderAssignmentDetails = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const order = await resolveAdminOrderById(id);
+    if (!order) {
+      return errorResponse(res, 404, 'Order not found');
+    }
+
+    const populated = await Order.findById(order._id)
+      .populate('deliveryPartnerId', 'name phone deliveryId availability.currentLocation')
+      .lean();
+
+    const restaurantDoc = await resolveRestaurantForOrder(order);
+    const isMoGrocery = isOrderAdminApprovalAllowed(restaurantDoc);
+
+    return successResponse(res, 200, 'Rider assignment details fetched successfully', {
+      orderId: populated?.orderId || order.orderId,
+      status: populated?.status || order.status,
+      isMoGrocery,
+      adminApprovalStatus: populated?.adminApproval?.status || null,
+      accepted: Boolean(populated?.deliveryPartnerId),
+      rider: populated?.deliveryPartnerId
+        ? {
+            id: populated.deliveryPartnerId?._id?.toString?.() || populated.deliveryPartnerId?._id || null,
+            name: populated.deliveryPartnerId?.name || null,
+            phone: populated.deliveryPartnerId?.phone || null,
+            deliveryId: populated.deliveryPartnerId?.deliveryId || null
+          }
+        : null,
+      acceptedAt: populated?.deliveryState?.acceptedAt || populated?.assignmentInfo?.assignedAt || null,
+      currentPhase: populated?.deliveryState?.currentPhase || null,
+      deliveryStatus: populated?.deliveryState?.status || null,
+      assignmentInfo: {
+        deliveryPartnerId: populated?.assignmentInfo?.deliveryPartnerId || null,
+        assignedBy: populated?.assignmentInfo?.assignedBy || null,
+        assignedAt: populated?.assignmentInfo?.assignedAt || null,
+        notificationPhase: populated?.assignmentInfo?.notificationPhase || null,
+        priorityNotifiedAt: populated?.assignmentInfo?.priorityNotifiedAt || null,
+        expandedNotifiedAt: populated?.assignmentInfo?.expandedNotifiedAt || null
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching rider assignment details:', error);
+    return errorResponse(res, 500, 'Failed to fetch rider assignment details');
   }
 });
 

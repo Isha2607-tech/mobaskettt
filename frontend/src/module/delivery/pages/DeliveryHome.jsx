@@ -1027,8 +1027,10 @@ export default function DeliveryHome() {
   const pocketBalanceForEligibility = Number.isFinite(Number(walletState?.pocketBalance))
     ? Number(walletState.pocketBalance)
     : (Number(walletState?.totalBalance) || 0)
-  const orderEligibilityMinBalance = totalCashLimit > 0 ? totalCashLimit : 750
-  const isPocketBalanceTooLowForOrders = pocketBalanceForEligibility <= orderEligibilityMinBalance
+  // Eligibility rule: pocket balance must be strictly greater than available cash limit.
+  const orderEligibilityMinBalance = Math.max(0, availableCashLimit)
+  const isPocketBalanceTooLowForOrders =
+    orderEligibilityMinBalance > 0 && pocketBalanceForEligibility <= orderEligibilityMinBalance
   const isCashLimitReached = totalCashLimit > 0 && availableCashLimit <= 0
   const isMapLockedForOrderEligibility = isCashLimitReached || isPocketBalanceTooLowForOrders
 
@@ -6169,9 +6171,10 @@ export default function DeliveryHome() {
           // Add custom Destination Marker (Restaurant or Customer)
           const markerIcon = navigationMode === 'customer' 
             ? `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
-                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="#10B981">
-                  <path d="M12 2C8.13 2 5 5.13 5 9c0 4.17 4.42 9.92 6.24 12.11.4.48 1.08.48 1.52 0C14.58 18.92 19 13.17 19 9c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5 14.5 7.62 14.5 9 13.38 11.5 12 11.5z"/>
-                  <circle cx="12" cy="9" r="3" fill="#FFFFFF"/>
+                <svg xmlns="http://www.w3.org/2000/svg" width="36" height="46" viewBox="0 0 36 46">
+                  <path d="M18 0 C8.06 0 0 8.06 0 18 C0 30.5 18 46 18 46 C18 46 36 30.5 36 18 C36 8.06 27.94 0 18 0 Z" fill="#2563eb" stroke="#ffffff" stroke-width="2"/>
+                  <circle cx="18" cy="14" r="4.2" fill="white"/>
+                  <path d="M10.5 24 C11.8 20.6 14.6 18.8 18 18.8 C21.4 18.8 24.2 20.6 25.5 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
                 </svg>
               `)}`
             : `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
@@ -6188,8 +6191,12 @@ export default function DeliveryHome() {
               map: map,
               icon: {
                 url: markerIcon,
-                scaledSize: new window.google.maps.Size(48, 48),
-                anchor: new window.google.maps.Point(24, 48)
+                scaledSize: navigationMode === 'customer'
+                  ? new window.google.maps.Size(36, 46)
+                  : new window.google.maps.Size(48, 48),
+                anchor: navigationMode === 'customer'
+                  ? new window.google.maps.Point(18, 46)
+                  : new window.google.maps.Point(24, 48)
               },
               title: destinationName,
               animation: window.google.maps.Animation.DROP
@@ -6198,8 +6205,12 @@ export default function DeliveryHome() {
             restaurantMarkerRef.current.setPosition(destinationLocation);
             restaurantMarkerRef.current.setIcon({
               url: markerIcon,
-              scaledSize: new window.google.maps.Size(48, 48),
-              anchor: new window.google.maps.Point(24, 48)
+              scaledSize: navigationMode === 'customer'
+                ? new window.google.maps.Size(36, 46)
+                : new window.google.maps.Size(48, 48),
+              anchor: navigationMode === 'customer'
+                ? new window.google.maps.Point(18, 46)
+                : new window.google.maps.Point(24, 48)
             });
             restaurantMarkerRef.current.setTitle(destinationName);
             restaurantMarkerRef.current.setMap(map);
@@ -9049,7 +9060,7 @@ export default function DeliveryHome() {
                   <>
                     <p className="text-sm font-semibold text-gray-900">Pocket balance too low</p>
                     <p className="text-xs text-gray-700 mt-1">
-                      Keep pocket balance above admin cash limit ₹{orderEligibilityMinBalance.toFixed(2)} to receive orders.
+                      Keep pocket balance above available cash limit ₹{orderEligibilityMinBalance.toFixed(2)} to receive orders.
                     </p>
                   </>
                 ) : (
@@ -9069,7 +9080,7 @@ export default function DeliveryHome() {
             onClick={() => {
               if (isMapLockedForOrderEligibility) {
                 if (isPocketBalanceTooLowForOrders) {
-                  toast.error(`Keep pocket balance above admin cash limit ₹${orderEligibilityMinBalance.toFixed(2)} to receive orders.`)
+                  toast.error(`Keep pocket balance above available cash limit ₹${orderEligibilityMinBalance.toFixed(2)} to receive orders.`)
                 } else {
                   toast.error('Cash limit reached. Settle cash to continue.')
                 }

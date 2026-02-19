@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react"
-import { Eye, Printer, ArrowUpDown, Loader2, CheckCircle2, XCircle } from "lucide-react"
+import { Eye, Printer, ArrowUpDown, Loader2, CheckCircle2, XCircle, BellRing, Info } from "lucide-react"
 
 const getStatusColor = (orderStatus) => {
   const colors = {
@@ -26,6 +26,11 @@ const getPaymentStatusColor = (paymentStatus) => {
   return "text-slate-600"
 }
 
+const isAwaitingAdminApproval = (order) =>
+  Boolean(order?.canAdminApprove) &&
+  (order?.status === "confirmed" || order?.status === "pending" || order?.status === "scheduled") &&
+  (order?.adminApprovalStatus === "pending" || !order?.adminApprovalStatus)
+
 export default function OrdersTable({
   orders,
   visibleColumns,
@@ -35,6 +40,10 @@ export default function OrdersTable({
   onAcceptOrder,
   onRejectOrder,
   enableApprovalActions = false,
+  enableRiderActions = false,
+  onResendRiderNotification,
+  onShowRiderDetails,
+  onCancelOrder,
 }) {
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 10
@@ -304,6 +313,11 @@ export default function OrdersTable({
                         </span>
                         <span className="text-xs text-slate-500">{order.deliveryType}</span>
                       </div>
+                      {isAwaitingAdminApproval(order) && (
+                        <div className="text-[11px] font-semibold text-amber-700">
+                          Awaiting Admin Approval
+                        </div>
+                      )}
                       {order.cancellationReason && (
                         <div className="text-xs text-red-600 mt-1">
                           <span className="font-medium">
@@ -337,9 +351,7 @@ export default function OrdersTable({
                       {enableApprovalActions &&
                         typeof onAcceptOrder === "function" &&
                         typeof onRejectOrder === "function" &&
-                        Boolean(order.canAdminApprove) &&
-                        (order.status === "confirmed" || order.status === "pending" || order.status === "scheduled") &&
-                        (order.adminApprovalStatus === "pending" || !order.adminApprovalStatus) && (
+                        isAwaitingAdminApproval(order) && (
                           <>
                             <button
                               onClick={() => onAcceptOrder(order)}
@@ -356,6 +368,46 @@ export default function OrdersTable({
                               <XCircle className="w-4 h-4" />
                             </button>
                           </>
+                        )}
+                      {enableRiderActions &&
+                        typeof onResendRiderNotification === "function" &&
+                        Boolean(order.canAdminApprove) &&
+                        String(order.adminApprovalStatus || "") === "approved" &&
+                        !order.deliveryPartnerId &&
+                        !order.deliveryPartnerName &&
+                        order.status === "preparing" && (
+                          <button
+                            onClick={() => onResendRiderNotification(order)}
+                            className="p-1.5 rounded text-amber-600 hover:bg-amber-50 transition-colors"
+                            title="Resend notification to riders"
+                          >
+                            <BellRing className="w-4 h-4" />
+                          </button>
+                        )}
+                      {enableRiderActions &&
+                        typeof onCancelOrder === "function" &&
+                        Boolean(order.canAdminApprove) &&
+                        String(order.adminApprovalStatus || "") === "approved" &&
+                        order.status !== "cancelled" &&
+                        order.status !== "delivered" && (
+                          <button
+                            onClick={() => onCancelOrder(order)}
+                            className="p-1.5 rounded text-red-600 hover:bg-red-50 transition-colors"
+                            title="Cancel Order"
+                          >
+                            <XCircle className="w-4 h-4" />
+                          </button>
+                        )}
+                      {enableRiderActions &&
+                        typeof onShowRiderDetails === "function" &&
+                        Boolean(order.canAdminApprove) && (
+                          <button
+                            onClick={() => onShowRiderDetails(order)}
+                            className="p-1.5 rounded text-sky-600 hover:bg-sky-50 transition-colors"
+                            title="Show rider assignment details"
+                          >
+                            <Info className="w-4 h-4" />
+                          </button>
                         )}
                       {/* Show Refund button or Refunded status for cancelled orders with Online/Wallet payment (restaurant or user cancelled) */}
                       {(() => {

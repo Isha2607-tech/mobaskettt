@@ -242,6 +242,7 @@ export default function FeedNavbar({ className = "" }) {
   const [showEmergencyPopup, setShowEmergencyPopup] = useState(false);
   const [showHelpPopup, setShowHelpPopup] = useState(false);
   const [profileImage, setProfileImage] = useState(null);
+  const [profileName, setProfileName] = useState("");
   const [imageError, setImageError] = useState(false);
 
   // Fetch emergency help numbers
@@ -333,10 +334,14 @@ export default function FeedNavbar({ className = "" }) {
         const response = await deliveryAPI.getProfile();
         if (response?.data?.success && response?.data?.data?.profile) {
           const profile = response.data.data.profile;
+          setProfileName(profile?.name || "");
           // Use profileImage.url first, fallback to documents.photo
           const imageUrl = profile.profileImage?.url || profile.documents?.photo;
           if (imageUrl) {
             setProfileImage(imageUrl);
+            setImageError(false);
+          } else {
+            setProfileImage(null);
             setImageError(false);
           }
         }
@@ -364,6 +369,8 @@ export default function FeedNavbar({ className = "" }) {
       window.removeEventListener('deliveryProfileRefresh', handleProfileRefresh);
     };
   }, []);
+
+  const profileInitial = (profileName || "U").trim().charAt(0).toUpperCase();
 
   return (
     <>
@@ -422,7 +429,7 @@ export default function FeedNavbar({ className = "" }) {
         </button>
 
         {/* Profile */}
-        <button onClick={handleProfileClick} className="w-9 h-9 rounded-full overflow-hidden ring-2 ring-gray-300 flex items-center justify-center bg-gray-200" title="Profile">
+        <button onClick={handleProfileClick} className="w-9 h-9 rounded-full overflow-hidden ring-2 ring-gray-300 flex items-center justify-center bg-gray-200 shrink-0" title="Profile" type="button" aria-label="Open profile">
           {profileImage && !imageError ? (
             <img
               src={profileImage}
@@ -430,10 +437,13 @@ export default function FeedNavbar({ className = "" }) {
               className="w-full h-full object-cover"
               onError={() => {
                 setImageError(true);
+                setProfileImage(null);
               }}
             />
           ) : (
-            <User className="w-5 h-5 text-gray-500" />
+            <div className="w-full h-full bg-orange-100 text-orange-700 flex items-center justify-center font-semibold text-xs">
+              {profileInitial || <User className="w-5 h-5 text-gray-500" />}
+            </div>
           )}
         </button>
       </div>

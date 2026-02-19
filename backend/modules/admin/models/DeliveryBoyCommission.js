@@ -192,7 +192,7 @@ deliveryBoyCommissionSchema.statics.calculateCommission = async function(distanc
     maxDistance: applicableRule.maxDistance,
     basePayout: basePayout,
     commissionPerKm: applicableRule.commissionPerKm,
-    perKmApplied: distance >= applicableRule.minDistance,
+    perKmApplied: distance > applicableRule.minDistance,
     distanceCommission: distanceCommission,
     totalCommission: commission
   });
@@ -208,7 +208,7 @@ deliveryBoyCommissionSchema.statics.calculateCommission = async function(distanc
       commissionPerKm: applicableRule.commissionPerKm,
       distanceCommission: distanceCommission,
       // Flag to indicate if per km commission was applied
-      perKmApplied: distance >= applicableRule.minDistance
+      perKmApplied: distance > applicableRule.minDistance
     }
   };
 };

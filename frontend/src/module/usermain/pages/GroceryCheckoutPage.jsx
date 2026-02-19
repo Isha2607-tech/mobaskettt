@@ -50,8 +50,7 @@ export default function GroceryCheckoutPage() {
   const [calculatedPricing, setCalculatedPricing] = useState(null);
   const [loadingPricing, setLoadingPricing] = useState(false);
   const [resolvedRestaurant, setResolvedRestaurant] = useState(null);
-  const [categoryAddons, setCategoryAddons] = useState([]);
-  const [loadingCategoryAddons, setLoadingCategoryAddons] = useState(false);
+  const [hasActivePlanSubscription, setHasActivePlanSubscription] = useState(false);
 
   // Filter grocery items
   const groceryItems = cart.filter((item) => isGroceryItem(item));
@@ -129,21 +128,6 @@ export default function GroceryCheckoutPage() {
   const totalSavings = itemsTotal - subtotal;
   const cartRestaurantId = groceryItems[0]?.restaurantId;
   const cartRestaurantName = groceryItems[0]?.restaurant || "MoGrocery";
-
-  const cartCategoryIds = useMemo(() => {
-    const ids = groceryItems
-      .map((item) =>
-        String(
-          item?.categoryId ||
-          item?.category?._id ||
-          item?.category?.id ||
-          item?.category ||
-          ""
-        ).trim()
-      )
-      .filter(Boolean);
-    return Array.from(new Set(ids));
-  }, [groceryItems]);
 
   useEffect(() => {
     const fetchFeeSettings = async () => {
@@ -268,44 +252,6 @@ export default function GroceryCheckoutPage() {
     calculatePricingPreview();
   }, [groceryItemsKey, selectedAddressKey, resolvedRestaurant?.restaurantId, zoneId]);
 
-  useEffect(() => {
-    const fetchCategoryAddons = async () => {
-      if (!resolvedRestaurant?.restaurantId) {
-        setCategoryAddons([]);
-        return;
-      }
-
-      try {
-        setLoadingCategoryAddons(true);
-        const response = await restaurantAPI.getAddonsByRestaurantId(resolvedRestaurant.restaurantId);
-        const addons = response?.data?.data?.addons || response?.data?.addons || [];
-
-        const normalizedCartCategoryIds = new Set(cartCategoryIds.map((id) => String(id)));
-
-        const filtered = (Array.isArray(addons) ? addons : [])
-          .filter((addon) => addon?.isAvailable !== false && addon?.approvalStatus !== "rejected")
-          .filter((addon) => {
-            const mappedCategoryIds = Array.isArray(addon?.applicableCategoryIds)
-              ? addon.applicableCategoryIds.map((id) => String(id)).filter(Boolean)
-              : [];
-
-            if (mappedCategoryIds.length === 0) return true;
-            if (normalizedCartCategoryIds.size === 0) return true;
-            return mappedCategoryIds.some((id) => normalizedCartCategoryIds.has(id));
-          });
-
-        setCategoryAddons(filtered);
-      } catch (error) {
-        console.error("Failed to fetch category addons:", error);
-        setCategoryAddons([]);
-      } finally {
-        setLoadingCategoryAddons(false);
-      }
-    };
-
-    fetchCategoryAddons();
-  }, [resolvedRestaurant?.restaurantId, cartCategoryIds]);
-
   const showPricingLoading = loadingPricing && !calculatedPricing;
 
   const resolveDeliveryFeeFromRanges = (orderSubtotal, ranges, fallbackDeliveryFee, freeThreshold) => {
@@ -336,9 +282,46 @@ export default function GroceryCheckoutPage() {
   const summaryPlatformFee = Number(calculatedPricing?.platformFee ?? fallbackPlatformFee);
   const summaryTax = Number(calculatedPricing?.tax ?? fallbackTax);
   const planDiscountAmount = Number(calculatedPricing?.breakdown?.planDiscountAmount ?? 0);
+  const appliedPlanBenefits = calculatedPricing?.appliedPlanBenefits || null;
   const appliedPlanName = String(calculatedPricing?.appliedPlanBenefits?.planName || "").trim();
   const hasPlanDiscount = planDiscountAmount > 0;
   const isMoGoldPlanApplied = hasPlanDiscount && /mogold/i.test(appliedPlanName || "");
+  const hasPlanBenefits = Boolean(hasActivePlanSubscription || appliedPlanBenefits || hasPlanDiscount);
+  const planBenefitsList = useMemo(() => {
+    const items = [];
+    const bestOfferName = String(appliedPlanBenefits?.bestDiscountOffer?.name || "").trim();
+    const hasFreeDelivery = Boolean(appliedPlanBenefits?.freeDelivery);
+    const hasDiscountOffer = Boolean(appliedPlanBenefits?.discount > 0 || hasPlanDiscount);
+
+    if (hasFreeDelivery) {
+      items.push("Free delivery applied");
+    } else if (hasActivePlanSubscription) {
+      items.push("Free delivery available on eligible orders");
+    }
+
+    if (hasDiscountOffer) {
+      items.push(`Extra plan discount applied: Rs ${planDiscountAmount.toFixed(2)}`);
+    } else if (hasActivePlanSubscription) {
+      items.push("Plan discounts will auto-apply on eligible products");
+    }
+
+    if (bestOfferName) {
+      items.push(`Active offer: ${bestOfferName}`);
+    }
+
+    if (appliedPlanBenefits?.expiresAt) {
+      const expiryDate = new Date(appliedPlanBenefits.expiresAt);
+      if (!Number.isNaN(expiryDate.getTime())) {
+        items.push(`Valid till ${expiryDate.toLocaleDateString("en-IN")}`);
+      }
+    }
+
+    if (!items.length && hasActivePlanSubscription) {
+      items.push("Your plan is active and benefits will auto-apply");
+    }
+
+    return items;
+  }, [appliedPlanBenefits, hasActivePlanSubscription, hasPlanDiscount, planDiscountAmount]);
   const grandTotal = Number(
     calculatedPricing?.total ??
       subtotal + summaryDeliveryFee + summaryPlatformFee + summaryTax - Number(calculatedPricing?.discount ?? 0),
@@ -365,6 +348,47 @@ export default function GroceryCheckoutPage() {
     };
 
     fetchWalletBalance();
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchActivePlanStatus = async () => {
+      try {
+        const response = await orderAPI.getOrders({ page: 1, limit: 200 });
+        const orders =
+          response?.data?.data?.orders ||
+          response?.data?.orders ||
+          (Array.isArray(response?.data?.data) ? response.data.data : []);
+
+        const now = new Date();
+        const hasActive = (Array.isArray(orders) ? orders : []).some((order) => {
+          if (!order?.planSubscription?.planId) return false;
+          if (String(order?.payment?.status || "").toLowerCase() !== "completed") return false;
+          if (String(order?.status || "").toLowerCase() === "cancelled") return false;
+
+          const purchasedAt = order?.deliveredAt || order?.createdAt;
+          const durationDays = Number(order?.planSubscription?.durationDays || 0);
+          if (!purchasedAt || durationDays <= 0) return false;
+
+          const expiresAt = new Date(new Date(purchasedAt).getTime() + durationDays * 24 * 60 * 60 * 1000);
+          return expiresAt > now;
+        });
+
+        if (isMounted) {
+          setHasActivePlanSubscription(hasActive);
+        }
+      } catch {
+        if (isMounted) {
+          setHasActivePlanSubscription(false);
+        }
+      }
+    };
+
+    fetchActivePlanStatus();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handlePlaceOrder = async () => {
@@ -602,45 +626,6 @@ export default function GroceryCheckoutPage() {
         </div>
       </div>
 
-      {(loadingCategoryAddons || categoryAddons.length > 0) && (
-        <div className="px-4 mb-4">
-          <div className="bg-white dark:bg-[#1a1a1a] rounded-xl p-4 shadow-sm border border-yellow-50 dark:border-gray-800">
-            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-3 border-b border-gray-50 dark:border-gray-800 pb-2">
-              Suggested Add-ons
-            </h3>
-            {loadingCategoryAddons ? (
-              <p className="text-xs text-gray-500">Loading add-ons...</p>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {categoryAddons.map((addon) => {
-                  const addonImage =
-                    addon?.image ||
-                    (Array.isArray(addon?.images) ? addon.images[0] : "") ||
-                    "";
-                  const addonId = String(addon?.id || addon?._id || "");
-                  return (
-                    <div
-                      key={addonId || addon?.name}
-                      className="rounded-lg border border-gray-100 p-2.5 bg-yellow-50/40"
-                    >
-                      <div className="w-full h-20 rounded-md bg-white border border-gray-100 mb-2 overflow-hidden flex items-center justify-center">
-                        {addonImage ? (
-                          <img src={addonImage} alt={addon?.name || "Addon"} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-[10px] text-gray-400">No image</span>
-                        )}
-                      </div>
-                      <p className="text-xs font-semibold text-gray-900 dark:text-gray-100 line-clamp-2">{addon?.name || "Addon"}</p>
-                      <p className="text-[11px] text-gray-600 mt-1">Rs {Number(addon?.price || 0).toFixed(2)}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Order Summary */}
       <div className="px-4 mb-4">
         <div className="bg-white dark:bg-[#1a1a1a] rounded-xl p-4 shadow-sm border border-yellow-50 dark:border-gray-800">
@@ -683,6 +668,20 @@ export default function GroceryCheckoutPage() {
                 </motion.span>
               </div>
             </motion.div>
+          )}
+          {hasPlanBenefits && planBenefitsList.length > 0 && (
+            <div className="rounded-xl border border-yellow-200 bg-yellow-50/70 p-3 mb-3">
+              <p className="text-[11px] font-black text-yellow-900 tracking-wide">
+                {appliedPlanName || "Active Plan Benefits"}
+              </p>
+              <div className="mt-2 space-y-1">
+                {planBenefitsList.map((benefit, index) => (
+                  <p key={`${benefit}-${index}`} className="text-[11px] text-yellow-900">
+                    • {benefit}
+                  </p>
+                ))}
+              </div>
+            </div>
           )}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">

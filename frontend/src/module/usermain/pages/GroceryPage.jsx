@@ -1,9 +1,13 @@
-﻿import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Search,
   ArrowLeft,
   Mic,
   ChevronDown,
+  ArrowRight,
+  Bike,
+  PackageCheck,
+  Timer,
   User,
   ShoppingBag,
   ShoppingCart,
@@ -23,7 +27,7 @@ import { useCart } from "../../user/context/CartContext";
 import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
 import { CategoryFoodsContent } from "./CategoryFoodsPage";
 import AddToCartAnimation from "../../user/components/AddToCartAnimation";
-import api, { restaurantAPI } from "@/lib/api";
+import api, { restaurantAPI, userAPI } from "@/lib/api";
 
 // Icons
 import imgBag3D from "@/assets/icons/shopping-bag_18008822.png";
@@ -62,6 +66,9 @@ const GroceryPage = () => {
   const [allProducts, setAllProducts] = useState([]);
   const [groceryStores, setGroceryStores] = useState([]);
   const [hasActiveGroceryStore, setHasActiveGroceryStore] = useState(true);
+  const [activeGroceryOrder, setActiveGroceryOrder] = useState(null);
+  const orderSnapshotRef = useRef(new Map());
+  const hasSeededOrderSnapshotRef = useRef(false);
 
   const getStoreCoordinates = (store) => {
     const geoCoordinates = store?.location?.coordinates;
@@ -96,6 +103,135 @@ const GroceryPage = () => {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return earthRadiusKm * c;
   };
+
+  const buildOrderSnapshot = (orders = []) => {
+    const snapshot = new Map();
+    orders.forEach((order) => {
+      const key = String(order?._id || order?.orderId || "");
+      if (!key) return;
+      const status = String(order?.status || "").toLowerCase();
+      const approvalStatus = String(order?.adminApproval?.status || "").toLowerCase();
+      const deliveryStatus = String(order?.deliveryState?.status || "").toLowerCase();
+      snapshot.set(key, `${status}|${approvalStatus}|${deliveryStatus}`);
+    });
+    return snapshot;
+  };
+
+  const getOrderUpdateMessage = (order) => {
+    const orderNo = order?.orderId || order?._id || "your order";
+    const status = String(order?.status || "").toLowerCase();
+    const approvalStatus = String(order?.adminApproval?.status || "").toLowerCase();
+
+    if (approvalStatus === "pending") return `Order #${orderNo} is awaiting admin approval`;
+    if (approvalStatus === "approved" && status === "preparing") return `Order #${orderNo} approved and now processing`;
+    if (approvalStatus === "rejected" || status === "cancelled") return `Order #${orderNo} was cancelled`;
+    if (status === "confirmed") return `Order #${orderNo} confirmed`;
+    if (status === "preparing") return `Order #${orderNo} is being prepared`;
+    if (status === "ready") return `Order #${orderNo} is ready for pickup`;
+    if (status === "out_for_delivery") return `Order #${orderNo} is out for delivery`;
+    if (status === "delivered") return `Order #${orderNo} delivered`;
+    return `Order #${orderNo} status updated`;
+  };
+
+  const isGroceryOrder = (order) => {
+    const platform = String(
+      order?.restaurantId?.platform || order?.restaurantPlatform || order?.platform || ""
+    ).toLowerCase();
+    if (platform === "mogrocery") return true;
+
+    const note = String(order?.note || "").toLowerCase();
+    if (note.includes("[mogrocery]")) return true;
+
+    const restaurantName = String(order?.restaurantName || order?.restaurantId?.name || "").toLowerCase();
+    if (restaurantName.includes("grocery") || restaurantName.includes("mart") || restaurantName.includes("basket")) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const findActiveTrackableOrder = (orders = []) => {
+    const activeStatuses = new Set(["pending", "confirmed", "preparing", "ready", "out_for_delivery", "scheduled"]);
+    return orders.find((order) => activeStatuses.has(String(order?.status || "").toLowerCase())) || null;
+  };
+
+  const getOrderTrackerMeta = (order) => {
+    const status = String(order?.status || "pending").toLowerCase();
+    const approvalStatus = String(order?.adminApproval?.status || "").toLowerCase();
+
+    if (approvalStatus === "pending") {
+      return {
+        label: "Awaiting admin approval",
+        subtitle: "We are reviewing your grocery order",
+        progress: 18,
+        chipClass: "bg-amber-100 text-amber-800 border-amber-200",
+        barClass: "from-amber-400 to-yellow-500",
+      };
+    }
+
+    if (status === "confirmed") {
+      return {
+        label: "Order confirmed",
+        subtitle: "Store accepted your order",
+        progress: 32,
+        chipClass: "bg-sky-100 text-sky-800 border-sky-200",
+        barClass: "from-sky-400 to-cyan-500",
+      };
+    }
+
+    if (status === "preparing") {
+      return {
+        label: "Preparing your order",
+        subtitle: "Items are being packed right now",
+        progress: 55,
+        chipClass: "bg-orange-100 text-orange-800 border-orange-200",
+        barClass: "from-orange-400 to-amber-500",
+      };
+    }
+
+    if (status === "ready") {
+      return {
+        label: "Ready for pickup",
+        subtitle: "Rider will pick up your order soon",
+        progress: 72,
+        chipClass: "bg-indigo-100 text-indigo-800 border-indigo-200",
+        barClass: "from-indigo-400 to-violet-500",
+      };
+    }
+
+    if (status === "out_for_delivery") {
+      return {
+        label: "Out for delivery",
+        subtitle: "Your order is on the way",
+        progress: 88,
+        chipClass: "bg-emerald-100 text-emerald-800 border-emerald-200",
+        barClass: "from-emerald-400 to-green-500",
+      };
+    }
+
+    if (status === "scheduled") {
+      return {
+        label: "Scheduled order",
+        subtitle: "We will dispatch at your selected slot",
+        progress: 24,
+        chipClass: "bg-purple-100 text-purple-800 border-purple-200",
+        barClass: "from-purple-400 to-fuchsia-500",
+      };
+    }
+
+    return {
+      label: "Order placed",
+      subtitle: "We are assigning your order now",
+      progress: 14,
+      chipClass: "bg-slate-100 text-slate-800 border-slate-200",
+      barClass: "from-slate-400 to-slate-500",
+    };
+  };
+
+  const activeOrderMeta = useMemo(
+    () => (activeGroceryOrder ? getOrderTrackerMeta(activeGroceryOrder) : null),
+    [activeGroceryOrder]
+  );
 
   // Snow effect timer
   useEffect(() => {
@@ -247,6 +383,55 @@ const GroceryPage = () => {
     };
 
     fetchGroceryStores();
+  }, []);
+
+  useEffect(() => {
+    let timer = null;
+
+    const fetchAndNotifyOrderUpdates = async () => {
+      try {
+        const response = await userAPI.getOrders({ page: 1, limit: 30 });
+        const orders = Array.isArray(response?.data?.data?.orders)
+          ? response.data.data.orders
+          : Array.isArray(response?.data?.orders)
+            ? response.data.orders
+            : [];
+
+        const groceryOrders = orders.filter(isGroceryOrder);
+        setActiveGroceryOrder(findActiveTrackableOrder(groceryOrders));
+
+        const nextSnapshot = buildOrderSnapshot(groceryOrders);
+        if (!hasSeededOrderSnapshotRef.current) {
+          hasSeededOrderSnapshotRef.current = true;
+          orderSnapshotRef.current = nextSnapshot;
+          return;
+        }
+
+        groceryOrders.forEach((order) => {
+          const key = String(order?._id || order?.orderId || "");
+          if (!key) return;
+          const previousValue = orderSnapshotRef.current.get(key);
+          const nextValue = nextSnapshot.get(key);
+          if (nextValue && previousValue !== nextValue) {
+            toast.success(getOrderUpdateMessage(order), { duration: 4500 });
+          }
+        });
+
+        orderSnapshotRef.current = nextSnapshot;
+      } catch {
+        // Silent background poll for status popups.
+      }
+    };
+
+    fetchAndNotifyOrderUpdates();
+    timer = setInterval(fetchAndNotifyOrderUpdates, 12000);
+
+    return () => {
+      if (timer) clearInterval(timer);
+      hasSeededOrderSnapshotRef.current = false;
+      orderSnapshotRef.current = new Map();
+      setActiveGroceryOrder(null);
+    };
   }, []);
 
   useEffect(() => {
@@ -1646,6 +1831,71 @@ const GroceryPage = () => {
       ))}
 
       {/* --- 8. BOTTOM FLOATING OFFER --- */}
+      {activeGroceryOrder && activeOrderMeta && (
+        <motion.div
+          initial={{ opacity: 0, y: 30, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.28, ease: "easeOut" }}
+          className="fixed left-3 right-3 bottom-24 z-[60] md:left-auto md:right-6 md:w-[390px]"
+        >
+          <div className="rounded-2xl border border-white/70 bg-gradient-to-r from-[#fff1eb] via-[#fff8ef] to-[#ffe7dc] shadow-[0_10px_35px_rgba(239,79,95,0.18)] backdrop-blur-sm overflow-hidden">
+            <div className="px-4 pt-3 pb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-[#EF4F5F] text-white flex items-center justify-center">
+                  <Bike size={14} />
+                </div>
+                <p className="text-[11px] font-black uppercase tracking-wide text-[#7b1f30]">Live Order Updates</p>
+              </div>
+              <span className={`text-[10px] px-2 py-1 rounded-full border font-bold ${activeOrderMeta.chipClass}`}>
+                {activeOrderMeta.label}
+              </span>
+            </div>
+
+            <div className="px-4 pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-base font-black text-[#222] leading-tight">
+                    Order #{activeGroceryOrder?.orderId || activeGroceryOrder?._id}
+                  </p>
+                  <p className="text-[12px] font-semibold text-[#6b4d46] mt-0.5">{activeOrderMeta.subtitle}</p>
+                </div>
+                <div className="flex items-center gap-1.5 text-[#a0464f] bg-white/70 border border-[#f3d4d8] rounded-full px-2 py-1">
+                  <Timer size={12} />
+                  <span className="text-[10px] font-bold">{activeOrderMeta.progress}%</span>
+                </div>
+              </div>
+
+              <div className="mt-3 h-2 rounded-full bg-white/80 border border-[#f4d8dc] overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${activeOrderMeta.progress}%` }}
+                  transition={{ duration: 0.45, ease: "easeOut" }}
+                  className={`h-full bg-gradient-to-r ${activeOrderMeta.barClass}`}
+                />
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate(`/orders/${activeGroceryOrder?.orderId || activeGroceryOrder?._id}`)}
+                  className="h-10 rounded-xl bg-[#EF4F5F] hover:bg-[#db4252] text-white font-bold text-[12px] flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <PackageCheck size={14} />
+                  Track now
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate("/orders")}
+                  className="h-10 rounded-xl bg-white border border-[#f0d0d4] text-[#8f2e3e] font-bold text-[12px] flex items-center justify-center gap-1.5"
+                >
+                  View orders
+                  <ArrowRight size={14} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* --- 6. BOTTOM NAVIGATION (Fixed) --- */}
       <div className="fixed bottom-0 left-0 right-0 bg-white/85 dark:bg-[#111111]/95 backdrop-blur-md border-t border-slate-100 dark:border-slate-800 py-2 px-6 flex justify-between md:justify-center md:gap-28 items-end z-50 w-full pb-4">
