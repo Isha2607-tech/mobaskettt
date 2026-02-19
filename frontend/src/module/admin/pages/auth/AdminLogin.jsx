@@ -2,7 +2,6 @@ import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { adminAPI } from "@/lib/api"
 import { setAuthData, isModuleAuthenticated } from "@/lib/utils/auth"
-import { loadBusinessSettings } from "@/lib/utils/businessSettings"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -15,7 +14,6 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Eye, EyeOff } from "lucide-react"
-import appzetoLogo from "@/assets/appzetologo.png"
 
 export default function AdminLogin() {
   const navigate = useNavigate()
@@ -24,7 +22,6 @@ export default function AdminLogin() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
-  const [logoUrl, setLogoUrl] = useState(appzetoLogo)
 
   // Redirect to admin dashboard if already authenticated
   useEffect(() => {
@@ -32,22 +29,6 @@ export default function AdminLogin() {
       navigate("/admin", { replace: true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Fetch business settings logo on mount
-  useEffect(() => {
-    const fetchLogo = async () => {
-      try {
-        const settings = await loadBusinessSettings()
-        if (settings?.logo?.url) {
-          setLogoUrl(settings.logo.url)
-        }
-      } catch (error) {
-        // Silently fail and use default logo
-        console.warn("Failed to load business settings logo:", error)
-      }
-    }
-    fetchLogo()
   }, [])
 
   const handleSubmit = async (e) => {
@@ -99,20 +80,6 @@ export default function AdminLogin() {
         <Card className="w-full max-w-lg bg-white/90 backdrop-blur border-neutral-200 shadow-2xl">
           <CardHeader className="pb-4">
             <div className="flex w-full items-center gap-4 sm:gap-5">
-              <div className="flex h-14 w-28 shrink-0 items-center justify-center rounded-xl bg-gray-900/5 ring-1 ring-neutral-200">
-                <img
-                  src={logoUrl}
-                  alt="Logo"
-                  className="h-10 w-24 object-contain"
-                  loading="lazy"
-                  onError={(e) => {
-                    // Fallback to default logo if business logo fails to load
-                    if (e.target.src !== appzetoLogo) {
-                      e.target.src = appzetoLogo
-                    }
-                  }}
-                />
-              </div>
               <div className="flex flex-col gap-1">
                 <CardTitle className="text-3xl leading-tight text-gray-900">Admin Login</CardTitle>
                 <CardDescription className="text-base text-gray-600">
