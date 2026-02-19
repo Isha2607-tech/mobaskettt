@@ -957,6 +957,13 @@ export const adminAPI = {
     return apiClient.delete(`/grocery/stores/${id}`);
   },
 
+  updateGroceryAddonCategories: (restaurantId, addonId, categoryIds = []) => {
+    return apiClient.patch(
+      `/admin/grocery-addons/${encodeURIComponent(restaurantId)}/${encodeURIComponent(addonId)}/categories`,
+      { categoryIds }
+    );
+  },
+
   // Get restaurant join requests
   getRestaurantJoinRequests: (params = {}) => {
     return apiClient.get(API_ENDPOINTS.ADMIN.RESTAURANT_REQUESTS, { params });

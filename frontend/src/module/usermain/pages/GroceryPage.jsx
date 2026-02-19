@@ -912,6 +912,12 @@ const GroceryPage = () => {
 
   const handleAddProductToCart = (product, event = null) => {
     const sourcePosition = getSourcePosition(event, product?._id || product?.id);
+    const categoryId = String(
+      product?.category?._id || product?.category?.id || product?.category || ""
+    ).trim();
+    const subcategoryId = String(
+      product?.subcategory?._id || product?.subcategory?.id || product?.subcategory || ""
+    ).trim();
     addToCart({
       id: product?._id || product?.id,
       name: product?.name || "Product",
@@ -919,6 +925,8 @@ const GroceryPage = () => {
       mrp: Number(product?.mrp || 0),
       weight: product?.unit || "",
       image: getProductImage(product),
+      categoryId,
+      subcategoryId,
       restaurantId: "grocery-store",
       restaurant: "MoGrocery",
     }, sourcePosition);
@@ -1195,18 +1203,19 @@ const GroceryPage = () => {
 
       {shouldShowShimmer && (
         <div className="px-4 pt-3 pb-24 relative z-10 md:max-w-6xl md:mx-auto animate-fade-in-up">
-          <div className="h-[170px] md:h-[220px] rounded-2xl bg-slate-200 shimmer-bg mb-4" />
+          <div className="h-[140px] md:h-[185px] rounded-2xl bg-slate-200 shimmer-bg mb-4" />
           <div className="h-5 w-36 rounded bg-slate-200 shimmer-bg mb-3" />
-          <div className="grid grid-cols-3 gap-2.5 mb-5">
+          <div className="grid grid-cols-2 gap-3 mb-5">
             {Array.from({ length: 6 }).map((_, idx) => (
-              <div key={`best-skeleton-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-2.5">
-                <div className="grid grid-cols-2 gap-1.5 mb-2">
+              <div key={`best-skeleton-${idx}`} className="rounded-[22px] border border-[#d9dee5] bg-[#e9edf2] px-3 py-3.5">
+                <div className="relative grid grid-cols-2 gap-1.5 mb-2.5">
                   {Array.from({ length: 4 }).map((__, innerIdx) => (
-                    <div key={`best-inner-${idx}-${innerIdx}`} className="h-10 rounded bg-slate-200 shimmer-bg" />
+                    <div key={`best-inner-${idx}-${innerIdx}`} className="h-14 rounded-xl bg-slate-200 shimmer-bg" />
                   ))}
+                  <div className="absolute left-1/2 -translate-x-1/2 bottom-1 h-8 w-8 rounded-full bg-white shadow-sm border border-slate-200 shimmer-bg" />
                 </div>
-                <div className="h-3 w-20 mx-auto rounded bg-slate-200 shimmer-bg mb-1.5" />
-                <div className="h-3.5 w-24 mx-auto rounded bg-slate-200 shimmer-bg" />
+                <div className="h-4 w-24 mx-auto rounded bg-slate-200 shimmer-bg mb-2" />
+                <div className="h-4 w-28 mx-auto rounded bg-slate-200 shimmer-bg" />
               </div>
             ))}
           </div>
@@ -1230,7 +1239,7 @@ const GroceryPage = () => {
 
       {!shouldShowShimmer && !hasActiveSearch && activeCategoryId === "all" && bannerImages.length > 0 && (
         <div className="relative z-0 -mt-1 animate-fade-in-up px-4 pt-2 pb-1 md:max-w-6xl mx-auto">
-        <div className="relative w-full aspect-[1.8/1] md:aspect-[3/1] bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg border border-white/30 overflow-hidden">
+        <div className="relative w-full aspect-[2.3/1] md:aspect-[3.6/1] bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg border border-white/30 overflow-hidden">
           {bannerImages.map((bannerImg, index) => (
             <div
               key={`${bannerImg}-${index}`}
@@ -1264,7 +1273,7 @@ const GroceryPage = () => {
         <div className="px-4 pt-4 pb-2 relative z-10 md:max-w-6xl md:mx-auto">
           <h3 className="text-lg font-[800] text-[#3e2723] mb-4">Bestsellers</h3>
 
-          <div className="grid grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-2 gap-3">
             {visibleBestSellers.map((item, idx) => {
               const cardImages = Array.from({ length: 4 }).map(
                 (_, imageIndex) => item.previewImages?.[imageIndex] || item.image
@@ -1274,23 +1283,25 @@ const GroceryPage = () => {
                 <button
                   type="button"
                   key={`${item.id}-${idx}`}
-                  className="p-2.5 bg-[#e9edf2] rounded-[16px] border border-[#dde3ea] shadow-sm text-left active:scale-95 transition-transform"
+                  className="px-3 py-2.5 bg-[#e9edf2] rounded-[22px] border border-[#d9dee5] shadow-[0_4px_12px_rgba(15,23,42,0.08)] text-left active:scale-95 transition-transform"
                   onClick={() => handleBestSellerClick(item)}
                 >
-                  <div className="grid grid-cols-2 gap-1.5 mb-2">
+                  <div className="relative grid grid-cols-2 gap-1.5 mb-2.5">
                     {cardImages.map((imageSrc, imageIdx) => (
                       <div
                         key={`${item.id}-${imageIdx}`}
-                        className="h-10 rounded-[8px] bg-white border border-[#eceff3] overflow-hidden flex items-center justify-center p-1"
+                        className="h-14 rounded-xl bg-white border border-[#eceff3] overflow-hidden flex items-center justify-center p-1"
                       >
                         <img src={imageSrc} alt={item.name} className="w-full h-full object-contain" />
                       </div>
                     ))}
+                    {item.countLabel ? (
+                      <div className="absolute left-1/2 -translate-x-1/2 bottom-1 h-8 min-w-8 px-1.5 rounded-full bg-white border border-[#d7dce4] shadow-sm text-[11px] font-[700] text-[#5b6472] flex items-center justify-center">
+                        {item.countLabel}
+                      </div>
+                    ) : null}
                   </div>
-                  <p className="text-[10px] font-semibold text-slate-500 leading-none mb-1 text-center min-h-[10px]">
-                    {item.countLabel || ""}
-                  </p>
-                  <p className="text-[13px] font-[700] text-[#2b2b2b] leading-[1.2] text-center line-clamp-2 min-h-[32px]">
+                  <p className="text-[15px] font-[800] text-[#262a33] leading-[1.08] text-center line-clamp-2 min-h-[28px]">
                     {item.name}
                   </p>
                 </button>
@@ -1380,7 +1391,7 @@ const GroceryPage = () => {
                           <img
                             src={getProductImage(product)}
                             alt={product?.name || "Product"}
-                            className="w-full h-full object-contain"
+                            className="w-full h-full object-contain scale-110"
                           />
                         </div>
                         <p className="text-[12px] sm:text-sm font-semibold text-slate-900 line-clamp-2 min-h-[34px]">
@@ -1489,7 +1500,7 @@ const GroceryPage = () => {
                     <img
                       src={getProductImage(product)}
                       alt={product?.name || "Product"}
-                      className="w-full h-full object-contain"
+                      className="w-full h-full object-contain scale-110"
                     />
                   </div>
                   <p className="text-sm font-semibold text-slate-900 line-clamp-2">{product?.name}</p>
@@ -1729,7 +1740,7 @@ const GroceryPage = () => {
                             </button>
 
                             <div className="w-full h-[110px] rounded-xl bg-slate-50 overflow-hidden flex items-center justify-center mb-2">
-                              <img src={getProductImage(product)} alt={product?.name || "Product"} className="w-full h-full object-contain" />
+                              <img src={getProductImage(product)} alt={product?.name || "Product"} className="w-full h-full object-contain scale-110" />
                             </div>
 
                             <p className="text-[13px] font-bold text-slate-900 leading-tight line-clamp-2 min-h-[34px]">
@@ -1837,7 +1848,7 @@ const GroceryPage = () => {
                             </button>
 
                             <div className="w-full h-[110px] rounded-xl bg-slate-50 overflow-hidden flex items-center justify-center mb-2">
-                              <img src={getProductImage(product)} alt={product?.name || "Product"} className="w-full h-full object-contain" />
+                              <img src={getProductImage(product)} alt={product?.name || "Product"} className="w-full h-full object-contain scale-110" />
                             </div>
 
                             <p className="text-[13px] font-bold text-slate-900 leading-tight line-clamp-2 min-h-[34px]">

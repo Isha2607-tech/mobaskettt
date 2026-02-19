@@ -517,6 +517,7 @@ export function CategoryFoodsContent({
                         e.stopPropagation();
                         addToCart({
                           ...item,
+                          categoryId: String(item?.category || selectedCategory || "").trim(),
                           restaurantId: "grocery-store", // Default for grocery
                           restaurant: "MoGrocery",
                         });

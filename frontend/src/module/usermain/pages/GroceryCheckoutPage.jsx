@@ -47,6 +47,8 @@ export default function GroceryCheckoutPage() {
   const [calculatedPricing, setCalculatedPricing] = useState(null);
   const [loadingPricing, setLoadingPricing] = useState(false);
   const [resolvedRestaurant, setResolvedRestaurant] = useState(null);
+  const [categoryAddons, setCategoryAddons] = useState([]);
+  const [loadingCategoryAddons, setLoadingCategoryAddons] = useState(false);
 
   // Filter grocery items
   const groceryItems = cart.filter((item) => isGroceryItem(item));
@@ -102,6 +104,21 @@ export default function GroceryCheckoutPage() {
     0,
   );
   const totalSavings = itemsTotal - subtotal;
+
+  const cartCategoryIds = useMemo(() => {
+    const ids = groceryItems
+      .map((item) =>
+        String(
+          item?.categoryId ||
+          item?.category?._id ||
+          item?.category?.id ||
+          item?.category ||
+          ""
+        ).trim()
+      )
+      .filter(Boolean);
+    return Array.from(new Set(ids));
+  }, [groceryItems]);
 
   useEffect(() => {
     const fetchFeeSettings = async () => {
@@ -220,6 +237,44 @@ export default function GroceryCheckoutPage() {
 
     calculatePricingPreview();
   }, [groceryItems, selectedAddress, resolvedRestaurant, zoneId]);
+
+  useEffect(() => {
+    const fetchCategoryAddons = async () => {
+      if (!resolvedRestaurant?.restaurantId) {
+        setCategoryAddons([]);
+        return;
+      }
+
+      try {
+        setLoadingCategoryAddons(true);
+        const response = await restaurantAPI.getAddonsByRestaurantId(resolvedRestaurant.restaurantId);
+        const addons = response?.data?.data?.addons || response?.data?.addons || [];
+
+        const normalizedCartCategoryIds = new Set(cartCategoryIds.map((id) => String(id)));
+
+        const filtered = (Array.isArray(addons) ? addons : [])
+          .filter((addon) => addon?.isAvailable !== false && addon?.approvalStatus !== "rejected")
+          .filter((addon) => {
+            const mappedCategoryIds = Array.isArray(addon?.applicableCategoryIds)
+              ? addon.applicableCategoryIds.map((id) => String(id)).filter(Boolean)
+              : [];
+
+            if (mappedCategoryIds.length === 0) return true;
+            if (normalizedCartCategoryIds.size === 0) return true;
+            return mappedCategoryIds.some((id) => normalizedCartCategoryIds.has(id));
+          });
+
+        setCategoryAddons(filtered);
+      } catch (error) {
+        console.error("Failed to fetch category addons:", error);
+        setCategoryAddons([]);
+      } finally {
+        setLoadingCategoryAddons(false);
+      }
+    };
+
+    fetchCategoryAddons();
+  }, [resolvedRestaurant?.restaurantId, cartCategoryIds]);
 
   const showPricingLoading = loadingPricing && !calculatedPricing;
 
@@ -475,6 +530,45 @@ export default function GroceryCheckoutPage() {
           </div>
         </div>
       </div>
+
+      {(loadingCategoryAddons || categoryAddons.length > 0) && (
+        <div className="px-4 mb-4">
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-yellow-50">
+            <h3 className="text-sm font-bold text-gray-900 mb-3 border-b border-gray-50 pb-2">
+              Suggested Add-ons
+            </h3>
+            {loadingCategoryAddons ? (
+              <p className="text-xs text-gray-500">Loading add-ons...</p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {categoryAddons.map((addon) => {
+                  const addonImage =
+                    addon?.image ||
+                    (Array.isArray(addon?.images) ? addon.images[0] : "") ||
+                    "";
+                  const addonId = String(addon?.id || addon?._id || "");
+                  return (
+                    <div
+                      key={addonId || addon?.name}
+                      className="rounded-lg border border-gray-100 p-2.5 bg-yellow-50/40"
+                    >
+                      <div className="w-full h-20 rounded-md bg-white border border-gray-100 mb-2 overflow-hidden flex items-center justify-center">
+                        {addonImage ? (
+                          <img src={addonImage} alt={addon?.name || "Addon"} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-[10px] text-gray-400">No image</span>
+                        )}
+                      </div>
+                      <p className="text-xs font-semibold text-gray-900 line-clamp-2">{addon?.name || "Addon"}</p>
+                      <p className="text-[11px] text-gray-600 mt-1">Rs {Number(addon?.price || 0).toFixed(2)}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Order Summary */}
       <div className="px-4 mb-4">

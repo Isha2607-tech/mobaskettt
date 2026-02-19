@@ -77,6 +77,22 @@ export default function GrocerySubcategoryProductsPage() {
         mrp: Number(product?.mrp || 0),
         weight: product?.unit || "",
         image,
+        categoryId: String(
+          product?.category?._id ||
+          product?.category?.id ||
+          product?.category ||
+          subcategory?.category?._id ||
+          subcategory?.category ||
+          ""
+        ).trim(),
+        subcategoryId: String(
+          product?.subcategory?._id ||
+          product?.subcategory?.id ||
+          product?.subcategory ||
+          subcategory?._id ||
+          subcategoryId ||
+          ""
+        ).trim(),
         restaurantId: "grocery-store",
         restaurant: "MoGrocery",
       }, sourcePosition);

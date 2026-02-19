@@ -728,7 +728,7 @@ export const getMenuByRestaurantId = async (req, res) => {
 // Add a new add-on
 export const addAddon = asyncHandler(async (req, res) => {
   const restaurantId = req.restaurant._id;
-  const { name, description, price, image, images } = req.body;
+  const { name, description, price, image, images, applicableCategoryIds } = req.body;
 
   if (!name || !name.trim()) {
     return errorResponse(res, 400, 'Add-on name is required');
@@ -764,6 +764,9 @@ export const addAddon = asyncHandler(async (req, res) => {
     image: normalizedImages.length > 0 ? normalizedImages[0] : '',
     images: normalizedImages,
     isAvailable: true,
+    applicableCategoryIds: Array.isArray(applicableCategoryIds)
+      ? applicableCategoryIds.map((id) => String(id)).filter(Boolean)
+      : [],
     approvalStatus: 'pending', // New add-ons require admin approval
     requestedAt: new Date(),
   };
@@ -886,7 +889,7 @@ export const getAddonsByRestaurantId = async (req, res) => {
 export const updateAddon = asyncHandler(async (req, res) => {
   const restaurantId = req.restaurant._id;
   const { id } = req.params;
-  const { name, description, price, image, images, isAvailable } = req.body;
+  const { name, description, price, image, images, isAvailable, applicableCategoryIds } = req.body;
 
   // Find menu
   const menu = await Menu.findOne({ restaurant: restaurantId });
@@ -939,6 +942,9 @@ export const updateAddon = asyncHandler(async (req, res) => {
   addon.price = Number(price) || 0;
   addon.image = normalizedImages.length > 0 ? normalizedImages[0] : '';
   addon.images = normalizedImages;
+  if (Array.isArray(applicableCategoryIds)) {
+    addon.applicableCategoryIds = applicableCategoryIds.map((categoryId) => String(categoryId)).filter(Boolean);
+  }
 
   // If editing an approved/rejected add-on, set status back to pending for re-approval
   if (addon.approvalStatus === 'approved' || addon.approvalStatus === 'rejected') {

@@ -222,6 +222,20 @@ export default function FoodDetailPage() {
               e.stopPropagation();
               addToCart({
                 ...product,
+                categoryId: String(
+                  product?.categoryId ||
+                  product?.category?._id ||
+                  product?.category?.id ||
+                  product?.category ||
+                  ""
+                ).trim(),
+                subcategoryId: String(
+                  product?.subcategoryId ||
+                  product?.subcategory?._id ||
+                  product?.subcategory?.id ||
+                  product?.subcategory ||
+                  ""
+                ).trim(),
                 restaurantId: "grocery-store",
                 restaurant: "MoGrocery",
               });

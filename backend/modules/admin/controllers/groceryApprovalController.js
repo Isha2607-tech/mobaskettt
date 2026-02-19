@@ -559,3 +559,54 @@ export const rejectGroceryItem = asyncHandler(async (req, res) => {
     return errorResponse(res, 500, 'Failed to reject grocery item');
   }
 });
+
+/**
+ * Update applicable grocery categories for an add-on
+ * PATCH /api/admin/grocery-addons/:restaurantId/:addonId/categories
+ */
+export const updateGroceryAddonCategories = asyncHandler(async (req, res) => {
+  try {
+    const { restaurantId, addonId } = req.params;
+    const { categoryIds } = req.body || {};
+
+    if (!restaurantId || !addonId) {
+      return errorResponse(res, 400, 'restaurantId and addonId are required');
+    }
+
+    if (!Array.isArray(categoryIds)) {
+      return errorResponse(res, 400, 'categoryIds must be an array');
+    }
+
+    const normalizedCategoryIds = categoryIds
+      .map((id) => String(id || '').trim())
+      .filter(Boolean);
+
+    const menu = await Menu.findOne({ restaurant: restaurantId });
+    if (!menu) {
+      return errorResponse(res, 404, 'Menu not found for this store');
+    }
+
+    const addonIndex = (menu.addons || []).findIndex(
+      (addon) => String(addon.id) === String(addonId)
+    );
+    if (addonIndex === -1) {
+      return errorResponse(res, 404, 'Add-on not found');
+    }
+
+    menu.addons[addonIndex].applicableCategoryIds = normalizedCategoryIds;
+    menu.markModified(`addons.${addonIndex}`);
+    menu.markModified('addons');
+    await menu.save();
+
+    return successResponse(res, 200, 'Add-on categories updated successfully', {
+      addon: {
+        id: menu.addons[addonIndex].id,
+        name: menu.addons[addonIndex].name,
+        applicableCategoryIds: menu.addons[addonIndex].applicableCategoryIds || [],
+      },
+    });
+  } catch (error) {
+    logger.error(`Error updating grocery add-on categories: ${error.message}`, { error: error.stack });
+    return errorResponse(res, 500, 'Failed to update add-on categories');
+  }
+});

@@ -14,6 +14,7 @@ import {
   Minus,
   Sparkles,
   LocateFixed,
+  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -21,7 +22,7 @@ import { useCart } from "../../user/context/CartContext";
 import { useProfile } from "../../user/context/ProfileContext";
 import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
 import { useZone } from "../../user/hooks/useZone";
-import { adminAPI, locationAPI, orderAPI, restaurantAPI } from "@/lib/api";
+import { adminAPI, locationAPI, orderAPI, restaurantAPI, userAPI } from "@/lib/api";
 import { initRazorpayPayment } from "@/lib/utils/razorpay";
 
 export default function CheckoutPage() {
@@ -50,6 +51,8 @@ export default function CheckoutPage() {
   const [showAddAddressForm, setShowAddAddressForm] = useState(false);
   const [isDetectingAddress, setIsDetectingAddress] = useState(false);
   const [isSavingAddress, setIsSavingAddress] = useState(false);
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [walletLoading, setWalletLoading] = useState(false);
   const [newAddress, setNewAddress] = useState({
     label: "Home",
     street: "",
@@ -281,6 +284,28 @@ export default function CheckoutPage() {
   }, []);
 
   useEffect(() => {
+    const fetchWalletBalance = async () => {
+      try {
+        setWalletLoading(true);
+        const response = await userAPI.getWallet();
+        const balance =
+          response?.data?.data?.wallet?.balance ??
+          response?.data?.wallet?.balance ??
+          response?.data?.data?.balance ??
+          0;
+        setWalletBalance(Number(balance || 0));
+      } catch (error) {
+        console.error("Failed to fetch wallet balance:", error);
+        setWalletBalance(0);
+      } finally {
+        setWalletLoading(false);
+      }
+    };
+
+    fetchWalletBalance();
+  }, []);
+
+  useEffect(() => {
     const fetchPricingPreview = async () => {
       if (!restaurantId || !selectedAddress || foodItems.length === 0) {
         setCalculatedPricing(null);
@@ -384,6 +409,8 @@ export default function CheckoutPage() {
     };
   }, [calculatedPricing, feeSettings, foodItems, selectedAddress]);
 
+  const hasSufficientWalletBalance = walletBalance >= orderSummary.total;
+
   const buildOrderItems = () =>
     foodItems.map((item) => ({
       itemId: String(item.id || item._id || item.itemId || ""),
@@ -465,6 +492,17 @@ export default function CheckoutPage() {
       return;
     }
 
+    if (paymentMethod === "wallet") {
+      if (walletLoading) {
+        toast.info("Checking wallet balance. Please wait.");
+        return;
+      }
+      if (!hasSufficientWalletBalance) {
+        toast.error("Insufficient wallet balance. Add money or choose another payment method.");
+        return;
+      }
+    }
+
     setIsPlacingOrder(true);
     try {
       const items = buildOrderItems();
@@ -505,7 +543,12 @@ export default function CheckoutPage() {
         throw new Error("Failed to calculate order pricing.");
       }
 
-      const backendPaymentMethod = paymentMethod === "cash" ? "cash" : "razorpay";
+      const backendPaymentMethod =
+        paymentMethod === "cash"
+          ? "cash"
+          : paymentMethod === "wallet"
+            ? "wallet"
+            : "razorpay";
 
       const orderPayload = {
         items,
@@ -528,8 +571,11 @@ export default function CheckoutPage() {
       const { order, razorpay } = orderResponse?.data?.data || {};
       const orderIdentifier = order?.orderId || order?.id;
 
-      if (backendPaymentMethod === "cash") {
+      if (backendPaymentMethod === "cash" || backendPaymentMethod === "wallet") {
         clearCart("mofood");
+        if (backendPaymentMethod === "wallet") {
+          setWalletBalance((prev) => Math.max(0, prev - Number(calculatedPricing?.total || 0)));
+        }
         toast.success("Order placed successfully.");
         navigate(`/orders/${orderIdentifier}?confirmed=true`);
         return;
@@ -964,6 +1010,35 @@ export default function CheckoutPage() {
               </span>
             </button>
             <button
+              onClick={() => setPaymentMethod("wallet")}
+              className={`w-full flex items-center justify-between gap-3 p-3 rounded-lg border-2 transition-colors ${
+                paymentMethod === "wallet"
+                  ? "border-[#ff8100] bg-[#ff8100]/10"
+                  : "border-gray-200 bg-white"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Wallet
+                  className={`w-5 h-5 ${paymentMethod === "wallet" ? "text-[#ff8100]" : "text-gray-400"}`}
+                />
+                <div className="text-left">
+                  <span
+                    className={`block text-sm font-medium ${paymentMethod === "wallet" ? "text-[#ff8100]" : "text-gray-700"}`}
+                  >
+                    MoBasket Wallet
+                  </span>
+                  <span className="block text-xs text-gray-500">
+                    {walletLoading
+                      ? "Checking balance..."
+                      : `Available: ${formatCurrency(walletBalance)}`}
+                  </span>
+                </div>
+              </div>
+              {!walletLoading && !hasSufficientWalletBalance && (
+                <span className="text-[11px] font-semibold text-red-500">Low balance</span>
+              )}
+            </button>
+            <button
               onClick={() => setPaymentMethod("cash")}
               className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${
                 paymentMethod === "cash"
@@ -988,12 +1063,17 @@ export default function CheckoutPage() {
         <Button
           className="w-full bg-[#ff8100] hover:bg-[#e67300] text-white font-bold py-4 rounded-2xl text-base shadow-lg shadow-orange-200/70"
           onClick={handleProceedToPayment}
-          disabled={isPlacingOrder}
+          disabled={
+            isPlacingOrder ||
+            (paymentMethod === "wallet" && !walletLoading && !hasSufficientWalletBalance)
+          }
         >
           {isPlacingOrder
             ? "Processing..."
             : paymentMethod === "cash"
               ? "Place Order"
+              : paymentMethod === "wallet"
+                ? "Pay via Wallet"
               : "Proceed to Payment"}
         </Button>
       </div>

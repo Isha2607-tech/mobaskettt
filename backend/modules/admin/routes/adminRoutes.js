@@ -129,7 +129,8 @@ import {
 import {
   getPendingGroceryApprovals,
   approveGroceryItem,
-  rejectGroceryItem
+  rejectGroceryItem,
+  updateGroceryAddonCategories
 } from '../controllers/groceryApprovalController.js';
 import {
   getRestaurantMenuForAdmin,
@@ -401,6 +402,7 @@ router.post('/restaurants/:restaurantId/menu/items', addRestaurantMenuItemByAdmi
 router.get('/grocery-approvals', getPendingGroceryApprovals);
 router.post('/grocery-approvals/:id/approve', approveGroceryItem);
 router.post('/grocery-approvals/:id/reject', rejectGroceryItem);
+router.patch('/grocery-addons/:restaurantId/:addonId/categories', updateGroceryAddonCategories);
 
 // Offers Management
 router.get('/offers', getAllOffers);

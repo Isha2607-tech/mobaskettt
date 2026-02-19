@@ -9,8 +9,10 @@ export default function GroceryAddonsList() {
   const { platform, switchPlatform } = usePlatform()
   const [searchQuery, setSearchQuery] = useState("")
   const [addons, setAddons] = useState([])
+  const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
+  const [savingAddonId, setSavingAddonId] = useState(null)
 
   useEffect(() => {
     if (platform !== "mogrocery") {
@@ -23,8 +25,18 @@ export default function GroceryAddonsList() {
     const fetchAllAddons = async () => {
       try {
         setLoading(true)
-        
-        const storesResponse = await adminAPI.getGroceryStores({ limit: 1000 })
+
+        const [storesResponse, categoriesResponse] = await Promise.all([
+          adminAPI.getGroceryStores({ limit: 1000 }),
+          adminAPI.getGroceryCategories({ activeOnly: "false", limit: 1000 }),
+        ])
+
+        const groceryCategories =
+          categoriesResponse?.data?.data ||
+          categoriesResponse?.data?.categories ||
+          []
+        setCategories(Array.isArray(groceryCategories) ? groceryCategories : [])
+
         const restaurants = storesResponse?.data?.data?.stores || 
                           storesResponse?.data?.stores || 
                           []
@@ -50,11 +62,14 @@ export default function GroceryAddonsList() {
                 id: addon.id || `${restaurantId}-${addon.name}`,
                 _id: addon._id,
                 name: addon.name || "Unnamed Addon",
-                image: addon.image || addon.images?.[0] || "https://via.placeholder.com/40",
+                image: addon.image || addon.images?.[0] || "",
                 price: addon.price || 0,
                 description: addon.description || "",
                 isAvailable: addon.isAvailable !== false,
                 approvalStatus: addon.approvalStatus || 'pending',
+                applicableCategoryIds: Array.isArray(addon.applicableCategoryIds)
+                  ? addon.applicableCategoryIds.map((categoryId) => String(categoryId))
+                  : [],
                 restaurantId: restaurantId,
                 restaurantName: restaurant.name || "Unknown Store",
                 originalAddon: addon
@@ -126,6 +141,14 @@ export default function GroceryAddonsList() {
     return result
   }, [addons, searchQuery])
 
+  const categoryNameById = useMemo(() => {
+    const map = new Map()
+    categories.forEach((category) => {
+      map.set(String(category?._id || ""), category?.name || "Category")
+    })
+    return map
+  }, [categories])
+
   const handleDelete = async (id) => {
     const addon = addons.find(a => a.id === id)
     if (!addon) return
@@ -184,6 +207,33 @@ export default function GroceryAddonsList() {
     }
   }
 
+  const handleAddonCategorySelection = (addonId, selectedCategoryIds) => {
+    setAddons((prev) =>
+      prev.map((addon) =>
+        addon.id === addonId
+          ? { ...addon, applicableCategoryIds: selectedCategoryIds }
+          : addon
+      )
+    )
+  }
+
+  const handleSaveAddonCategories = async (addon) => {
+    try {
+      setSavingAddonId(addon.id)
+      await adminAPI.updateGroceryAddonCategories(
+        addon.restaurantId,
+        addon.id,
+        Array.isArray(addon.applicableCategoryIds) ? addon.applicableCategoryIds : []
+      )
+      toast.success(`Categories updated for "${addon.name}"`)
+    } catch (error) {
+      console.error("Error updating addon categories:", error)
+      toast.error(error?.response?.data?.message || "Failed to update categories")
+    } finally {
+      setSavingAddonId(null)
+    }
+  }
+
   return (
     <div className="p-4 lg:p-6 bg-slate-50 min-h-screen">
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
@@ -239,6 +289,9 @@ export default function GroceryAddonsList() {
                 <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
                   Price
                 </th>
+                <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+                  Categories
+                </th>
                 <th className="px-6 py-4 text-center text-[10px] font-bold text-slate-700 uppercase tracking-wider">
                   Action
                 </th>
@@ -247,7 +300,7 @@ export default function GroceryAddonsList() {
             <tbody className="bg-white divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-20 text-center">
+                  <td colSpan={6} className="px-6 py-20 text-center">
                     <div className="flex flex-col items-center justify-center">
                       <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-2" />
                       <p className="text-sm text-slate-500">Loading addons from stores...</p>
@@ -256,7 +309,7 @@ export default function GroceryAddonsList() {
                 </tr>
               ) : filteredAddons.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-20 text-center">
+                  <td colSpan={6} className="px-6 py-20 text-center">
                     <div className="flex flex-col items-center justify-center">
                       <p className="text-lg font-semibold text-slate-700 mb-1">No Data Found</p>
                       <p className="text-sm text-slate-500">No addons match your search</p>
@@ -274,14 +327,15 @@ export default function GroceryAddonsList() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-100 flex items-center justify-center">
-                        <img
-                          src={addon.image}
-                          alt={addon.name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.target.src = "https://via.placeholder.com/40"
-                          }}
-                        />
+                        {addon.image ? (
+                          <img
+                            src={addon.image}
+                            alt={addon.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-[10px] text-slate-500 font-semibold">N/A</span>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -305,19 +359,56 @@ export default function GroceryAddonsList() {
                         ₹{addon.price.toFixed(2)}
                       </span>
                     </td>
+                    <td className="px-6 py-4 min-w-[260px]">
+                      <div className="space-y-2">
+                        <select
+                          multiple
+                          value={addon.applicableCategoryIds || []}
+                          onChange={(e) => {
+                            const selected = Array.from(e.target.selectedOptions).map((option) => option.value)
+                            handleAddonCategorySelection(addon.id, selected)
+                          }}
+                          className="w-full min-h-[96px] text-xs rounded-md border border-slate-300 bg-white p-2"
+                        >
+                          {categories.map((category) => {
+                            const categoryId = String(category?._id || "")
+                            return (
+                              <option key={categoryId} value={categoryId}>
+                                {category?.name || "Category"}
+                              </option>
+                            )
+                          })}
+                        </select>
+                        <p className="text-[11px] text-slate-500">
+                          {addon.applicableCategoryIds?.length
+                            ? addon.applicableCategoryIds.map((id) => categoryNameById.get(String(id)) || "Unknown").join(", ")
+                            : "No categories selected (shows for all categories)."}
+                        </p>
+                      </div>
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <button
-                        onClick={() => handleDelete(addon.id)}
-                        disabled={deleting}
-                        className="p-1.5 rounded text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Delete"
-                      >
-                        {deleting ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-4 h-4" />
-                        )}
-                      </button>
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => handleSaveAddonCategories(addon)}
+                          disabled={savingAddonId === addon.id}
+                          className="px-2.5 py-1.5 rounded text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
+                          title="Save Categories"
+                        >
+                          {savingAddonId === addon.id ? "Saving..." : "Save"}
+                        </button>
+                        <button
+                          onClick={() => handleDelete(addon.id)}
+                          disabled={deleting}
+                          className="p-1.5 rounded text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Delete"
+                        >
+                          {deleting ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -329,3 +420,4 @@ export default function GroceryAddonsList() {
     </div>
   )
 }
+

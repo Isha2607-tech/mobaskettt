@@ -95,6 +95,18 @@ export default function GroceryBestSellerProductsPage() {
         mrp: Number(product?.mrp || 0),
         weight: product?.unit || "",
         image,
+        categoryId: String(
+          product?.category?._id ||
+          product?.category?.id ||
+          product?.category ||
+          ""
+        ).trim(),
+        subcategoryId: String(
+          product?.subcategory?._id ||
+          product?.subcategory?.id ||
+          product?.subcategory ||
+          ""
+        ).trim(),
         restaurantId: "grocery-store",
         restaurant: "MoGrocery",
       }, sourcePosition);

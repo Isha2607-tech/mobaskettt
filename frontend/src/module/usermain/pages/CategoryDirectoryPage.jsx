@@ -144,8 +144,8 @@ export default function CategoryDirectoryPage() {
   return (
     <div className="min-h-screen bg-white pb-24 font-sans w-full">
       {/* Top Navbar Header */}
-      <div className="bg-[#FACC15] rounded-b-[2.5rem] pb-10 shadow-sm">
-        <div className="px-4 pt-6 md:max-w-7xl md:mx-auto">
+      <div className="bg-[#FACC15] rounded-b-[2.5rem] pb-6 shadow-sm">
+        <div className="px-4 pt-4 md:max-w-7xl md:mx-auto">
           {/* Top Info Row */}
           <div className="flex justify-between items-start mb-0">
             <div className="flex flex-col text-[#3e3212]">

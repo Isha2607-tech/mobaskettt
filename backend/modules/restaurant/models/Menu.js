@@ -86,6 +86,7 @@ const addonSchema = new mongoose.Schema({
   approvedAt: { type: Date },
   approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
   rejectedAt: { type: Date },
+  applicableCategoryIds: { type: [String], default: [] },
 }, { _id: false });
 
 const menuSchema = new mongoose.Schema({
