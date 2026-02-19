@@ -21,7 +21,7 @@ export const loadBusinessSettings = async () => {
     // Use public endpoint that doesn't require authentication
     const response = await apiClient.get(API_ENDPOINTS.ADMIN.BUSINESS_SETTINGS_PUBLIC);
     const settings = response?.data?.data || response?.data;
-    
+
     if (settings) {
       cachedSettings = settings;
       updateFavicon(settings.favicon?.url);
@@ -83,7 +83,7 @@ export const getCachedSettings = () => {
  */
 export const getCompanyName = () => {
   const settings = getCachedSettings();
-  return settings?.companyName || 'Appzeto Food';
+  return settings?.companyName || 'MoBasket';
 };
 
 /**
@@ -93,8 +93,8 @@ export const getCompanyName = () => {
 export const getCompanyNameAsync = async () => {
   try {
     const settings = await loadBusinessSettings();
-    return settings?.companyName || 'Appzeto Food';
+    return settings?.companyName || 'MoBasket';
   } catch (error) {
-    return 'Appzeto Food';
+    return 'MoBasket';
   }
 };

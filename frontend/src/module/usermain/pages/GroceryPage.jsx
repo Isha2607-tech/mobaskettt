@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useNavigate, useLocation as useRouterLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
 import { useCart } from "../../user/context/CartContext";
 import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
 import { CategoryFoodsContent } from "./CategoryFoodsPage";
@@ -269,7 +270,8 @@ const GroceryPage = () => {
     loadWishlist();
 
     const onStorage = (event) => {
-      if (!event || event.key === "wishlist") {
+      // Handle both native 'storage' events and our custom 'wishlistUpdated' event
+      if (!event || event.type === "wishlistUpdated" || event.key === "wishlist") {
         loadWishlist();
       }
     };
@@ -327,8 +329,8 @@ const GroceryPage = () => {
       activeCategoryId === "all"
         ? homepageCategories
         : homepageCategories.filter(
-            (category) => String(category?._id || category?.slug || category?.name) === String(activeCategoryId)
-          );
+          (category) => String(category?._id || category?.slug || category?.name) === String(activeCategoryId)
+        );
 
     const map = new Map();
     categoriesToUse.forEach((category) => {
@@ -453,8 +455,8 @@ const GroceryPage = () => {
       query
         ? homepageCategories
         : activeTab === "All"
-        ? homepageCategories
-        : homepageCategories.filter((category) => category?.name === activeTab);
+          ? homepageCategories
+          : homepageCategories.filter((category) => category?.name === activeTab);
 
     return categoryFiltered
       .map((category) => {
@@ -602,22 +604,28 @@ const GroceryPage = () => {
     const next = exists
       ? wishlistItems.filter((item) => String(item?.id) !== wishlistId)
       : [
-          ...wishlistItems,
-          {
-            id: wishlistId,
-            type: "food",
-            originalId,
-            name: product?.name || "Product",
-            image: getProductImage(product),
-            price: Number(product?.sellingPrice || 0),
-            mrp: Number(product?.mrp || 0),
-            unit: product?.unit || "",
-          },
-        ];
+        ...wishlistItems,
+        {
+          id: wishlistId,
+          type: "food",
+          originalId,
+          name: product?.name || "Product",
+          image: getProductImage(product),
+          price: Number(product?.sellingPrice || 0),
+          mrp: Number(product?.mrp || 0),
+          unit: product?.unit || "",
+        },
+      ];
 
     setWishlistItems(next);
     localStorage.setItem("wishlist", JSON.stringify(next));
     window.dispatchEvent(new Event("wishlistUpdated"));
+
+    if (exists) {
+      toast.success("Removed from wishlist");
+    } else {
+      toast.success("Added to wishlist");
+    }
   };
 
   const groceryWishlistedProducts = useMemo(() => {
@@ -1001,9 +1009,8 @@ const GroceryPage = () => {
   return (
     // Main Container with White Background
     <div
-      className={`min-h-screen text-slate-800 pb-24 font-sans w-full shadow-none overflow-x-hidden relative bg-white ${
-        isGroceryUnavailable ? "grayscale-[0.95] opacity-70" : ""
-      }`}
+      className={`min-h-screen text-slate-800 pb-24 font-sans w-full shadow-none overflow-x-hidden relative bg-white ${isGroceryUnavailable ? "grayscale-[0.95] opacity-70" : ""
+        }`}
     >
       {isGroceryUnavailable && (
         <div className="fixed top-[88px] left-1/2 -translate-x-1/2 z-[95] px-4">
@@ -1278,33 +1285,31 @@ const GroceryPage = () => {
 
       {!shouldShowShimmer && !hasActiveSearch && activeCategoryId === "all" && bannerImages.length > 0 && (
         <div className="relative z-0 -mt-1 animate-fade-in-up px-4 pt-2 pb-1 md:max-w-6xl mx-auto">
-        <div className="relative w-full aspect-[2.3/1] md:aspect-[3.6/1] bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg border border-white/30 overflow-hidden">
-          {bannerImages.map((bannerImg, index) => (
-            <div
-              key={`${bannerImg}-${index}`}
-              className={`absolute inset-0 transition-opacity duration-1000 ease-in-out flex items-center justify-center ${
-                index === currentBanner ? "opacity-100 z-10" : "opacity-0 z-0"
-              }`}
-            >
-              <img
-                src={bannerImg}
-                alt="Banner"
-                className="w-full h-full object-cover"
-              />
-            </div>
-          ))}
-
-          <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1.5 z-20">
-            {bannerImages.map((_, i) => (
+          <div className="relative w-full aspect-[2.3/1] md:aspect-[3.6/1] bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg border border-white/30 overflow-hidden">
+            {bannerImages.map((bannerImg, index) => (
               <div
-                key={i}
-                className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
-                  i === currentBanner ? "bg-white w-4" : "bg-white/50"
-                }`}
-              ></div>
+                key={`${bannerImg}-${index}`}
+                className={`absolute inset-0 transition-opacity duration-1000 ease-in-out flex items-center justify-center ${index === currentBanner ? "opacity-100 z-10" : "opacity-0 z-0"
+                  }`}
+              >
+                <img
+                  src={bannerImg}
+                  alt="Banner"
+                  className="w-full h-full object-cover"
+                />
+              </div>
             ))}
+
+            <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1.5 z-20">
+              {bannerImages.map((_, i) => (
+                <div
+                  key={i}
+                  className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === currentBanner ? "bg-white w-4" : "bg-white/50"
+                    }`}
+                ></div>
+              ))}
+            </div>
           </div>
-        </div>
         </div>
       )}
 
@@ -1357,11 +1362,10 @@ const GroceryPage = () => {
               <div className="max-h-[calc(100vh-230px)] overflow-y-auto space-y-2 pb-3">
                 <button
                   type="button"
-                  className={`w-full rounded-xl px-2 py-2 text-[11px] font-semibold text-center border ${
-                    activeSubcategoryId === "all-subcategories"
-                      ? "bg-[#fff4cc] border-[#facc15] text-slate-900"
-                      : "bg-white border-slate-200 text-slate-600"
-                  }`}
+                  className={`w-full rounded-xl px-2 py-2 text-[11px] font-semibold text-center border ${activeSubcategoryId === "all-subcategories"
+                    ? "bg-[#fff4cc] border-[#facc15] text-slate-900"
+                    : "bg-white border-slate-200 text-slate-600"
+                    }`}
                   onClick={() => setActiveSubcategoryId("all-subcategories")}
                 >
                   All
@@ -1370,11 +1374,10 @@ const GroceryPage = () => {
                   <button
                     type="button"
                     key={subcategory._id}
-                    className={`w-full rounded-xl px-1.5 py-2 border flex flex-col items-center gap-1.5 ${
-                      activeSubcategoryId === subcategory._id
-                        ? "bg-[#fff4cc] border-[#facc15]"
-                        : "bg-white border-slate-200"
-                    }`}
+                    className={`w-full rounded-xl px-1.5 py-2 border flex flex-col items-center gap-1.5 ${activeSubcategoryId === subcategory._id
+                      ? "bg-[#fff4cc] border-[#facc15]"
+                      : "bg-white border-slate-200"
+                      }`}
                     onClick={() => setActiveSubcategoryId(subcategory._id)}
                   >
                     <img
@@ -1416,14 +1419,17 @@ const GroceryPage = () => {
                       >
                         <button
                           type="button"
-                          className={`absolute top-2 right-2 z-10 w-7 h-7 rounded-full border flex items-center justify-center ${
-                            isProductWishlisted(product)
-                              ? "bg-pink-100 border-pink-200 text-pink-500"
-                              : "bg-white border-slate-200 text-slate-500"
-                          }`}
+                          className={`absolute top-2 right-2 z-20 w-7 h-7 rounded-full border flex items-center justify-center transition-all duration-300 ${isProductWishlisted(product)
+                            ? "bg-pink-50 border-pink-200 text-pink-500 shadow-sm"
+                            : "bg-white/80 backdrop-blur-sm border-slate-200 text-slate-400 hover:text-slate-600"
+                            }`}
                           onClick={(event) => toggleProductWishlist(product, event)}
                         >
-                          <Heart size={14} className={isProductWishlisted(product) ? "fill-current" : ""} />
+                          <Heart
+                            size={14}
+                            className={isProductWishlisted(product) ? "fill-current" : ""}
+                            strokeWidth={isProductWishlisted(product) ? 2.5 : 2}
+                          />
                         </button>
 
                         <div className="w-full aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 flex items-center justify-center">
@@ -1448,11 +1454,10 @@ const GroceryPage = () => {
                           </div>
                           <button
                             type="button"
-                            className={`h-7 sm:h-8 px-2.5 sm:px-3 rounded-lg text-[10px] sm:text-xs font-bold ${
-                              alreadyInCart
-                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
-                                : "bg-emerald-600 text-white"
-                            }`}
+                            className={`h-7 sm:h-8 px-2.5 sm:px-3 rounded-lg text-[10px] sm:text-xs font-[900] border ${alreadyInCart
+                              ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                              : "bg-white text-slate-900 border-[#facd01]"
+                              }`}
                             onClick={(event) => {
                               event.stopPropagation();
                               handleAddProductToCart(product, event);
@@ -1529,12 +1534,25 @@ const GroceryPage = () => {
                 null;
 
               return (
-                <button
-                  type="button"
+                <div
                   key={`search-product-${product._id}`}
-                  className="rounded-2xl border border-slate-200 p-3 bg-white shadow-sm text-left"
+                  className="rounded-2xl border border-slate-200 p-3 bg-white shadow-sm text-left relative cursor-pointer"
                   onClick={() => handleProductCardClick(product)}
                 >
+                  <button
+                    type="button"
+                    className={`absolute top-2 right-2 z-20 w-7 h-7 rounded-full border flex items-center justify-center transition-all duration-300 ${isProductWishlisted(product)
+                      ? "bg-pink-50 border-pink-200 text-pink-500 shadow-sm"
+                      : "bg-white/80 backdrop-blur-sm border-slate-200 text-slate-400 hover:text-slate-600"
+                      }`}
+                    onClick={(event) => toggleProductWishlist(product, event)}
+                  >
+                    <Heart
+                      size={14}
+                      className={isProductWishlisted(product) ? "fill-current" : ""}
+                      strokeWidth={isProductWishlisted(product) ? 2.5 : 2}
+                    />
+                  </button>
                   <div className="w-full aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 flex items-center justify-center">
                     <img
                       src={getProductImage(product)}
@@ -1545,7 +1563,7 @@ const GroceryPage = () => {
                   <p className="text-sm font-semibold text-slate-900 line-clamp-2">{product?.name}</p>
                   <p className="text-xs text-slate-500 mt-1 line-clamp-1">{product?.unit || "Unit not specified"}</p>
                   <p className="text-sm font-bold text-slate-900 mt-1">Rs {Number(product?.sellingPrice || 0)}</p>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -1561,19 +1579,19 @@ const GroceryPage = () => {
       {!shouldShowShimmer && !hasActiveSearch && activeCategoryId === "all" && homepageCategoryDisplaySections.map((category, sectionIndex) => (
         <div
           key={category._id || category.slug || category.name}
-          className={`px-4 relative z-10 md:max-w-6xl md:mx-auto ${
-            sectionIndex === homepageCategoryDisplaySections.length - 1 ? "pb-24" : "pb-6"
-          }`}
+          className={`px-4 relative z-10 md:max-w-6xl md:mx-auto ${sectionIndex === homepageCategoryDisplaySections.length - 1 ? "pb-24" : "pb-6"
+            }`}
         >
           <h3 className="text-lg font-[800] text-[#3e2723] mb-4">{category.name}</h3>
           {(!category.homepageCards || category.homepageCards.length === 0) && (
             <p className="text-sm text-slate-500 mb-2">No subcategories available.</p>
           )}
-          <div className="grid grid-cols-4 gap-2">
-            {(category.homepageCards || []).map((card) => (
+          <div className="grid grid-cols-4 gap-x-2 gap-y-0.5">
+            {(category.homepageCards || []).map((card, cardIndex) => (
               <div
                 key={card._id}
-                className="flex flex-col items-center gap-1.5 cursor-pointer active:scale-95 transition-transform"
+                className={`flex flex-col items-center gap-1.5 cursor-pointer active:scale-95 transition-transform ${cardIndex === 0 ? "col-span-2" : "col-span-1"
+                  }`}
                 onClick={() => {
                   if (card.__kind === "product") {
                     const matchedProduct = allProducts.find(
@@ -1604,16 +1622,20 @@ const GroceryPage = () => {
                 }}
               >
                 <div
-                  className="w-full h-[72px] rounded-[12px] flex items-center justify-center p-2 shadow-sm border border-[#dce7eb] overflow-hidden relative bg-[#e9f4f7]"
+                  className="w-full h-[88px] rounded-[18px] flex items-center justify-center p-2 shadow-sm border border-[#fef3c7] overflow-hidden relative bg-[#fffbeb]"
                 >
                   <img
                     src={card.image || FALLBACK_IMAGE}
                     alt={card.name}
-                    className="w-full h-full object-contain transition-transform duration-300"
+                    className={`w-full h-full object-contain transition-transform duration-300 drop-shadow-[0_12px_10px_rgba(0,0,0,0.22)] ${cardIndex === 0 ? "scale-110" : ""
+                      }`}
                   />
                 </div>
-                <div className="h-9 flex items-start justify-center w-full">
-                  <p className="text-[11px] font-[700] text-center text-[#2b2b2b] leading-tight px-0.5 line-clamp-2">
+                <div className="h-7 flex items-start justify-center w-full">
+                  <p
+                    className={`${cardIndex === 0 ? "text-[12px]" : "text-[11px]"
+                      } font-[700] text-center text-[#2b2b2b] leading-tight px-0.5 line-clamp-2`}
+                  >
                     {card.name}
                   </p>
                 </div>
@@ -1735,18 +1757,16 @@ const GroceryPage = () => {
                         }}
                       >
                         <div
-                          className={`w-14 h-14 rounded-full border-2 p-1 overflow-hidden flex items-center justify-center ${
-                            String(collectionCategoryId || "all") === String(tab._id)
-                              ? "border-[#facc15] bg-[#fff8dd]"
-                              : "border-slate-200 bg-slate-50"
-                          }`}
+                          className={`w-14 h-14 rounded-full border-2 p-1 overflow-hidden flex items-center justify-center ${String(collectionCategoryId || "all") === String(tab._id)
+                            ? "border-[#facc15] bg-[#fff8dd]"
+                            : "border-slate-200 bg-slate-50"
+                            }`}
                         >
                           <img src={tab.image || FALLBACK_IMAGE} alt={tab.name} className="w-full h-full object-contain" />
                         </div>
                         <span
-                          className={`text-[11px] leading-tight font-bold text-center line-clamp-2 ${
-                            String(collectionCategoryId || "all") === String(tab._id) ? "text-slate-900" : "text-slate-500"
-                          }`}
+                          className={`text-[11px] leading-tight font-bold text-center line-clamp-2 ${String(collectionCategoryId || "all") === String(tab._id) ? "text-slate-900" : "text-slate-500"
+                            }`}
                         >
                           {tab.name}
                         </span>
@@ -1782,14 +1802,17 @@ const GroceryPage = () => {
                             )}
                             <button
                               type="button"
-                              className={`absolute top-2 right-2 w-7 h-7 rounded-full border flex items-center justify-center ${
-                                isProductWishlisted(product)
-                                  ? "bg-pink-100 border-pink-200 text-pink-500"
-                                  : "bg-white border-slate-200 text-slate-500"
-                              }`}
+                              className={`absolute top-2 right-2 z-20 w-7 h-7 rounded-full border flex items-center justify-center transition-all duration-300 ${isProductWishlisted(product)
+                                ? "bg-pink-50 border-pink-200 text-pink-500 shadow-sm"
+                                : "bg-white/80 backdrop-blur-sm border-slate-200 text-slate-400 hover:text-slate-600"
+                                }`}
                               onClick={(event) => toggleProductWishlist(product, event)}
                             >
-                              <Heart size={14} className={isProductWishlisted(product) ? "fill-current" : ""} />
+                              <Heart
+                                size={14}
+                                className={isProductWishlisted(product) ? "fill-current" : ""}
+                                strokeWidth={isProductWishlisted(product) ? 2.5 : 2}
+                              />
                             </button>
 
                             <div className="w-full h-[110px] rounded-xl bg-slate-50 overflow-hidden flex items-center justify-center mb-2">
@@ -1810,11 +1833,10 @@ const GroceryPage = () => {
                               </div>
                               <button
                                 type="button"
-                                className={`h-7 px-3 rounded-md text-[11px] font-black border ${
-                                  alreadyInCart
-                                    ? "bg-emerald-100 text-emerald-700 border-emerald-300"
-                                    : "bg-white text-slate-900 border-[#facc15]"
-                                }`}
+                                className={`h-7 px-3 rounded-md text-[11px] font-black border ${alreadyInCart
+                                  ? "bg-emerald-100 text-emerald-700 border-emerald-300"
+                                  : "bg-white text-slate-900 border-[#facd01]"
+                                  }`}
                                 onClick={(event) => handleAddProductToCart(product, event)}
                               >
                                 {alreadyInCart ? "ADDED" : "ADD"}
@@ -1895,10 +1917,10 @@ const GroceryPage = () => {
                           >
                             <button
                               type="button"
-                              className="absolute top-2 right-2 w-7 h-7 rounded-full border bg-pink-100 border-pink-200 text-pink-500 flex items-center justify-center"
+                              className="absolute top-2 right-2 z-20 w-7 h-7 rounded-full border bg-pink-50 border-pink-200 text-pink-500 flex items-center justify-center shadow-sm"
                               onClick={(event) => toggleProductWishlist(product, event)}
                             >
-                              <Heart size={14} className="fill-current" />
+                              <Heart size={14} className="fill-current" strokeWidth={2.5} />
                             </button>
 
                             <div className="w-full h-[110px] rounded-xl bg-slate-50 overflow-hidden flex items-center justify-center mb-2">
@@ -1919,11 +1941,10 @@ const GroceryPage = () => {
                               </div>
                               <button
                                 type="button"
-                                className={`h-7 px-3 rounded-md text-[11px] font-black border ${
-                                  alreadyInCart
-                                    ? "bg-emerald-100 text-emerald-700 border-emerald-300"
-                                    : "bg-white text-slate-900 border-[#facc15]"
-                                }`}
+                                className={`h-7 px-3 rounded-md text-[11px] font-black border ${alreadyInCart
+                                  ? "bg-emerald-100 text-emerald-700 border-emerald-300"
+                                  : "bg-white text-slate-900 border-[#facd01]"
+                                  }`}
                                 onClick={(event) => handleAddProductToCart(product, event)}
                               >
                                 {alreadyInCart ? "ADDED" : "ADD"}

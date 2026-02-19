@@ -515,7 +515,7 @@ export function CategoryFoodsContent({
                     )}
 
                     {/* Wishlist */}
-                    <div className="absolute top-1 right-1 z-10">
+                    <div className="absolute top-1 right-1 z-30">
                       <WishlistButton item={item} />
                     </div>
 

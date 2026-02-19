@@ -5,7 +5,8 @@ import { twMerge } from "tailwind-merge";
 
 const WishlistButton = ({ item, type = "food", className = "" }) => {
   const [isWishlisted, setIsWishlisted] = useState(false);
-  const itemId = type === "food" ? `food-${item.id}` : `restaurant-${item.id}`;
+  const productId = item?._id || item?.id;
+  const itemId = type === "food" ? `food-${productId}` : `restaurant-${productId}`;
 
   const getWishlist = () => {
     try {
@@ -55,7 +56,7 @@ const WishlistButton = ({ item, type = "food", className = "" }) => {
         ...item,
         id: itemId,
         type,
-        originalId: item.id,
+        originalId: productId,
       };
       wishlist.push(wishlistItem);
       setIsWishlisted(true);

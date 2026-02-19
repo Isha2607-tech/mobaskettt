@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Search, Share2, Clock, ChevronDown, CheckCircle, X, Minus, Plus } from "lucide-react";
+import { ArrowLeft, Search, Share2, Clock, ChevronDown, CheckCircle, X, Minus, Plus, Star } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import WishlistButton from "@/components/WishlistButton";
@@ -51,7 +51,8 @@ export default function FoodDetailPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams();
-  const { addToCart, groceryCart, updateQuantityByPlatform } = useCart();
+  const { addToCart, groceryCart, updateQuantityByPlatform, isInCart } = useCart();
+  const [similarProducts, setSimilarProducts] = useState([]);
 
   const [product, setProduct] = useState(
     normalizeProduct(
@@ -116,6 +117,48 @@ export default function FoodDetailPage() {
     loadProduct();
   }, [id, location.state]);
 
+  useEffect(() => {
+    const fetchSimilar = async () => {
+      const categoryId = product?.categoryId;
+      if (!categoryId) return;
+      try {
+        const response = await api.get("/grocery/products", {
+          params: { categoryId, limit: 12 },
+        });
+        const data = response?.data?.data;
+        if (Array.isArray(data)) {
+          // Filter current product and normalize
+          const filtered = data
+            .filter((p) => String(p._id || p.id) !== productId)
+            .map((p) => normalizeProduct(p));
+          setSimilarProducts(filtered.length > 0 ? filtered : FALLBACK_TOP_PRODUCTS.map(p => normalizeProduct(p)));
+        } else {
+          setSimilarProducts(FALLBACK_TOP_PRODUCTS.map(p => normalizeProduct(p)));
+        }
+      } catch (error) {
+        console.error("Failed to fetch similar products:", error);
+        setSimilarProducts(FALLBACK_TOP_PRODUCTS.map(p => normalizeProduct(p)));
+      }
+    };
+    fetchSimilar();
+  }, [product?.categoryId, productId]);
+
+  const calculateUnitPrice = (price, weight) => {
+    if (!weight || !price) return null;
+    const match = String(weight).match(/(\d+(\.\d+)?)\s*(kg|g|pc|pcs|l|ml)/i);
+    if (!match) return null;
+    const val = parseFloat(match[1]);
+    const unit = match[3].toLowerCase();
+
+    if (unit === "kg" || unit === "l") {
+      return `₹${(price / val).toFixed(1)}/${unit}`;
+    }
+    if (unit === "g" || unit === "ml") {
+      return `₹${((price / val) * 1000).toFixed(1)}/kg`;
+    }
+    return null;
+  };
+
   const handleSearchClick = () => navigate("/grocery");
 
   const handleShareClick = async () => {
@@ -144,12 +187,13 @@ export default function FoodDetailPage() {
     toast.error("Unable to share right now");
   };
 
-  const handleAddToCart = (e) => {
+  const handleAddToCart = (itemToWeight, e) => {
     if (e) e.stopPropagation();
+    const targetProduct = itemToWeight || product;
 
     addToCart({
-      ...product,
-      id: product.id || id,
+      ...targetProduct,
+      id: targetProduct.id || id,
       restaurantId: "grocery-store",
       restaurant: "MoGrocery",
       platform: "mogrocery",
@@ -164,7 +208,7 @@ export default function FoodDetailPage() {
             </div>
             <div className="flex-1">
               <p className="text-sm font-bold text-gray-900">Added to Cart</p>
-              <p className="text-xs text-gray-500">{product.name}</p>
+              <p className="text-xs text-gray-500">{targetProduct.name}</p>
             </div>
             <button onClick={() => toast.dismiss(t)} className="text-gray-400 hover:text-gray-600">
               <X size={14} />
@@ -269,8 +313,8 @@ export default function FoodDetailPage() {
           </div>
         ) : (
           <button
-            onClick={handleAddToCart}
-            className="absolute bottom-4 right-4 text-xs font-black px-6 py-2 rounded-md shadow-sm transition-colors z-20 border bg-white border-[#facc15] text-slate-900 hover:bg-[#facc15]"
+            onClick={(e) => handleAddToCart(null, e)}
+            className="absolute bottom-4 right-4 text-xs font-black px-6 py-2 rounded-md shadow-sm transition-colors z-20 border bg-white border-[#facd01] text-slate-900 hover:bg-[#facd01]"
           >
             ADD
           </button>
@@ -318,33 +362,113 @@ export default function FoodDetailPage() {
         </div>
       </div>
 
-      <div className="px-5 pt-5">
-        <h2 className="text-base font-[800] text-slate-900 mb-3">Top products in this category</h2>
-        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
-          {FALLBACK_TOP_PRODUCTS.map((item) => {
-            const discountPercent = item.mrp > item.price ? Math.round(((item.mrp - item.price) / item.mrp) * 100) : 0;
+      <div className="px-5 pt-6 pb-8">
+        <h2 className="text-lg font-[900] text-slate-900 mb-4">Similar products</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-6">
+          {similarProducts.map((item) => {
+            const itemCartRef = groceryCart.find((c) => String(c.id) === String(item.id));
+            const itemInCart = Boolean(itemCartRef);
+            const itemQty = itemCartRef?.quantity || 0;
+            const discountVal = item.mrp > item.price ? Math.round(((item.mrp - item.price) / item.mrp) * 100) : 0;
+
             return (
-              <button
+              <div
                 key={item.id}
-                type="button"
-                onClick={() => navigate(`/food/${item.id}`, { state: { item: normalizeProduct(item, item.id) } })}
-                className="min-w-[130px] max-w-[130px] flex flex-col gap-2 text-left"
+                className="flex flex-col h-full bg-white relative cursor-pointer group"
+                onClick={() => {
+                  navigate(`/food/${item.id}`, { state: { item } });
+                  window.scrollTo(0, 0);
+                }}
               >
-                <div className="w-full aspect-[3/3.2] bg-white rounded-2xl border border-slate-100 overflow-hidden relative">
-                  <img src={item.image} className="w-full h-full object-contain p-2" alt={item.name} />
-                  {discountPercent > 0 && (
-                    <span className="absolute top-2 left-2 bg-blue-100 text-blue-700 text-[9px] font-bold px-1.5 py-0.5 rounded">
-                      {discountPercent}% OFF
-                    </span>
-                  )}
+                {/* Image Section */}
+                <div className="w-full aspect-square bg-[#f8f9fb] rounded-[24px] overflow-hidden relative mb-3 flex items-center justify-center p-4">
+                  <img src={item.image} className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-110" alt={item.name} />
+
+                  {/* Heart Icon Overlay */}
+                  <div className="absolute top-2.5 right-2.5 z-10">
+                    <WishlistButton
+                      item={item}
+                      className="w-7 h-7 bg-white shadow-md border-none flex items-center justify-center p-0"
+                    />
+                  </div>
+
+                  {/* ADD / Quantity Control Overlay */}
+                  <div className="absolute bottom-2.5 right-2.5 z-10">
+                    {itemInCart ? (
+                      <div className="flex items-center gap-3 bg-white rounded-full border border-emerald-500/30 px-1.5 py-1 shadow-[0_4px_12px_rgba(0,0,0,0.08)]">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateQuantityByPlatform(item.id, itemQty - 1, "mogrocery");
+                          }}
+                          className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center active:scale-90 transition-transform"
+                        >
+                          <Minus size={12} strokeWidth={3} />
+                        </button>
+                        <span className="text-[11px] font-[900] text-emerald-900 min-w-[14px] text-center">{itemQty}</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateQuantityByPlatform(item.id, itemQty + 1, "mogrocery");
+                          }}
+                          className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center active:scale-90 transition-transform"
+                        >
+                          <Plus size={12} strokeWidth={3} />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={(e) => handleAddToCart(item, e)}
+                        className="bg-white border border-[#facd01] text-slate-900 text-[10px] font-black px-5 py-1.5 rounded-full shadow-sm hover:bg-[#facd01] transition-all active:scale-95"
+                      >
+                        ADD
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <p className="text-[11px] font-bold text-slate-500">{item.weight}</p>
-                <p className="text-xs font-bold text-slate-900 leading-tight line-clamp-2 min-h-[30px]">{item.name}</p>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-black text-slate-900">Rs {item.price}</span>
-                  <span className="text-[10px] text-slate-400 line-through">Rs {item.mrp}</span>
+
+                {/* Info Section */}
+                <div className="flex items-center gap-1.5 mb-1">
+                  <div className="w-3 h-3 border border-green-600 flex items-center justify-center p-[1px]">
+                    <div className="w-full h-full bg-green-600 rounded-full" />
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-500">{item.weight}</span>
                 </div>
-              </button>
+
+                <p className="text-[12px] font-bold text-slate-900 leading-tight line-clamp-2 min-h-[32px] mb-1">
+                  {item.name}
+                </p>
+
+                {/* Mock Rating */}
+                <div className="flex items-center gap-1 mb-1">
+                  <div className="flex text-yellow-400">
+                    {[...Array(5)].map((_, i) => (
+                      <Star key={i} size={8} fill="currentColor" />
+                    ))}
+                  </div>
+                  <span className="text-[9px] text-slate-400 font-medium">({Math.floor(Math.random() * 200) + 50})</span>
+                </div>
+
+                {/* Time with Icon */}
+                <div className="flex items-center gap-1 mb-1.5">
+                  <Clock size={10} className="text-slate-400" />
+                  <span className="text-[9px] font-extrabold text-slate-500 uppercase">{item.time || "11 MINS"}</span>
+                </div>
+
+                {/* Price Info */}
+                <div className="mt-auto">
+                  {discountVal > 0 && <p className="text-[11px] font-black text-blue-600 leading-none mb-1.5">{discountVal}% OFF</p>}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[15px] font-[900] text-slate-900 leading-none">₹{item.price}</span>
+                    {item.mrp > item.price && (
+                      <span className="text-[12px] text-slate-400 line-through leading-none font-medium">₹{item.mrp}</span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1.5 font-medium tracking-tight">
+                    {calculateUnitPrice(item.price, item.weight) || `₹${item.price}/unit`}
+                  </p>
+                </div>
+              </div>
             );
           })}
         </div>
@@ -352,16 +476,15 @@ export default function FoodDetailPage() {
 
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-4 py-3">
         <button
-          onClick={() => {
+          onClick={(e) => {
             if (isAddedToCart) {
               navigate("/grocery/cart");
               return;
             }
-            handleAddToCart();
+            handleAddToCart(null, e);
           }}
-          className={`w-full h-12 rounded-xl text-white font-bold text-base shadow-md ${
-            isAddedToCart ? "bg-emerald-700 hover:bg-emerald-700" : "bg-[#16a34a] hover:bg-[#15803d]"
-          }`}
+          className={`w-full h-12 rounded-xl text-white font-bold text-base shadow-md ${isAddedToCart ? "bg-emerald-700 hover:bg-emerald-700" : "bg-[#16a34a] hover:bg-[#15803d]"
+            }`}
         >
           {isAddedToCart ? "Added to cart" : "Add to cart"}
         </button>
