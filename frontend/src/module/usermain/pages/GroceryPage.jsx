@@ -49,6 +49,11 @@ const GroceryPage = () => {
   const [collectionTitle, setCollectionTitle] = useState("Products");
   const [showWishlistSheet, setShowWishlistSheet] = useState(false);
   const [wishlistItems, setWishlistItems] = useState([]);
+  const [isBannersLoading, setIsBannersLoading] = useState(true);
+  const [isCategoriesLoading, setIsCategoriesLoading] = useState(true);
+  const [isBestSellersLoading, setIsBestSellersLoading] = useState(true);
+  const [isProductsLoading, setIsProductsLoading] = useState(true);
+  const [isStoresLoading, setIsStoresLoading] = useState(true);
   const [vegMode, setVegMode] = useState(false);
   const [showSnow, setShowSnow] = useState(false);
   const [homepageCategories, setHomepageCategories] = useState([]);
@@ -158,7 +163,10 @@ const GroceryPage = () => {
           setBannerImages(dynamicImages);
           setCurrentBanner(0);
         }
-      } catch {}
+      } catch {
+      } finally {
+        setIsBannersLoading(false);
+      }
     };
 
     fetchGroceryBanners();
@@ -174,6 +182,8 @@ const GroceryPage = () => {
         setHomepageCategories(categories);
       } catch {
         setHomepageCategories([]);
+      } finally {
+        setIsCategoriesLoading(false);
       }
     };
 
@@ -190,6 +200,8 @@ const GroceryPage = () => {
         setBestSellerItems(items);
       } catch {
         setBestSellerItems([]);
+      } finally {
+        setIsBestSellersLoading(false);
       }
     };
 
@@ -206,6 +218,8 @@ const GroceryPage = () => {
         setAllProducts(products);
       } catch {
         setAllProducts([]);
+      } finally {
+        setIsProductsLoading(false);
       }
     };
 
@@ -226,6 +240,8 @@ const GroceryPage = () => {
       } catch {
         setGroceryStores([]);
         setHasActiveGroceryStore(false);
+      } finally {
+        setIsStoresLoading(false);
       }
     };
 
@@ -267,6 +283,9 @@ const GroceryPage = () => {
   }, []);
 
   const isGroceryUnavailable = !hasActiveGroceryStore;
+  const shouldShowShimmer =
+    !hasActiveSearch &&
+    (isCategoriesLoading || isProductsLoading || isBestSellersLoading || isBannersLoading || isStoresLoading);
 
   // Auto-slide carousel
   useEffect(() => {
@@ -1174,7 +1193,42 @@ const GroceryPage = () => {
         </div>
       </div>
 
-      {!hasActiveSearch && activeCategoryId === "all" && bannerImages.length > 0 && (
+      {shouldShowShimmer && (
+        <div className="px-4 pt-3 pb-24 relative z-10 md:max-w-6xl md:mx-auto animate-fade-in-up">
+          <div className="h-[170px] md:h-[220px] rounded-2xl bg-slate-200 shimmer-bg mb-4" />
+          <div className="h-5 w-36 rounded bg-slate-200 shimmer-bg mb-3" />
+          <div className="grid grid-cols-3 gap-2.5 mb-5">
+            {Array.from({ length: 6 }).map((_, idx) => (
+              <div key={`best-skeleton-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-2.5">
+                <div className="grid grid-cols-2 gap-1.5 mb-2">
+                  {Array.from({ length: 4 }).map((__, innerIdx) => (
+                    <div key={`best-inner-${idx}-${innerIdx}`} className="h-10 rounded bg-slate-200 shimmer-bg" />
+                  ))}
+                </div>
+                <div className="h-3 w-20 mx-auto rounded bg-slate-200 shimmer-bg mb-1.5" />
+                <div className="h-3.5 w-24 mx-auto rounded bg-slate-200 shimmer-bg" />
+              </div>
+            ))}
+          </div>
+          <div className="space-y-5">
+            {Array.from({ length: 2 }).map((_, sectionIdx) => (
+              <div key={`section-skeleton-${sectionIdx}`}>
+                <div className="h-5 w-40 rounded bg-slate-200 shimmer-bg mb-3" />
+                <div className="grid grid-cols-4 gap-2">
+                  {Array.from({ length: 8 }).map((__, cardIdx) => (
+                    <div key={`section-card-${sectionIdx}-${cardIdx}`} className="flex flex-col items-center gap-1.5">
+                      <div className="w-full h-[72px] rounded-xl bg-slate-200 shimmer-bg" />
+                      <div className="h-3 w-16 rounded bg-slate-200 shimmer-bg" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!shouldShowShimmer && !hasActiveSearch && activeCategoryId === "all" && bannerImages.length > 0 && (
         <div className="relative z-0 -mt-1 animate-fade-in-up px-4 pt-2 pb-1 md:max-w-6xl mx-auto">
         <div className="relative w-full aspect-[1.8/1] md:aspect-[3/1] bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg border border-white/30 overflow-hidden">
           {bannerImages.map((bannerImg, index) => (
@@ -1206,7 +1260,7 @@ const GroceryPage = () => {
         </div>
       )}
 
-      {!hasActiveSearch && activeCategoryId === "all" && visibleBestSellers.length > 0 && (
+      {!shouldShowShimmer && !hasActiveSearch && activeCategoryId === "all" && visibleBestSellers.length > 0 && (
         <div className="px-4 pt-4 pb-2 relative z-10 md:max-w-6xl md:mx-auto">
           <h3 className="text-lg font-[800] text-[#3e2723] mb-4">Bestsellers</h3>
 
@@ -1246,7 +1300,7 @@ const GroceryPage = () => {
         </div>
       )}
 
-      {!hasActiveSearch && activeCategoryId !== "all" && (
+      {!shouldShowShimmer && !hasActiveSearch && activeCategoryId !== "all" && (
         <div className="px-2 sm:px-4 pb-24 pt-2 relative z-10 md:max-w-6xl md:mx-auto">
           <div className="flex gap-2 sm:gap-3">
             <aside className="w-[86px] sm:w-[100px] shrink-0 border-r border-slate-200 pr-2">
@@ -1367,7 +1421,7 @@ const GroceryPage = () => {
         </div>
       )}
 
-      {hasActiveSearch && (
+      {!shouldShowShimmer && hasActiveSearch && (
         <div className="px-4 pt-4 pb-2 relative z-10 md:max-w-6xl md:mx-auto">
           <h3 className="text-lg font-[800] text-[#3e2723]">
             Search results for "{searchQuery.trim()}"
@@ -1375,7 +1429,7 @@ const GroceryPage = () => {
         </div>
       )}
 
-      {hasActiveSearch && visibleBestSellers.length > 0 && (
+      {!shouldShowShimmer && hasActiveSearch && visibleBestSellers.length > 0 && (
         <div className="px-4 pt-2 pb-2 relative z-10 md:max-w-6xl md:mx-auto">
           <h4 className="text-base font-[800] text-[#3e2723] mb-3">Related Bestsellers</h4>
           <div className="grid grid-cols-3 gap-2.5">
@@ -1414,7 +1468,7 @@ const GroceryPage = () => {
         </div>
       )}
 
-      {hasActiveSearch && visibleSearchProducts.length > 0 && (
+      {!shouldShowShimmer && hasActiveSearch && visibleSearchProducts.length > 0 && (
         <div className="px-4 pt-2 pb-2 relative z-10 md:max-w-6xl md:mx-auto">
           <h4 className="text-base font-[800] text-[#3e2723] mb-3">Products</h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1448,13 +1502,13 @@ const GroceryPage = () => {
         </div>
       )}
 
-      {hasActiveSearch && !hasAnySearchMatch && (
+      {!shouldShowShimmer && hasActiveSearch && !hasAnySearchMatch && (
         <div className="px-4 pt-4 pb-24 relative z-10 md:max-w-6xl md:mx-auto">
           <p className="text-sm text-slate-500">No matching results found.</p>
         </div>
       )}
 
-      {!hasActiveSearch && activeCategoryId === "all" && homepageCategoryDisplaySections.map((category, sectionIndex) => (
+      {!shouldShowShimmer && !hasActiveSearch && activeCategoryId === "all" && homepageCategoryDisplaySections.map((category, sectionIndex) => (
         <div
           key={category._id || category.slug || category.name}
           className={`px-4 relative z-10 md:max-w-6xl md:mx-auto ${
@@ -1858,6 +1912,15 @@ const GroceryPage = () => {
                 }
                 .animate-slide-in-up {
                     animation: slide-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+                }
+                @keyframes shimmer {
+                    0% { background-position: -200% 0; }
+                    100% { background-position: 200% 0; }
+                }
+                .shimmer-bg {
+                    background: linear-gradient(90deg, #e5e7eb 20%, #f3f4f6 50%, #e5e7eb 80%);
+                    background-size: 200% 100%;
+                    animation: shimmer 1.2s ease-in-out infinite;
                 }
             `}</style>
       {/* --- BOTTOM SHEET MODAL --- */}
