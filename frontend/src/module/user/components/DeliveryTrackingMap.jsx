@@ -120,6 +120,30 @@ const DeliveryTrackingMap = ({
     return null;
   }, [order]);
 
+  const parseSocketLocation = useCallback((data) => {
+    if (!data || typeof data !== "object") return null;
+
+    const toFinite = (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+
+    const lat =
+      toFinite(data.lat) ??
+      toFinite(data.latitude) ??
+      (Array.isArray(data.coordinates) ? toFinite(data.coordinates[1]) : null);
+    const lng =
+      toFinite(data.lng) ??
+      toFinite(data.longitude) ??
+      (Array.isArray(data.coordinates) ? toFinite(data.coordinates[0]) : null);
+    const heading = toFinite(data.heading) ?? toFinite(data.bearing) ?? 0;
+
+    if (lat == null || lng == null) return null;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+
+    return { lat, lng, heading };
+  }, []);
+
   useEffect(() => {
     if (deliveryBoyLocation?.lat && deliveryBoyLocation?.lng) return;
     if (currentLocation?.lat && currentLocation?.lng) return;
@@ -363,22 +387,31 @@ const DeliveryTrackingMap = ({
     const assignmentStatuses = new Set([
       'accepted',
       'reached_pickup',
+      'order_confirmed',
       'en_route_to_delivery',
     ]);
 
     const assignmentPhases = new Set([
       'en_route_to_pickup',
       'at_pickup',
+      'picked_up',
       'en_route_to_delivery',
       'at_delivery',
     ]);
 
+    const orderStatus = String(order?.status || '').toLowerCase();
+    const hasAssignedOrderStatus =
+      orderStatus === 'out_for_delivery' ||
+      orderStatus === 'picked_up' ||
+      orderStatus === 'delivered' ||
+      orderStatus === 'completed';
+
     const hasAssignedStatus = assignmentStatuses.has(deliveryStateStatus);
     const hasAssignedPhase = assignmentPhases.has(currentPhase);
-    const hasPartner = hasPartnerId || hasAssignedStatus || hasAssignedPhase;
+    const hasPartner = hasPartnerId || hasAssignedStatus || hasAssignedPhase || hasAssignedOrderStatus;
 
     return hasPartner;
-  }, [order?.deliveryPartnerId, order?.deliveryPartner?._id, order?.assignmentInfo?.deliveryPartnerId, order?.deliveryState?.status, order?.deliveryState?.currentPhase]);
+  }, [order?.deliveryPartnerId, order?.deliveryPartner?._id, order?.assignmentInfo?.deliveryPartnerId, order?.deliveryState?.status, order?.deliveryState?.currentPhase, order?.status]);
 
   // Determine which route to show based on order phase
   const getRouteToShow = useCallback(() => {
@@ -734,14 +767,12 @@ const DeliveryTrackingMap = ({
       console.log('Socket connected for order:', orderId);
       orderAliases.forEach((alias) => {
         socketRef.current.emit('join-order-tracking', alias);
-        if (hasDeliveryPartner) {
-          socketRef.current.emit('request-current-location', alias);
-        }
+        socketRef.current.emit('request-current-location', alias);
       });
 
-      // Only request rider location after assignment.
+      // Always request current location; backend will no-op if no rider is assigned.
       const locationRequestInterval = setInterval(() => {
-        if (socketRef.current && socketRef.current.connected && hasDeliveryPartner) {
+        if (socketRef.current && socketRef.current.connected) {
           orderAliases.forEach((alias) => {
             socketRef.current.emit('request-current-location', alias);
           });
@@ -757,8 +788,8 @@ const DeliveryTrackingMap = ({
 
     const handleLocationUpdate = (data) => {
       console.log('📍📍📍 Received REAL-TIME location update via socket:', data);
-      if (data && typeof data.lat === 'number' && typeof data.lng === 'number') {
-        const location = { lat: data.lat, lng: data.lng, heading: data.heading || data.bearing || 0 };
+      const location = parseSocketLocation(data);
+      if (location) {
         console.log('✅✅✅ Updating bike to REAL delivery boy location:', location);
         setHasLiveSocketLocation(true);
         setCurrentLocation(location);
@@ -773,7 +804,7 @@ const DeliveryTrackingMap = ({
           } else {
             // Fallback: Use moveBikeSmoothly (will use route-based if polyline available)
             console.log('🚴 Moving bike to location:', location);
-            moveBikeSmoothly(data.lat, data.lng, data.heading || data.bearing || 0);
+            moveBikeSmoothly(location.lat, location.lng, location.heading);
           }
         } else {
           // Store for when map loads
@@ -787,8 +818,8 @@ const DeliveryTrackingMap = ({
 
     const handleCurrentLocation = (data) => {
       console.log('📍📍📍 Received CURRENT location via socket:', data);
-      if (data && typeof data.lat === 'number' && typeof data.lng === 'number') {
-        const location = { lat: data.lat, lng: data.lng, heading: data.heading || data.bearing || 0 };
+      const location = parseSocketLocation(data);
+      if (location) {
         console.log('✅✅✅ Updating bike to REAL current delivery boy location:', location);
         setHasLiveSocketLocation(true);
         setCurrentLocation(location);
@@ -803,7 +834,7 @@ const DeliveryTrackingMap = ({
           } else {
             // Fallback: Use moveBikeSmoothly (will use route-based if polyline available)
             console.log('🚴 Moving bike to current location:', location);
-            moveBikeSmoothly(data.lat, data.lng, data.heading || data.bearing || 0);
+            moveBikeSmoothly(location.lat, location.lng, location.heading);
           }
         } else {
           // Store for when map loads
@@ -875,7 +906,7 @@ const DeliveryTrackingMap = ({
         socketRef.current.disconnect();
       }
     };
-  }, [orderId, order?.orderId, order?._id, order?.id, backendUrl, moveBikeSmoothly, hasDeliveryPartner]);
+  }, [orderId, order?.orderId, order?._id, order?.id, backendUrl, moveBikeSmoothly, hasDeliveryPartner, parseSocketLocation]);
 
   // Initialize Google Map (only once - prevent re-initialization)
   useEffect(() => {
@@ -1366,7 +1397,7 @@ const DeliveryTrackingMap = ({
     
     const currentPhase = order?.deliveryState?.currentPhase;
     const deliveryStateStatus = order?.deliveryState?.status;
-    const shouldShowBike = hasDeliveryPartner;
+    const shouldShowBike = hasDeliveryPartner || (Number.isFinite(Number(deliveryBoyLat)) && Number.isFinite(Number(deliveryBoyLng)));
     
     console.log('🚴🚴🚴 BIKE VISIBILITY CHECK:', {
       shouldShowBike,
