@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo } from "react";
+﻿import React, { useState, useEffect, useMemo } from "react";
 import {
   Search,
+  ArrowLeft,
   Mic,
   ChevronDown,
   User,
@@ -20,78 +21,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useCart } from "../../user/context/CartContext";
 import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
 import { CategoryFoodsContent } from "./CategoryFoodsPage";
+import AddToCartAnimation from "../../user/components/AddToCartAnimation";
 import api, { restaurantAPI } from "@/lib/api";
 
-// Assets Imports
-// Vegetables
-import imgCoriander from "@/assets/bestseller/coriandar-removebg-preview.png";
-import imgChili from "@/assets/bestseller/mirchi-removebg-preview.png";
-import imgPotato from "@/assets/bestseller/aalu-removebg-preview.png";
-import imgOnion from "@/assets/bestseller/onion-removebg-preview.png";
-
-// Chips
-import imgLaysBlue from "@/assets/bestseller/BlueLays-removebg-preview.png";
-import imgKurkure from "@/assets/bestseller/KurkureImage-removebg-preview.png";
-import imgLaysGreen from "@/assets/bestseller/GreenLays-removebg-preview.png";
-import imgUncle from "@/assets/bestseller/uncleChips-removebg-preview.png";
-
-//sweet
-import imgChoclate from "@/assets/bestseller/choclate-removebg-preview.png";
-import imgchoclate2 from "@/assets/bestseller/choclate2-removebg-preview.png";
-import imgicecream2 from "@/assets/bestseller/icecream2-removebg-preview.png";
-
-// Oil
-import imgOil1 from "@/assets/bestseller/oil-removebg-preview.png";
-import imgOil2 from "@/assets/bestseller/oil2-removebg-preview.png";
-import imgOil3 from "@/assets/bestseller/oil3-removebg-preview.png";
-import imgOil4 from "@/assets/bestseller/oil4-removebg-preview.png";
-
-// Dairy
-import imgMilk from "@/assets/bestseller/milk-removebg-preview.png";
-import imgBread from "@/assets/bestseller/bread-removebg-preview.png";
-import imgButter from "@/assets/bestseller/butter-removebg-preview.png";
-import imgCheese from "@/assets/bestseller/cheese-removebg-preview.png";
-
-import imgAtta from "@/assets/bestseller/aata-removebg-preview.png";
-import imgBakery from "@/assets/bestseller/bakery-removebg-preview1.png";
-import imgBiscuits from "@/assets/bestseller/bakery-removebg-preview.png";
-// Grocery
-import vegetables from "@/assets/grocery&kitchen/vegetable1-removebg-preview.png";
-import dryfruits from "@/assets/grocery&kitchen/dryFruits-removebg-preview.png";
-import fishmeat from "@/assets/grocery&kitchen/fishMeat-removebg-preview.png";
-import noodles from "@/assets/grocery&kitchen/noodles-removebg-preview.png";
-import teaCoffee from "@/assets/grocery&kitchen/teaCoffee-removebg-preview.png";
-import oilMasala from "@/assets/grocery&kitchen/oilMasala-removebg-preview.png";
-import frozenFood from "@/assets/grocery&kitchen/frozenfood-removebg-preview.png";
-import kitchenWare from "@/assets/grocery&kitchen/kitchenWare1-removebg-preview.png";
-
-import imgBathBody from "@/assets/Beauty&PersonalCare/Bath_Body-removebg-preview.png";
-import imgHair from "@/assets/Beauty&PersonalCare/Skin_Face-removebg-preview.png";
-import imgSkinFace from "@/assets/Beauty&PersonalCare/Skin_Face-removebg-preview.png";
-import imgCosmetics from "@/assets/Beauty&PersonalCare/Beauty_Cosmetics-removebg-preview.png";
-import imgHealth from "@/assets/Beauty&PersonalCare/Health_pharma-removebg-preview.png";
-import babyCare from "@/assets/Beauty&PersonalCare/baby-care-removebg-preview.png";
-import stayFree from "@/assets/Beauty&PersonalCare/stayfree-removebg-preview.png";
-import oralcare from "@/assets/Beauty&PersonalCare/oralcare-removebg-preview.png";
-// Drinks
-import imgCoke from "@/assets/ColdDrinks/cocacola-removebg-preview.png";
-import imgSprite from "@/assets/ColdDrinks/sprite-removebg-preview.png";
-import imgIcecream2 from "@/assets/grocery&kitchen/icecream.png";
-import imgIceCream from "@/assets/Beauty&PersonalCare/icecream-removebg-preview.png";
-
-// Banners
-import imgBanner1 from "@/assets/offerpagebanner.png";
-import imgBanner2 from "@/assets/collectionspagebanner.png";
-import imgBanner3 from "@/assets/top10pagebanner.png";
-
-// New Icons
-import imgHeart3D from "@/assets/icons/hearts.png";
-import imgHeadphone3D from "@/assets/icons/3dicons-headphone-dynamic-color.png";
+// Icons
 import imgBag3D from "@/assets/icons/shopping-bag_18008822.png";
-import imgBeauty3D from "@/assets/icons/brushes_11858570.png";
-import imgMedicine3D from "@/assets/icons/medicine_5488699.png";
 
 const GroceryPage = () => {
+  const FALLBACK_IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
   const navigate = useNavigate();
   const routerLocation = useRouterLocation();
   const { getGroceryCartCount, addToCart, isInCart } = useCart();
@@ -104,9 +41,14 @@ const GroceryPage = () => {
 
   const [isScrolled, setIsScrolled] = useState(false);
   const [currentBanner, setCurrentBanner] = useState(0);
-  const [bannerImages, setBannerImages] = useState([imgBanner1, imgBanner2, imgBanner3]);
+  const [bannerImages, setBannerImages] = useState([]);
   const [showCategorySheet, setShowCategorySheet] = useState(false);
   const [selectedCategoryId, setSelectedCategoryId] = useState("all");
+  const [showCollectionSheet, setShowCollectionSheet] = useState(false);
+  const [collectionCategoryId, setCollectionCategoryId] = useState("");
+  const [collectionTitle, setCollectionTitle] = useState("Products");
+  const [showWishlistSheet, setShowWishlistSheet] = useState(false);
+  const [wishlistItems, setWishlistItems] = useState([]);
   const [vegMode, setVegMode] = useState(false);
   const [showSnow, setShowSnow] = useState(false);
   const [homepageCategories, setHomepageCategories] = useState([]);
@@ -196,7 +138,7 @@ const GroceryPage = () => {
     setShowCategorySheet(true);
   };
 
-  // Load dynamic grocery banners (falls back to static banners if empty/fails)
+  // Load dynamic grocery banners
   useEffect(() => {
     const fetchGroceryBanners = async () => {
       try {
@@ -216,9 +158,7 @@ const GroceryPage = () => {
           setBannerImages(dynamicImages);
           setCurrentBanner(0);
         }
-      } catch {
-        // Keep static fallback banners on error
-      }
+      } catch {}
     };
 
     fetchGroceryBanners();
@@ -292,6 +232,40 @@ const GroceryPage = () => {
     fetchGroceryStores();
   }, []);
 
+  useEffect(() => {
+    const loadWishlist = () => {
+      try {
+        const raw = localStorage.getItem("wishlist");
+        if (!raw) {
+          setWishlistItems([]);
+          return;
+        }
+        const parsed = JSON.parse(raw);
+        const valid = Array.isArray(parsed)
+          ? parsed.filter((item) => item && typeof item === "object" && item.id)
+          : [];
+        setWishlistItems(valid);
+      } catch {
+        setWishlistItems([]);
+      }
+    };
+
+    loadWishlist();
+
+    const onStorage = (event) => {
+      if (!event || event.key === "wishlist") {
+        loadWishlist();
+      }
+    };
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("wishlistUpdated", onStorage);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("wishlistUpdated", onStorage);
+    };
+  }, []);
+
   const isGroceryUnavailable = !hasActiveGroceryStore;
 
   // Auto-slide carousel
@@ -347,7 +321,7 @@ const GroceryPage = () => {
         map.set(String(subcategory._id), {
           _id: String(subcategory._id),
           name: subcategory?.name || "Subcategory",
-          image: subcategory?.image || "https://via.placeholder.com/120",
+          image: subcategory?.image || FALLBACK_IMAGE,
           categoryId: categoryKey,
           categoryName,
         });
@@ -356,6 +330,31 @@ const GroceryPage = () => {
 
     return Array.from(map.values());
   }, [activeCategoryId, homepageCategories]);
+
+  const findCategoryById = (idValue) => {
+    const normalized = String(idValue || "");
+    if (!normalized) return null;
+    return (
+      homepageCategories.find(
+        (category) =>
+          String(category?._id || "") === normalized ||
+          String(category?.slug || "") === normalized ||
+          String(category?.name || "") === normalized
+      ) || null
+    );
+  };
+
+  const openCollectionSheet = ({ categoryId, title = "" }) => {
+    const category = findCategoryById(categoryId);
+    const resolvedCategoryId = category
+      ? String(category?._id || category?.slug || category?.name || "all")
+      : "all";
+
+    setCollectionCategoryId(resolvedCategoryId);
+    setCollectionTitle(title || category?.name || "Products");
+    setShowCollectionSheet(true);
+    return true;
+  };
 
   const visibleLayoutProducts = useMemo(() => {
     return allProducts.filter((product) => {
@@ -381,19 +380,6 @@ const GroceryPage = () => {
       return categoryMatch && subcategoryMatch;
     });
   }, [activeCategoryId, activeSubcategoryId, activeTab, allProducts]);
-
-  const isNoBgImageCandidate = (imageUrl) => {
-    if (typeof imageUrl !== "string" || !imageUrl.trim()) return false;
-    const value = imageUrl.toLowerCase();
-    return (
-      value.includes("removebg") ||
-      value.includes("transparent") ||
-      value.includes("no-bg") ||
-      value.includes("nobg") ||
-      value.endsWith(".png") ||
-      value.endsWith(".webp")
-    );
-  };
 
   const extractImageUrl = (imageValue) => {
     if (typeof imageValue === "string") return imageValue;
@@ -425,51 +411,12 @@ const GroceryPage = () => {
     const imageList = getProductImageList(product);
 
     if (imageList.length > 0) {
-      const noBgImage = imageList.find((img) => isNoBgImageCandidate(img));
-      return noBgImage || imageList[0];
+      // Prefer first uploaded/primary image to keep image-name mapping accurate.
+      return imageList[0];
     }
 
-    return "https://via.placeholder.com/200";
+    return FALLBACK_IMAGE;
   };
-
-  const bestsellers = [
-    {
-      title: "Vegetables & Fruits",
-      count: "+178 more",
-      images: [imgCoriander, imgChili, imgPotato, imgOnion],
-      categoryId: "fresh-veg",
-    },
-    {
-      title: "Chips & Namkeen",
-      count: "+312 more",
-      images: [imgLaysBlue, imgKurkure, imgUncle, imgLaysGreen],
-      categoryId: "chips-namkeen",
-    },
-    {
-      title: "Oil, Ghee & Masala",
-      count: "+96 more",
-      images: [imgOil1, imgOil2, imgOil3, imgOil4],
-      categoryId: "oil-masala",
-    },
-    {
-      title: "Bakery & Biscuits",
-      count: "+118 more",
-      images: [imgBakery, imgBread, imgBiscuits, imgAtta],
-      categoryId: "bakery-biscuits",
-    },
-    {
-      title: "Sweets & Chocolates",
-      count: "+54 more",
-      images: [imgIceCream, imgChoclate, imgchoclate2, imgicecream2],
-      categoryId: "sweets-choc",
-    },
-    {
-      title: "Dairy, Bread & Eggs",
-      count: "+6 more",
-      images: [imgMilk, imgBread, imgButter, imgCheese],
-      categoryId: "dairy-bread",
-    },
-  ];
 
   // Memoize flakes to prevent re-render jumps
   const flakes = useMemo(() => Array.from({ length: 50 }).map((_, i) => ({
@@ -518,7 +465,7 @@ const GroceryPage = () => {
         return {
           _id: String(subcategory?._id || `${categoryId}-subcategory-${subIndex}`),
           name: subcategory?.name || "Subcategory",
-          image: subcategory?.image || "https://via.placeholder.com/120",
+          image: subcategory?.image || FALLBACK_IMAGE,
           __kind: "subcategory",
           targetSubcategoryId: subcategory?._id ? String(subcategory._id) : null,
         };
@@ -587,6 +534,99 @@ const GroceryPage = () => {
     });
   }, [allProducts, searchQuery]);
 
+  const activeCollectionCategory = useMemo(() => {
+    if (!collectionCategoryId || collectionCategoryId === "all") return null;
+    return findCategoryById(collectionCategoryId);
+  }, [collectionCategoryId, homepageCategories]);
+
+  const collectionCategoryTabs = useMemo(() => {
+    return [
+      { _id: "all", name: "All", image: imgBag3D },
+      ...homepageCategories.map((category) => ({
+        _id: String(category?._id || category?.slug || category?.name || ""),
+        name: category?.name || "Category",
+        image: category?.image || imgBag3D,
+      })),
+    ];
+  }, [homepageCategories]);
+
+  const collectionVisibleProducts = useMemo(() => {
+    if (collectionCategoryId === "all") return allProducts;
+    const categoryId = String(collectionCategoryId || "");
+    if (!categoryId) return [];
+
+    return allProducts.filter((product) => {
+      const productCategoryId = String(
+        product?.category?._id || product?.category?.id || product?.category || ""
+      );
+      return productCategoryId === categoryId;
+    });
+  }, [allProducts, collectionCategoryId]);
+
+  const getWishlistItemId = (product) => `food-${String(product?._id || product?.id || "")}`;
+
+  const isProductWishlisted = (product) => {
+    const wishlistId = getWishlistItemId(product);
+    return wishlistItems.some((item) => String(item?.id) === wishlistId);
+  };
+
+  const toggleProductWishlist = (product, event = null) => {
+    if (event) event.stopPropagation();
+    const originalId = String(product?._id || product?.id || "");
+    if (!originalId) return;
+
+    const wishlistId = `food-${originalId}`;
+    const exists = wishlistItems.some((item) => String(item?.id) === wishlistId);
+
+    const next = exists
+      ? wishlistItems.filter((item) => String(item?.id) !== wishlistId)
+      : [
+          ...wishlistItems,
+          {
+            id: wishlistId,
+            type: "food",
+            originalId,
+            name: product?.name || "Product",
+            image: getProductImage(product),
+            price: Number(product?.sellingPrice || 0),
+            mrp: Number(product?.mrp || 0),
+            unit: product?.unit || "",
+          },
+        ];
+
+    setWishlistItems(next);
+    localStorage.setItem("wishlist", JSON.stringify(next));
+    window.dispatchEvent(new Event("wishlistUpdated"));
+  };
+
+  const groceryWishlistedProducts = useMemo(() => {
+    const wantedIds = new Set(
+      wishlistItems
+        .filter((item) => item?.type === "food")
+        .map((item) => String(item?.originalId || String(item?.id || "").replace(/^food-/, "")))
+        .filter(Boolean)
+    );
+
+    if (wantedIds.size === 0) return [];
+
+    const matchedProducts = allProducts.filter((product) =>
+      wantedIds.has(String(product?._id || product?.id || ""))
+    );
+
+    if (matchedProducts.length > 0) return matchedProducts;
+
+    return wishlistItems
+      .filter((item) => item?.type === "food")
+      .map((item) => ({
+        _id: item.originalId || String(item.id).replace(/^food-/, ""),
+        name: item?.name || "Product",
+        sellingPrice: Number(item?.price || 0),
+        mrp: Number(item?.mrp || 0),
+        unit: item?.unit || "",
+        image: item?.image || FALLBACK_IMAGE,
+      }));
+  }, [allProducts, wishlistItems]);
+
   const visibleBestSellers = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
 
@@ -633,7 +673,7 @@ const GroceryPage = () => {
         return uniqueProductImages.slice(0, 4);
       }
 
-      return [item?.image || "https://via.placeholder.com/120"];
+      return [item?.image || FALLBACK_IMAGE];
     };
 
     const getProductCountForItem = (item) => {
@@ -665,26 +705,14 @@ const GroceryPage = () => {
       return 0;
     };
 
-    if (bestSellerItems.length === 0) {
-      return bestsellers
-        .filter((item) => item.title.toLowerCase().includes(query))
-        .map((item) => ({
-          id: item.categoryId,
-          name: item.title,
-          image: item.images?.[0] || "https://via.placeholder.com/120",
-          previewImages: (item.images || []).slice(0, 4),
-          countLabel: item.count || "",
-          itemType: "legacy",
-          categoryId: item.categoryId,
-        }));
-    }
+    if (bestSellerItems.length === 0) return [];
 
     return bestSellerItems
       .filter((item) => (item?.name || "").toLowerCase().includes(query))
       .map((item) => ({
         id: item._id,
         name: item.name || "",
-        image: item.image || "https://via.placeholder.com/120",
+        image: item.image || FALLBACK_IMAGE,
         previewImages: getPreviewImagesForItem(item),
         countLabel: (() => {
           if (item?.countLabel) return item.countLabel;
@@ -697,7 +725,7 @@ const GroceryPage = () => {
         itemId: item.itemId,
         subcategories: Array.isArray(item.subcategories) ? item.subcategories : [],
       }));
-  }, [allProducts, bestSellerItems, bestsellers, searchQuery]);
+  }, [allProducts, bestSellerItems, searchQuery]);
 
   useEffect(() => {
     setActiveSubcategoryId("all-subcategories");
@@ -792,37 +820,79 @@ const GroceryPage = () => {
   }, [userLocation]);
 
   const handleBestSellerClick = (item) => {
-    if (item.itemType && item.itemType !== "legacy" && item.itemId) {
-      navigate(`/grocery/best-seller/${item.itemType}/${item.itemId}`);
-      return;
+    if (item.itemType === "category" && item.itemId) {
+      if (openCollectionSheet({ categoryId: item.itemId, title: item?.name || "Products" })) return;
     }
 
     if (item.itemType === "subcategory" && item.itemId) {
-      navigate(`/grocery/subcategory/${item.itemId}`);
-      return;
+      const parentCategory = homepageCategories.find((category) =>
+        Array.isArray(category?.subcategories) &&
+        category.subcategories.some((sub) => String(sub?._id || "") === String(item.itemId))
+      );
+      if (parentCategory) {
+        if (
+          openCollectionSheet({
+            categoryId: parentCategory?._id || parentCategory?.slug || parentCategory?.name,
+            title: item?.name || parentCategory?.name || "Products",
+          })
+        ) {
+          return;
+        }
+      }
     }
 
-    if (item.itemType === "product") {
-      const firstSubcategory = item.subcategories?.[0];
-      const subcategoryId =
-        typeof firstSubcategory === "string"
-          ? firstSubcategory
-          : firstSubcategory?._id;
-      if (subcategoryId) {
-        navigate(`/grocery/subcategory/${subcategoryId}`);
+    if (item.itemType === "product" && item.itemId) {
+      const product = allProducts.find((prod) => String(prod?._id || prod?.id || "") === String(item.itemId));
+      const categoryId = product?.category?._id || product?.category?.id || product?.category;
+      if (categoryId && openCollectionSheet({ categoryId, title: item?.name || "Products" })) {
         return;
       }
     }
 
     if (item.itemType === "legacy" && item.categoryId) {
-      openCategorySheet(item.categoryId);
+      if (openCollectionSheet({ categoryId: item.categoryId, title: item?.name || "Products" })) return;
+    }
+
+    if (item.itemType && item.itemId) {
+      navigate(`/grocery/best-seller/${item.itemType}/${item.itemId}`);
       return;
     }
 
     navigate("/categories");
   };
 
-  const handleAddProductToCart = (product) => {
+  const handleProductCardClick = (product, fallbackCategoryId = "") => {
+    const categoryId = product?.category?._id || product?.category?.id || product?.category || fallbackCategoryId;
+    if (!categoryId) return;
+    openCollectionSheet({
+      categoryId,
+      title: product?.category?.name || collectionTitle || "Products",
+    });
+  };
+
+  const getSourcePosition = (event, itemId) => {
+    if (!event) return null;
+    let buttonElement = event.currentTarget;
+    if (!buttonElement && event.target) {
+      buttonElement = event.target.closest("button") || event.target;
+    }
+    if (!buttonElement) return null;
+
+    const rect = buttonElement.getBoundingClientRect();
+    const scrollX = window.pageXOffset || window.scrollX || 0;
+    const scrollY = window.pageYOffset || window.scrollY || 0;
+
+    return {
+      viewportX: rect.left + rect.width / 2,
+      viewportY: rect.top + rect.height / 2,
+      scrollX,
+      scrollY,
+      itemId,
+    };
+  };
+
+  const handleAddProductToCart = (product, event = null) => {
+    const sourcePosition = getSourcePosition(event, product?._id || product?.id);
     addToCart({
       id: product?._id || product?.id,
       name: product?.name || "Product",
@@ -832,7 +902,7 @@ const GroceryPage = () => {
       image: getProductImage(product),
       restaurantId: "grocery-store",
       restaurant: "MoGrocery",
-    });
+    }, sourcePosition);
   };
 
   const handleCategoriesNavClick = () => {
@@ -1005,6 +1075,23 @@ const GroceryPage = () => {
 
               {/* Profile & Cart Icons */}
               <div className="flex gap-2 mt-1">
+                <button
+                  className="relative w-8 h-8 bg-[#1a1a1a] rounded-full flex items-center justify-center shadow-sm active:scale-95 transition-transform"
+                  onClick={() => setShowWishlistSheet(true)}
+                >
+                  <Heart size={16} className="text-white" />
+                  {groceryWishlistedProducts.length > 0 && (
+                    <motion.div
+                      key={groceryWishlistedProducts.length}
+                      initial={{ scale: 0.5, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      className="absolute -top-1 -right-1 bg-[#EF4F5F] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center border border-white"
+                    >
+                      {groceryWishlistedProducts.length}
+                    </motion.div>
+                  )}
+                </button>
+
                 {/* Cart Icon */}
                 <button
                   className="relative w-8 h-8 bg-[#1a1a1a] rounded-full flex items-center justify-center shadow-sm active:scale-95 transition-transform"
@@ -1087,7 +1174,7 @@ const GroceryPage = () => {
         </div>
       </div>
 
-      {!hasActiveSearch && activeCategoryId === "all" && (
+      {!hasActiveSearch && activeCategoryId === "all" && bannerImages.length > 0 && (
         <div className="relative z-0 -mt-1 animate-fade-in-up px-4 pt-2 pb-1 md:max-w-6xl mx-auto">
         <div className="relative w-full aspect-[1.8/1] md:aspect-[3/1] bg-white/20 backdrop-blur-sm rounded-2xl shadow-lg border border-white/30 overflow-hidden">
           {bannerImages.map((bannerImg, index) => (
@@ -1119,7 +1206,7 @@ const GroceryPage = () => {
         </div>
       )}
 
-      {!hasActiveSearch && activeCategoryId === "all" && (
+      {!hasActiveSearch && activeCategoryId === "all" && visibleBestSellers.length > 0 && (
         <div className="px-4 pt-4 pb-2 relative z-10 md:max-w-6xl md:mx-auto">
           <h3 className="text-lg font-[800] text-[#3e2723] mb-4">Bestsellers</h3>
 
@@ -1220,8 +1307,21 @@ const GroceryPage = () => {
                     return (
                       <div
                         key={`layout-product-${productId}`}
-                        className="rounded-2xl border border-slate-200 bg-white shadow-sm p-2.5 sm:p-3"
+                        className="rounded-2xl border border-slate-200 bg-white shadow-sm p-2.5 sm:p-3 cursor-pointer relative"
+                        onClick={() => handleProductCardClick(product, activeCategoryId)}
                       >
+                        <button
+                          type="button"
+                          className={`absolute top-2 right-2 z-10 w-7 h-7 rounded-full border flex items-center justify-center ${
+                            isProductWishlisted(product)
+                              ? "bg-pink-100 border-pink-200 text-pink-500"
+                              : "bg-white border-slate-200 text-slate-500"
+                          }`}
+                          onClick={(event) => toggleProductWishlist(product, event)}
+                        >
+                          <Heart size={14} className={isProductWishlisted(product) ? "fill-current" : ""} />
+                        </button>
+
                         <div className="w-full aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 flex items-center justify-center">
                           <img
                             src={getProductImage(product)}
@@ -1249,7 +1349,10 @@ const GroceryPage = () => {
                                 ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
                                 : "bg-emerald-600 text-white"
                             }`}
-                            onClick={() => handleAddProductToCart(product)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleAddProductToCart(product, event);
+                            }}
                           >
                             {alreadyInCart ? "ADDED" : "ADD"}
                           </button>
@@ -1326,15 +1429,11 @@ const GroceryPage = () => {
                   type="button"
                   key={`search-product-${product._id}`}
                   className="rounded-2xl border border-slate-200 p-3 bg-white shadow-sm text-left"
-                  onClick={() =>
-                    primarySubcategory
-                      ? navigate(`/grocery/subcategory/${primarySubcategory}`)
-                      : navigate("/categories")
-                  }
+                  onClick={() => handleProductCardClick(product)}
                 >
                   <div className="w-full aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 flex items-center justify-center">
                     <img
-                      src={Array.isArray(product?.images) && product.images[0] ? product.images[0] : "https://via.placeholder.com/200"}
+                      src={getProductImage(product)}
                       alt={product?.name || "Product"}
                       className="w-full h-full object-contain"
                     />
@@ -1373,23 +1472,25 @@ const GroceryPage = () => {
                 className="flex flex-col items-center gap-1.5 cursor-pointer active:scale-95 transition-transform"
                 onClick={() => {
                   if (card.targetSubcategoryId) {
-                    navigate(`/grocery/subcategory/${card.targetSubcategoryId}`);
+                    openCollectionSheet({
+                      categoryId: category?._id || category?.slug || category?.name,
+                      subcategoryId: card.targetSubcategoryId,
+                      title: category?.name || "Products",
+                    });
                     return;
                   }
 
-                  const selectedCategoryId = String(
-                    category?._id || category?.slug || category?.name || "all"
-                  );
-                  setActiveTab(category?.name || "All");
-                  setActiveCategoryId(selectedCategoryId);
-                  setActiveSubcategoryId("all-subcategories");
+                  openCollectionSheet({
+                    categoryId: category?._id || category?.slug || category?.name,
+                    title: category?.name || "Products",
+                  });
                 }}
               >
                 <div
                   className="w-full h-[72px] rounded-[12px] flex items-center justify-center p-2 shadow-sm border border-[#dce7eb] overflow-hidden relative bg-[#e9f4f7]"
                 >
                   <img
-                    src={card.image || "https://via.placeholder.com/120"}
+                    src={card.image || FALLBACK_IMAGE}
                     alt={card.name}
                     className="w-full h-full object-contain transition-transform duration-300"
                   />
@@ -1444,6 +1545,290 @@ const GroceryPage = () => {
           </span>
         </button>
       </div>
+
+      <AnimatePresence>
+        {showCollectionSheet && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowCollectionSheet(false)}
+              className="fixed inset-0 bg-black/45 z-[70] backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 24, stiffness: 280 }}
+              drag="y"
+              dragConstraints={{ top: 0 }}
+              dragElastic={0.2}
+              onDragEnd={(_, info) => {
+                if (info.offset.y > 110) {
+                  setShowCollectionSheet(false);
+                }
+              }}
+              className="fixed bottom-0 left-0 right-0 h-[92vh] z-[80] w-full"
+            >
+              <button
+                onClick={() => setShowCollectionSheet(false)}
+                className="absolute -top-14 left-1/2 -translate-x-1/2 bg-[#1a1a1a] p-2.5 rounded-full shadow-lg border border-white/20 active:scale-95 transition-transform z-[90] flex items-center justify-center cursor-pointer"
+              >
+                <X size={22} className="text-white" strokeWidth={2.5} />
+              </button>
+
+              <div className="h-full bg-[#f4f5f7] rounded-t-[22px] overflow-hidden shadow-2xl flex flex-col">
+                <div className="w-full flex justify-center pt-3 pb-1">
+                  <div className="w-12 h-1.5 bg-slate-300 rounded-full" />
+                </div>
+
+                <div className="px-3 pb-2 bg-white border-b border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowCollectionSheet(false)}
+                      className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center"
+                    >
+                      <ArrowLeft size={16} />
+                    </button>
+                    <div className="min-w-0">
+                      <p className="text-[15px] font-extrabold text-slate-900 truncate">
+                        {activeCollectionCategory?.name || (collectionCategoryId === "all" ? "All Categories" : collectionTitle)}
+                      </p>
+                      <p className="text-[11px] font-semibold text-slate-500">{collectionVisibleProducts.length} items</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white border-b border-slate-200 px-2 py-2 overflow-x-auto no-scrollbar">
+                  <div className="flex gap-2 min-w-max">
+                    {collectionCategoryTabs.map((tab) => (
+                      <button
+                        key={`collection-tab-${tab._id}`}
+                        type="button"
+                        className="flex flex-col items-center gap-1 min-w-[72px]"
+                        onClick={() => {
+                          setCollectionCategoryId(String(tab._id));
+                          if (String(tab._id) === "all") {
+                            setCollectionTitle("All Categories");
+                          } else {
+                            setCollectionTitle(tab.name || "Products");
+                          }
+                        }}
+                      >
+                        <div
+                          className={`w-14 h-14 rounded-full border-2 p-1 overflow-hidden flex items-center justify-center ${
+                            String(collectionCategoryId || "all") === String(tab._id)
+                              ? "border-[#facc15] bg-[#fff8dd]"
+                              : "border-slate-200 bg-slate-50"
+                          }`}
+                        >
+                          <img src={tab.image || FALLBACK_IMAGE} alt={tab.name} className="w-full h-full object-contain" />
+                        </div>
+                        <span
+                          className={`text-[11px] leading-tight font-bold text-center line-clamp-2 ${
+                            String(collectionCategoryId || "all") === String(tab._id) ? "text-slate-900" : "text-slate-500"
+                          }`}
+                        >
+                          {tab.name}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-3">
+                  {collectionVisibleProducts.length === 0 ? (
+                    <p className="text-sm text-slate-500 p-3">No products available.</p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3">
+                      {collectionVisibleProducts.map((product) => {
+                        const productId = product?._id || product?.id;
+                        const alreadyInCart = isInCart(productId);
+                        const sellingPrice = Number(product?.sellingPrice || 0);
+                        const mrp = Number(product?.mrp || 0);
+                        const discountPercent = mrp > sellingPrice && mrp > 0
+                          ? Math.max(1, Math.round(((mrp - sellingPrice) / mrp) * 100))
+                          : 0;
+
+                        return (
+                          <div
+                            key={`collection-product-${productId}`}
+                            className="rounded-[16px] border border-slate-200 bg-white shadow-sm p-2 relative"
+                          >
+                            {discountPercent > 0 && (
+                              <span className="absolute top-2 left-2 z-10 bg-[#facc15] text-[10px] font-black text-slate-900 px-1.5 py-0.5 rounded">
+                                {discountPercent}% OFF
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              className={`absolute top-2 right-2 w-7 h-7 rounded-full border flex items-center justify-center ${
+                                isProductWishlisted(product)
+                                  ? "bg-pink-100 border-pink-200 text-pink-500"
+                                  : "bg-white border-slate-200 text-slate-500"
+                              }`}
+                              onClick={(event) => toggleProductWishlist(product, event)}
+                            >
+                              <Heart size={14} className={isProductWishlisted(product) ? "fill-current" : ""} />
+                            </button>
+
+                            <div className="w-full h-[110px] rounded-xl bg-slate-50 overflow-hidden flex items-center justify-center mb-2">
+                              <img src={getProductImage(product)} alt={product?.name || "Product"} className="w-full h-full object-contain" />
+                            </div>
+
+                            <p className="text-[13px] font-bold text-slate-900 leading-tight line-clamp-2 min-h-[34px]">
+                              {product?.name || "Product"}
+                            </p>
+                            <p className="text-[11px] text-slate-500 mt-1">{product?.unit || "100 g"}</p>
+
+                            <div className="mt-1.5 flex items-end justify-between gap-2">
+                              <div>
+                                <p className="text-[18px] leading-none font-black text-slate-900">Rs {sellingPrice}</p>
+                                {mrp > sellingPrice && (
+                                  <p className="text-[11px] text-slate-400 line-through">Rs {mrp}</p>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                className={`h-7 px-3 rounded-md text-[11px] font-black border ${
+                                  alreadyInCart
+                                    ? "bg-emerald-100 text-emerald-700 border-emerald-300"
+                                    : "bg-white text-slate-900 border-[#facc15]"
+                                }`}
+                                onClick={(event) => handleAddProductToCart(product, event)}
+                              >
+                                {alreadyInCart ? "ADDED" : "ADD"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showWishlistSheet && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowWishlistSheet(false)}
+              className="fixed inset-0 bg-black/45 z-[75] backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 24, stiffness: 280 }}
+              drag="y"
+              dragConstraints={{ top: 0 }}
+              dragElastic={0.2}
+              onDragEnd={(_, info) => {
+                if (info.offset.y > 110) setShowWishlistSheet(false);
+              }}
+              className="fixed bottom-0 left-0 right-0 h-[88vh] z-[85] w-full"
+            >
+              <div className="h-full bg-[#f4f5f7] rounded-t-[22px] overflow-hidden shadow-2xl flex flex-col">
+                <div className="w-full flex justify-center pt-3 pb-1">
+                  <div className="w-12 h-1.5 bg-slate-300 rounded-full" />
+                </div>
+
+                <div className="px-3 pb-2 bg-white border-b border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowWishlistSheet(false)}
+                      className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center"
+                    >
+                      <ArrowLeft size={16} />
+                    </button>
+                    <div className="min-w-0">
+                      <p className="text-[15px] font-extrabold text-slate-900 truncate">Wishlisted Products</p>
+                      <p className="text-[11px] font-semibold text-slate-500">{groceryWishlistedProducts.length} items</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-3">
+                  {groceryWishlistedProducts.length === 0 ? (
+                    <p className="text-sm text-slate-500 p-3">No wishlisted products yet.</p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3">
+                      {groceryWishlistedProducts.map((product) => {
+                        const productId = product?._id || product?.id;
+                        const alreadyInCart = isInCart(productId);
+                        const sellingPrice = Number(product?.sellingPrice || product?.price || 0);
+                        const mrp = Number(product?.mrp || 0);
+
+                        return (
+                          <div
+                            key={`wishlist-product-${productId}`}
+                            className="rounded-[16px] border border-slate-200 bg-white shadow-sm p-2 relative"
+                          >
+                            <button
+                              type="button"
+                              className="absolute top-2 right-2 w-7 h-7 rounded-full border bg-pink-100 border-pink-200 text-pink-500 flex items-center justify-center"
+                              onClick={(event) => toggleProductWishlist(product, event)}
+                            >
+                              <Heart size={14} className="fill-current" />
+                            </button>
+
+                            <div className="w-full h-[110px] rounded-xl bg-slate-50 overflow-hidden flex items-center justify-center mb-2">
+                              <img src={getProductImage(product)} alt={product?.name || "Product"} className="w-full h-full object-contain" />
+                            </div>
+
+                            <p className="text-[13px] font-bold text-slate-900 leading-tight line-clamp-2 min-h-[34px]">
+                              {product?.name || "Product"}
+                            </p>
+                            <p className="text-[11px] text-slate-500 mt-1">{product?.unit || "100 g"}</p>
+
+                            <div className="mt-1.5 flex items-end justify-between gap-2">
+                              <div>
+                                <p className="text-[18px] leading-none font-black text-slate-900">Rs {sellingPrice}</p>
+                                {mrp > sellingPrice && (
+                                  <p className="text-[11px] text-slate-400 line-through">Rs {mrp}</p>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                className={`h-7 px-3 rounded-md text-[11px] font-black border ${
+                                  alreadyInCart
+                                    ? "bg-emerald-100 text-emerald-700 border-emerald-300"
+                                    : "bg-white text-slate-900 border-[#facc15]"
+                                }`}
+                                onClick={(event) => handleAddProductToCart(product, event)}
+                              >
+                                {alreadyInCart ? "ADDED" : "ADD"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      <AddToCartAnimation
+        bottomOffset={56}
+        pillClassName="scale-105"
+        linkTo="/grocery/cart"
+        platform="mogrocery"
+        hideOnPages={true}
+      />
 
       <style>{`
                 @keyframes fade-in-up {
@@ -1536,3 +1921,5 @@ const GroceryPage = () => {
 };
 
 export default GroceryPage;
+
+
