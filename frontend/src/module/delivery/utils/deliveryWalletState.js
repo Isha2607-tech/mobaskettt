@@ -54,15 +54,25 @@ export const fetchDeliveryWallet = async () => {
       console.log('💰 Transactions Count:', walletData.transactions?.length || walletData.recentTransactions?.length || 0)
       console.log('💰 Transactions:', walletData.transactions || walletData.recentTransactions || [])
       
+      const transformedTotalCashLimit = Number.isFinite(Number(walletData.totalCashLimit))
+        ? Number(walletData.totalCashLimit)
+        : 750
+      const transformedCashInHand = Number(walletData.cashInHand ?? walletData.cash_in_hand) || 0
+      const transformedAvailableCashLimit =
+        Number.isFinite(Number(walletData.availableCashLimit)) && Number(walletData.availableCashLimit) >= 0
+          ? Number(walletData.availableCashLimit)
+          : Math.max(0, transformedTotalCashLimit - transformedCashInHand)
+
       // Transform API response to match expected format (support both camelCase and snake_case)
       const transformedData = {
         totalBalance: Number(walletData.totalBalance) || 0,
-        cashInHand: Number(walletData.cashInHand ?? walletData.cash_in_hand) || 0,
+        cashInHand: transformedCashInHand,
         totalWithdrawn: Number(walletData.totalWithdrawn) || 0,
         totalEarned: Number(walletData.totalEarned) || 0,
-        totalCashLimit: Number(walletData.totalCashLimit) || 0,
-        availableCashLimit: Number(walletData.availableCashLimit) || 0,
+        totalCashLimit: transformedTotalCashLimit,
+        availableCashLimit: transformedAvailableCashLimit,
         deliveryWithdrawalLimit: Number(walletData.deliveryWithdrawalLimit ?? walletData.delivery_withdrawal_limit) || 100,
+        deliveryMinimumWalletBalance: Number(walletData.deliveryMinimumWalletBalance ?? walletData.delivery_minimum_wallet_balance) || 0,
         // Pocket balance = total balance (includes bonus)
         pocketBalance: walletData.pocketBalance !== undefined ? Number(walletData.pocketBalance) : (Number(walletData.totalBalance) || 0),
         pendingWithdrawals: walletData.pendingWithdrawals || 0,

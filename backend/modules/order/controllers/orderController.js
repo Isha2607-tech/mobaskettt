@@ -1978,11 +1978,102 @@ export const editOrderCart = async (req, res) => {
 
     const previousTotal = Number(order.pricing?.total || 0);
     const additionalAmount = Number(Math.max(0, totals.total - previousTotal).toFixed(2));
-    const isOnlineCompletedPayment =
-      String(order.payment?.method || '').toLowerCase() === 'razorpay' &&
-      String(order.payment?.status || '').toLowerCase() === 'completed';
+    const paymentMethod = String(order.payment?.method || '').toLowerCase();
+    const paymentStatus = String(order.payment?.status || '').toLowerCase();
+    const isRazorpayCompletedPayment =
+      paymentMethod === 'razorpay' && paymentStatus === 'completed';
+    const isWalletCompletedPayment =
+      paymentMethod === 'wallet' && paymentStatus === 'completed';
 
-    if (isOnlineCompletedPayment && additionalAmount > 0) {
+    if (isWalletCompletedPayment && additionalAmount > 0) {
+      const wallet = await UserWallet.findOrCreateByUserId(userId);
+
+      if (additionalAmount > Number(wallet.balance || 0)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Insufficient wallet balance for updated cart items',
+          data: {
+            required: additionalAmount,
+            available: Number(wallet.balance || 0),
+            shortfall: Number((additionalAmount - Number(wallet.balance || 0)).toFixed(2))
+          }
+        });
+      }
+
+      const walletTransaction = wallet.addTransaction({
+        amount: additionalAmount,
+        type: 'deduction',
+        status: 'Completed',
+        description: `Order edit payment - Order #${order.orderId}`,
+        orderId: order._id
+      });
+      await wallet.save();
+
+      await User.findByIdAndUpdate(userId, {
+        'wallet.balance': wallet.balance,
+        'wallet.currency': wallet.currency
+      });
+
+      try {
+        const payment = new Payment({
+          paymentId: `PAY-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          orderId: order._id,
+          userId,
+          amount: additionalAmount,
+          currency: 'INR',
+          method: 'wallet',
+          status: 'completed',
+          transactionId: walletTransaction?._id?.toString?.() || '',
+          completedAt: new Date(),
+          logs: [{
+            action: 'completed',
+            timestamp: new Date(),
+            details: {
+              purpose: 'order_edit_additional_payment',
+              orderId: order.orderId,
+              walletTransactionId: walletTransaction?._id?.toString?.() || ''
+            },
+            ipAddress: req.ip,
+            userAgent: req.get('user-agent')
+          }]
+        });
+        await payment.save();
+      } catch (paymentError) {
+        logger.error(`Error creating wallet payment record for edited cart: ${paymentError.message}`, {
+          orderId: order.orderId,
+          userId: userId.toString(),
+          additionalAmount
+        });
+      }
+
+      applyEditedCartToOrder(order, sanitizedItems, totals);
+      order.payment.method = 'wallet';
+      order.payment.status = 'completed';
+      await order.save();
+
+      return res.json({
+        success: true,
+        message: 'Order cart updated successfully',
+        data: {
+          requiresAdditionalPayment: false,
+          additionalAmount,
+          wallet: {
+            balance: Number(wallet.balance || 0),
+            deducted: additionalAmount
+          },
+          order: {
+            id: order._id.toString(),
+            orderId: order.orderId,
+            status: order.status,
+            items: order.items,
+            pricing: order.pricing,
+            modificationWindow: getOrderModificationWindow(order)
+          }
+        }
+      });
+    }
+
+    if (isRazorpayCompletedPayment && additionalAmount > 0) {
       const receiptRaw = `${order.orderId}-E-${Date.now()}`;
       const receipt = receiptRaw.slice(0, 40);
 

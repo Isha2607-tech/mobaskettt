@@ -51,6 +51,7 @@ export default function OrdersPage({ statusKey = "all", platformOverride }) {
 
   const getIncomingRequestCount = (ordersList = []) => {
     return ordersList.filter((order) =>
+      order.canAdminApprove &&
       (order.status === "confirmed" || order.status === "pending" || order.status === "scheduled") &&
       (order.adminApprovalStatus === "pending" || !order.adminApprovalStatus)
     ).length
@@ -422,7 +423,7 @@ export default function OrdersPage({ statusKey = "all", platformOverride }) {
         onRefund={handleRefund}
         onAcceptOrder={handleApproveOrderRequest}
         onRejectOrder={handleRejectOrderRequest}
-        enableApprovalActions={statusKey === "all" || statusKey === "scheduled"}
+        enableApprovalActions={platformOverride === "mogrocery" && (statusKey === "all" || statusKey === "scheduled")}
       />
     </div>
   )

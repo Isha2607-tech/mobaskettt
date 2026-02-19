@@ -471,8 +471,37 @@ apiClient.interceptors.response.use(
         }
 
         // For delivery module, avoid force-logout loops from transient refresh failures.
-        // Route guard will handle a graceful re-check/redirect if auth is actually invalid.
+        // But if refresh token is explicitly invalid/missing, clear session immediately to stop 401 spam loops.
         if (isDeliveryPath) {
+          const refreshStatus = refreshError?.response?.status;
+          const refreshMessage = String(
+            refreshError?.response?.data?.message ||
+            refreshError?.response?.data?.error ||
+            refreshError?.message ||
+            "",
+          ).toLowerCase();
+
+          const isHardAuthFailure =
+            refreshStatus === 401 &&
+            (
+              refreshMessage.includes("invalid refresh token") ||
+              refreshMessage.includes("refresh token not found") ||
+              refreshMessage.includes("jwt malformed") ||
+              refreshMessage.includes("jwt expired")
+            );
+
+          if (isHardAuthFailure) {
+            localStorage.removeItem("delivery_accessToken");
+            localStorage.removeItem("delivery_authenticated");
+            localStorage.removeItem("delivery_user");
+            // Clear legacy token too so request interceptor doesn't keep attaching stale auth.
+            localStorage.removeItem("accessToken");
+
+            if (!window.location.pathname.startsWith("/delivery/sign-in")) {
+              window.location.href = "/delivery/sign-in";
+            }
+          }
+
           return Promise.reject(refreshError);
         }
 

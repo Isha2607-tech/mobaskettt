@@ -107,6 +107,12 @@ const businessSettingsSchema = new mongoose.Schema(
       default: 100,
       min: 0
     },
+    // Minimum wallet balance delivery partner must retain after withdrawal.
+    deliveryMinimumWalletBalance: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
     updatedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Admin',
@@ -124,7 +130,7 @@ businessSettingsSchema.index({ createdAt: -1 });
 // Ensure only one document exists
 businessSettingsSchema.statics.getSettings = async function() {
   try {
-    let settings = await this.findOne();
+    let settings = await this.findOne().sort({ updatedAt: -1, createdAt: -1 });
     if (!settings) {
       settings = await this.create({
         companyName: 'Appzeto Food',
@@ -134,8 +140,27 @@ businessSettingsSchema.statics.getSettings = async function() {
           number: ''
         },
         deliveryCashLimit: 750,
-        deliveryWithdrawalLimit: 100
+        deliveryWithdrawalLimit: 100,
+        deliveryMinimumWalletBalance: 0
       });
+    } else {
+      // Backfill missing fields for legacy settings docs so delivery app doesn't get zero/undefined limits.
+      let shouldSave = false;
+      if (!Number.isFinite(Number(settings.deliveryCashLimit)) || Number(settings.deliveryCashLimit) < 0) {
+        settings.deliveryCashLimit = 750;
+        shouldSave = true;
+      }
+      if (!Number.isFinite(Number(settings.deliveryWithdrawalLimit)) || Number(settings.deliveryWithdrawalLimit) < 0) {
+        settings.deliveryWithdrawalLimit = 100;
+        shouldSave = true;
+      }
+      if (!Number.isFinite(Number(settings.deliveryMinimumWalletBalance)) || Number(settings.deliveryMinimumWalletBalance) < 0) {
+        settings.deliveryMinimumWalletBalance = 0;
+        shouldSave = true;
+      }
+      if (shouldSave) {
+        await settings.save();
+      }
     }
     return settings;
   } catch (error) {
@@ -152,7 +177,8 @@ businessSettingsSchema.statics.getSettings = async function() {
           number: ''
         },
         deliveryCashLimit: 750,
-        deliveryWithdrawalLimit: 100
+        deliveryWithdrawalLimit: 100,
+        deliveryMinimumWalletBalance: 0
       });
       await settings.save();
     }

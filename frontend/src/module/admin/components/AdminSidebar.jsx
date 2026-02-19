@@ -51,7 +51,6 @@ import { Input } from "@/components/ui/input"
 import { sidebarMenuData, mogroceryMenuData } from "../data/sidebarMenu"
 import { getCachedSettings, loadBusinessSettings } from "@/lib/utils/businessSettings"
 import { usePlatform } from "../context/PlatformContext"
-import appzetoLogo from "@/assets/appzetologo.png"
 
 // Icon mapping
 const iconMap = {
@@ -600,9 +599,7 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
                   <span className="text-xs font-semibold text-white px-2 truncate">
                     {companyName}
                   </span>
-                ) : (
-                  <img src={appzetoLogo} alt={companyName || "Company"} className="w-24 h-10 object-contain" loading="lazy" />
-                )}
+                ) : null}
               </div>
             </div>
           )}
@@ -625,9 +622,7 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
                     <span className="text-[10px] font-semibold text-white truncate px-1">
                       {companyName.charAt(0).toUpperCase()}
                     </span>
-                  ) : (
-                    <img src={appzetoLogo} alt={companyName || "Company"} className="w-10 h-10 object-contain" loading="lazy" />
-                  )}
+                  ) : null}
                 </div>
               </div>
               {/* Platform Toggle for Collapsed State */}

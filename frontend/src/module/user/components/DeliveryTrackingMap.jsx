@@ -187,15 +187,17 @@ const DeliveryTrackingMap = ({
           }
         }
         
-        if (cached.result.routes && cached.result.routes[0] && cached.result.routes[0].overview_path && !isCustomerLegRef.current) {
+        if (cached.result.routes && cached.result.routes[0] && cached.result.routes[0].overview_path) {
           if (routePolylineRef.current) {
             routePolylineRef.current.setMap(null);
           }
+
+          const activeColor = isCustomerLegRef.current ? '#2563eb' : '#10b981';
           
           routePolylineRef.current = new window.google.maps.Polyline({
             path: cached.result.routes[0].overview_path,
             geodesic: true,
-            strokeColor: '#10b981',
+            strokeColor: activeColor,
             strokeOpacity: 0.8,
             strokeWeight: 4,
             icons: [{
@@ -203,7 +205,7 @@ const DeliveryTrackingMap = ({
                 path: 'M 0,-1 0,1',
                 strokeOpacity: 1,
                 strokeWeight: 2,
-                strokeColor: '#10b981',
+                strokeColor: activeColor,
                 scale: 4
               },
               offset: '0%',
@@ -286,18 +288,20 @@ const DeliveryTrackingMap = ({
             }
           }
           
-          // Create dashed polyline overlay for better visibility
-          if (result.routes && result.routes[0] && result.routes[0].overview_path && !isCustomerLegRef.current) {
+          // Create dashed polyline overlay for better visibility (both pickup and customer legs)
+          if (result.routes && result.routes[0] && result.routes[0].overview_path) {
             // Remove existing custom polyline if any
             if (routePolylineRef.current) {
               routePolylineRef.current.setMap(null);
             }
+
+            const activeColor = isCustomerLegRef.current ? '#2563eb' : '#10b981';
             
             // Create dashed polyline
             routePolylineRef.current = new window.google.maps.Polyline({
               path: result.routes[0].overview_path,
               geodesic: true,
-              strokeColor: '#10b981',
+              strokeColor: activeColor,
               strokeOpacity: 0.8,
               strokeWeight: 4,
               icons: [{
@@ -305,7 +309,7 @@ const DeliveryTrackingMap = ({
                   path: 'M 0,-1 0,1',
                   strokeOpacity: 1,
                   strokeWeight: 2,
-                  strokeColor: '#10b981',
+                  strokeColor: activeColor,
                   scale: 4
                 },
                 offset: '0%',
@@ -368,10 +372,14 @@ const DeliveryTrackingMap = ({
     const status = order?.deliveryState?.status || 'pending';
     const orderStatus = order?.status || '';
 
-    const hasRiderLocation =
-      !!deliveryBoyLocation &&
-      typeof deliveryBoyLocation.lat === 'number' &&
-      typeof deliveryBoyLocation.lng === 'number';
+    const liveRiderLocation = (
+      (deliveryBoyLocation && typeof deliveryBoyLocation.lat === 'number' && typeof deliveryBoyLocation.lng === 'number')
+        ? deliveryBoyLocation
+        : (currentLocation && typeof currentLocation.lat === 'number' && typeof currentLocation.lng === 'number')
+          ? currentLocation
+          : null
+    );
+    const hasRiderLocation = Boolean(liveRiderLocation);
     const hasRestaurantCoords =
       !!restaurantCoords &&
       typeof restaurantCoords.lat === 'number' &&
@@ -395,7 +403,7 @@ const DeliveryTrackingMap = ({
     // so the user always sees where the driver is relative to their location.
     if (hasRiderLocation) {
       return {
-        start: { lat: deliveryBoyLocation.lat, lng: deliveryBoyLocation.lng },
+        start: { lat: liveRiderLocation.lat, lng: liveRiderLocation.lng },
         end: customerCoords
       };
     }
@@ -425,7 +433,7 @@ const DeliveryTrackingMap = ({
 
     // Fallback: no route (prevents incorrect line from default/invalid store coords)
     return { start: null, end: null };
-  }, [order, deliveryBoyLocation, restaurantCoords, customerCoords, hasDeliveryPartner]);
+  }, [order, deliveryBoyLocation, currentLocation, restaurantCoords, customerCoords, hasDeliveryPartner]);
 
   // Move bike smoothly with rotation
   const moveBikeSmoothly = useCallback((lat, lng, heading) => {
@@ -1225,6 +1233,8 @@ const DeliveryTrackingMap = ({
   const deliveryBoyLat = deliveryBoyLocation?.lat;
   const deliveryBoyLng = deliveryBoyLocation?.lng;
   const deliveryBoyHeading = deliveryBoyLocation?.heading;
+  const currentLat = currentLocation?.lat;
+  const currentLng = currentLocation?.lng;
 
   // Update route when delivery boy location or order phase changes
   useEffect(() => {
@@ -1322,7 +1332,7 @@ const DeliveryTrackingMap = ({
         }
       }
     }
-  }, [isMapLoaded, deliveryBoyLat, deliveryBoyLng, order?.deliveryState?.currentPhase, order?.deliveryState?.status, restaurantLat, restaurantLng, customerCoords?.lat, customerCoords?.lng, moveBikeSmoothly, getRouteToShow, drawRoute, hasDeliveryPartner]);
+  }, [isMapLoaded, deliveryBoyLat, deliveryBoyLng, currentLat, currentLng, order?.deliveryState?.currentPhase, order?.deliveryState?.status, restaurantLat, restaurantLng, customerCoords?.lat, customerCoords?.lng, moveBikeSmoothly, getRouteToShow, drawRoute, hasDeliveryPartner]);
 
   // Update bike when REAL location changes (from socket)
   useEffect(() => {
@@ -1525,16 +1535,16 @@ const DeliveryTrackingMap = ({
     }
   }, [isMapLoaded, userLiveCoords, userLocationAccuracy]);
 
-  // Emit live rider-to-user distance for OrderTracking UI.
-  // Prefer device live location when available; fallback to order address.
+  // Emit live rider-to-destination distance for OrderTracking UI.
+  // Destination must always be the order delivery address.
   useEffect(() => {
     if (!window?.dispatchEvent) return;
     if (!hasLiveSocketLocation) return;
 
     const riderLat = deliveryBoyLocation?.lat ?? currentLocation?.lat;
     const riderLng = deliveryBoyLocation?.lng ?? currentLocation?.lng;
-    const targetLat = userLiveCoords?.lat ?? customerCoords?.lat;
-    const targetLng = userLiveCoords?.lng ?? customerCoords?.lng;
+    const targetLat = customerCoords?.lat;
+    const targetLng = customerCoords?.lng;
 
     if (
       typeof riderLat !== 'number' || Number.isNaN(riderLat) ||
@@ -1553,7 +1563,7 @@ const DeliveryTrackingMap = ({
         orderId,
         distanceMeters,
         distanceKm,
-        source: userLiveCoords?.lat != null && userLiveCoords?.lng != null ? 'live-user' : 'order-address'
+        source: 'order-address'
       }
     }));
   }, [
@@ -1563,8 +1573,6 @@ const DeliveryTrackingMap = ({
     deliveryBoyLocation?.lng,
     currentLocation?.lat,
     currentLocation?.lng,
-    userLiveCoords?.lat,
-    userLiveCoords?.lng,
     customerCoords?.lat,
     customerCoords?.lng
   ]);

@@ -9,6 +9,7 @@ import DeliveryBoyCommission from '../../admin/models/DeliveryBoyCommission.js';
 import RestaurantWallet from '../../restaurant/models/RestaurantWallet.js';
 import RestaurantCommission from '../../admin/models/RestaurantCommission.js';
 import AdminCommission from '../../admin/models/AdminCommission.js';
+import BusinessSettings from '../../admin/models/BusinessSettings.js';
 import { calculateRoute } from '../../order/services/routeCalculationService.js';
 import mongoose from 'mongoose';
 import winston from 'winston';
@@ -496,6 +497,78 @@ export const acceptOrder = asyncHandler(async (req, res) => {
     if (!validStatuses.includes(order.status)) {
       console.warn(`⚠️ Order ${order.orderId} cannot be accepted. Current status: ${order.status}, Valid statuses: ${validStatuses.join(', ')}`);
       return errorResponse(res, 400, `Order cannot be accepted. Current status: ${order.status}. Order must be in 'preparing' or 'ready' status.`);
+    }
+
+    // Enforce minimum pocket balance threshold before accepting any order.
+    // Rule: delivery partner must keep pocket balance strictly greater than threshold.
+    const wallet = await DeliveryWallet.findOrCreateByDeliveryId(delivery._id);
+    let orderAcceptanceMinBalance = 750;
+    try {
+      const settings = await BusinessSettings.getSettings();
+      const configuredLimit = Number(settings?.deliveryCashLimit);
+      if (Number.isFinite(configuredLimit) && configuredLimit > 0) {
+        orderAcceptanceMinBalance = configuredLimit;
+      }
+    } catch (_) {
+      orderAcceptanceMinBalance = 750;
+    }
+    const currentPocketBalance = Math.max(0, Number(wallet.totalBalance) || 0);
+    if (currentPocketBalance <= orderAcceptanceMinBalance) {
+      return errorResponse(
+        res,
+        400,
+        `Insufficient pocket balance. Keep balance above ₹${orderAcceptanceMinBalance.toFixed(2)} to receive orders.`,
+        {
+          pocketBalance: currentPocketBalance,
+          requiredAbove: orderAcceptanceMinBalance
+        }
+      );
+    }
+
+    // Enforce admin-configured COD cash limit before accepting a COD order.
+    // If current cash in hand + this COD order amount exceeds limit, block acceptance.
+    let paymentMethodForLimit = (order.payment?.method || '').toString().toLowerCase();
+    if (paymentMethodForLimit !== 'cash' && paymentMethodForLimit !== 'cod') {
+      try {
+        const paymentRecord = await Payment.findOne({ orderId: order._id }).select('method').lean();
+        paymentMethodForLimit = (paymentRecord?.method || paymentMethodForLimit || '').toString().toLowerCase();
+      } catch (_) {
+        // Keep fallback method from order payload
+      }
+    }
+
+    const isCashOrder = paymentMethodForLimit === 'cash' || paymentMethodForLimit === 'cod' || paymentMethodForLimit === 'cash on delivery';
+    if (isCashOrder) {
+      let totalCashLimit = 750;
+      try {
+        const settings = await BusinessSettings.getSettings();
+        const configuredLimit = Number(settings?.deliveryCashLimit);
+        if (Number.isFinite(configuredLimit) && configuredLimit >= 0) {
+          totalCashLimit = configuredLimit;
+        }
+      } catch (_) {
+        totalCashLimit = 750;
+      }
+
+      const cashInHand = Math.max(0, Number(wallet.cashInHand) || 0);
+      const orderTotal = Math.max(0, Number(order?.pricing?.total) || 0);
+      const projectedCashInHand = cashInHand + orderTotal;
+
+      if (projectedCashInHand > totalCashLimit) {
+        const availableCashLimit = Math.max(0, totalCashLimit - cashInHand);
+        return errorResponse(
+          res,
+          400,
+          `COD limit exceeded. Available cash limit is ₹${availableCashLimit.toFixed(2)}. Please settle cash before accepting this COD order.`,
+          {
+            cashInHand,
+            totalCashLimit,
+            availableCashLimit,
+            orderTotal,
+            projectedCashInHand
+          }
+        );
+      }
     }
 
     // Get restaurant location

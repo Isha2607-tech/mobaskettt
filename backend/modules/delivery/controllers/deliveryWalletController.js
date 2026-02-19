@@ -49,9 +49,10 @@ export const getWallet = asyncHandler(async (req, res) => {
       .filter(t => t.type === 'withdrawal' && t.status === 'Pending')
       .reduce((sum, t) => sum + t.amount, 0);
 
-    // Global cash limit and withdrawal limit (same for all delivery partners)
-    let totalCashLimit = 0;
+    // Global cash limit and withdrawal settings (same for all delivery partners)
+    let totalCashLimit = 750;
     let withdrawalLimit = 100;
+    let minimumWalletBalance = 0;
     try {
       const settings = await BusinessSettings.getSettings();
       const configured = Number(settings?.deliveryCashLimit);
@@ -62,8 +63,12 @@ export const getWallet = asyncHandler(async (req, res) => {
       if (Number.isFinite(wl) && wl >= 0) {
         withdrawalLimit = wl;
       }
+      const mwb = Number(settings?.deliveryMinimumWalletBalance);
+      if (Number.isFinite(mwb) && mwb >= 0) {
+        minimumWalletBalance = mwb;
+      }
     } catch (e) {
-      totalCashLimit = 0;
+      totalCashLimit = 750;
     }
 
     // ANYHOW FIX (end-to-end): compute COD cash collected from Orders so "Cash in hand" shows real amount.
@@ -173,6 +178,7 @@ export const getWallet = asyncHandler(async (req, res) => {
       totalCashLimit: totalCashLimit,
       availableCashLimit: Math.max(0, totalCashLimit - cashInHandForLimit),
       deliveryWithdrawalLimit: withdrawalLimit,
+      deliveryMinimumWalletBalance: minimumWalletBalance,
       // Pocket balance = total balance (includes bonus, earnings, etc.)
       pocketBalance: wallet.totalBalance || 0,
       pendingWithdrawals: pendingWithdrawals,
@@ -322,12 +328,15 @@ export const createWithdrawalRequest = asyncHandler(async (req, res) => {
     // Find or create wallet
     let wallet = await DeliveryWallet.findOrCreateByDeliveryId(delivery._id);
 
-    // Check minimum withdrawal amount (from BusinessSettings)
+    // Check withdrawal settings from BusinessSettings
     let minWithdrawalAmount = 100;
+    let minimumWalletBalance = 0;
     try {
       const settings = await BusinessSettings.getSettings();
       const wl = Number(settings?.deliveryWithdrawalLimit);
       if (Number.isFinite(wl) && wl >= 0) minWithdrawalAmount = wl;
+      const mwb = Number(settings?.deliveryMinimumWalletBalance);
+      if (Number.isFinite(mwb) && mwb >= 0) minimumWalletBalance = mwb;
     } catch (e) { /* keep default */ }
     if (amount < minWithdrawalAmount) {
       return errorResponse(res, 400, `Minimum withdrawal amount is ₹${minWithdrawalAmount}`);
@@ -338,7 +347,15 @@ export const createWithdrawalRequest = asyncHandler(async (req, res) => {
     if (amount > availableForWithdrawal) {
       return errorResponse(res, 400, `Insufficient balance. Available balance: ₹${availableForWithdrawal.toFixed(2)}`);
     }
-    // Withdrawal allowed only when withdrawable >= limit (enforced via min amount check above)
+    const maxAllowedAfterMinimumBalance = Math.max(0, availableForWithdrawal - minimumWalletBalance);
+    if (amount > maxAllowedAfterMinimumBalance) {
+      return errorResponse(
+        res,
+        400,
+        `Cannot withdraw below minimum wallet balance of ₹${minimumWalletBalance.toFixed(2)}. Max withdrawable is ₹${maxAllowedAfterMinimumBalance.toFixed(2)}`
+      );
+    }
+    // Withdrawal allowed only when withdrawable >= limit and minimum balance must be retained.
 
     // Create withdrawal transaction (Pending)
     wallet.addTransaction({
@@ -406,7 +423,7 @@ export const createWithdrawalRequest = asyncHandler(async (req, res) => {
       wallet: {
         totalBalance: wallet.totalBalance,
         cashInHand: wallet.cashInHand,
-        pocketBalance: wallet.totalBalance - wallet.cashInHand
+        pocketBalance: wallet.totalBalance
       }
     });
   } catch (error) {
@@ -845,10 +862,10 @@ export const verifyDepositPayment = asyncHandler(async (req, res) => {
   wallet.markModified('transactions');
   await wallet.save();
 
-  let limit = 0;
+  let limit = 750;
   try {
     const settings = await BusinessSettings.getSettings();
-    limit = Number(settings?.deliveryCashLimit) || 0;
+    limit = Number(settings?.deliveryCashLimit) || 750;
   } catch (_) {}
   const cashInHandNow = Math.max(0, Number(wallet.cashInHand) || 0);
   const availableCashLimit = Math.max(0, limit - cashInHandNow);

@@ -6,7 +6,10 @@ export default function AvailableCashLimit({ onClose, walletData = {} }) {
   const cashInHand = Number(walletData.cashInHand) || 0
   const deductions = Number(walletData.deductions) || 0
   const pocketWithdrawals = Number(walletData.pocketWithdrawals) || 0
-  const availableCashLimit = Math.max(0, totalCashLimit - cashInHand - deductions)
+  const availableFromApi = Number(walletData.availableCashLimit)
+  const availableCashLimit = Number.isFinite(availableFromApi) && availableFromApi >= 0
+    ? availableFromApi
+    : Math.max(0, totalCashLimit - cashInHand - deductions)
 
   return (
     <div className="min-h-screen bg-white text-black flex flex-col">
@@ -30,6 +33,12 @@ export default function AvailableCashLimit({ onClose, walletData = {} }) {
           <div className="text-sm font-medium">Available cash limit</div>
           <div className="text-sm font-semibold">{formatCurrency(availableCashLimit)}</div>
         </div>
+
+        {cashInHand > totalCashLimit && (
+          <div className="py-3 text-xs text-amber-700">
+            Cash in hand is above total limit. Deposit to increase available limit.
+          </div>
+        )}
       </div>
 
       <div onClick={onClose} className="mt-6">

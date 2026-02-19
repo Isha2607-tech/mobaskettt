@@ -30,7 +30,6 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { useOrders } from "../../context/OrdersContext"
 import { useProfile } from "../../context/ProfileContext"
-import { useLocation as useUserLocation } from "../../hooks/useLocation"
 import DeliveryTrackingMap from "../../components/DeliveryTrackingMap"
 import { orderAPI, restaurantAPI } from "@/lib/api"
 import { initRazorpayPayment } from "@/lib/utils/razorpay"
@@ -73,8 +72,6 @@ const AnimatedCheckmark = ({ delay = 0 }) => (
 
 // Real Delivery Map Component with User Live Location
 const DeliveryMap = ({ orderId, order, isVisible }) => {
-  const { location: userLocation } = useUserLocation() // Get user's live location
-  
   // Extract coordinates from order payload
   const getRestaurantCoords = () => {
     console.log('🔍 Getting restaurant coordinates from order:', {
@@ -156,20 +153,8 @@ const DeliveryMap = ({ orderId, order, isVisible }) => {
     return null;
   };
 
-  // Get user's live location coordinates
-  const getUserLiveCoords = () => {
-    if (userLocation?.latitude && userLocation?.longitude) {
-      return {
-        lat: userLocation.latitude,
-        lng: userLocation.longitude
-      };
-    }
-    return null;
-  };
-
   const restaurantCoords = getRestaurantCoords();
   const customerCoords = getCustomerCoords();
-  const userLiveCoords = getUserLiveCoords();
 
   // Delivery boy data
   const deliveryBoyData = order?.deliveryPartner ? {
@@ -199,8 +184,8 @@ const DeliveryMap = ({ orderId, order, isVisible }) => {
         orderId={orderId}
         restaurantCoords={restaurantCoords}
         customerCoords={customerCoords}
-        userLiveCoords={userLiveCoords}
-        userLocationAccuracy={userLocation?.accuracy}
+        userLiveCoords={null}
+        userLocationAccuracy={null}
         deliveryBoyData={deliveryBoyData}
         order={order}
       />

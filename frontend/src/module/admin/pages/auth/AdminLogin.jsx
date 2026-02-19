@@ -15,7 +15,6 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Eye, EyeOff } from "lucide-react"
-import appzetoLogo from "@/assets/appzetologo.png"
 
 export default function AdminLogin() {
   const navigate = useNavigate()
@@ -24,7 +23,7 @@ export default function AdminLogin() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
-  const [logoUrl, setLogoUrl] = useState(appzetoLogo)
+  const [logoUrl, setLogoUrl] = useState("")
 
   // Redirect to admin dashboard if already authenticated
   useEffect(() => {
@@ -34,7 +33,7 @@ export default function AdminLogin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Fetch business settings logo on mount
+  // Fetch dynamic business logo (no static fallback logo)
   useEffect(() => {
     const fetchLogo = async () => {
       try {
@@ -42,11 +41,11 @@ export default function AdminLogin() {
         if (settings?.logo?.url) {
           setLogoUrl(settings.logo.url)
         }
-      } catch (error) {
-        // Silently fail and use default logo
-        console.warn("Failed to load business settings logo:", error)
+      } catch {
+        // Keep logo hidden if settings are unavailable
       }
     }
+
     fetchLogo()
   }, [])
 
@@ -99,20 +98,16 @@ export default function AdminLogin() {
         <Card className="w-full max-w-lg bg-white/90 backdrop-blur border-neutral-200 shadow-2xl">
           <CardHeader className="pb-4">
             <div className="flex w-full items-center gap-4 sm:gap-5">
-              <div className="flex h-14 w-28 shrink-0 items-center justify-center rounded-xl bg-gray-900/5 ring-1 ring-neutral-200">
-                <img
-                  src={logoUrl}
-                  alt="Logo"
-                  className="h-10 w-24 object-contain"
-                  loading="lazy"
-                  onError={(e) => {
-                    // Fallback to default logo if business logo fails to load
-                    if (e.target.src !== appzetoLogo) {
-                      e.target.src = appzetoLogo
-                    }
-                  }}
-                />
-              </div>
+              {logoUrl ? (
+                <div className="flex h-14 w-28 shrink-0 items-center justify-center rounded-xl bg-gray-900/5 ring-1 ring-neutral-200">
+                  <img
+                    src={logoUrl}
+                    alt="MoBasket Logo"
+                    className="h-10 w-24 object-contain"
+                    loading="lazy"
+                  />
+                </div>
+              ) : null}
               <div className="flex flex-col gap-1">
                 <CardTitle className="text-3xl leading-tight text-gray-900">Admin Login</CardTitle>
                 <CardDescription className="text-base text-gray-600">
