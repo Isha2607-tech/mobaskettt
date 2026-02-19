@@ -1869,6 +1869,15 @@ export default function OrdersMain() {
                 <span>Payment: <span className="font-medium text-black">Paid online</span></span>
               </div>
 
+              {String(selectedOrder.status || "").toLowerCase() === "preparing" && !selectedOrder.deliveryPartnerId && (
+                <div className="mb-3">
+                  <ResendNotificationButton
+                    orderId={selectedOrder.orderId}
+                    mongoId={selectedOrder.mongoId}
+                  />
+                </div>
+              )}
+
               <button
                 className="w-full bg-black text-white py-2.5 rounded-xl text-sm font-medium"
                 onClick={() => setIsSheetOpen(false)}
@@ -1901,13 +1910,7 @@ function ResendNotificationButton({ orderId, mongoId, onSuccess }) {
       
       if (response.data?.success) {
         toast.success(`Notification sent to ${response.data.data?.notifiedCount || 0} delivery partners`);
-        // Refresh orders if onSuccess callback is provided
-        if (onSuccess) {
-          // Trigger a refresh by calling onSuccess with a special flag
-          setTimeout(() => {
-            window.location.reload(); // Simple refresh for now
-          }, 1000);
-        }
+        onSuccess?.(response.data?.data);
       } else {
         toast.error(response.data?.message || 'Failed to send notification');
       }
@@ -1984,6 +1987,7 @@ function OrderCard({
         onClick={() =>
           onSelect?.({
             orderId,
+            mongoId,
             status,
             customerName,
             type,
@@ -1991,6 +1995,7 @@ function OrderCard({
             timePlaced,
             eta,
             itemsSummary,
+            deliveryPartnerId,
           })
         }
         className="w-full text-left flex gap-3 items-stretch cursor-pointer"
@@ -2074,7 +2079,7 @@ function OrderCard({
                   {deliveryPartnerId ? 'Assigned' : 'Not Assigned'}
                 </span>
                 {!deliveryPartnerId && (
-                  <ResendNotificationButton orderId={orderId} mongoId={mongoId} onSuccess={onSelect} />
+                  <ResendNotificationButton orderId={orderId} mongoId={mongoId} />
                 )}
               </div>
             )}

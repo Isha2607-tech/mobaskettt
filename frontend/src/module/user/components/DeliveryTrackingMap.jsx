@@ -19,6 +19,19 @@ function calculateHaversineDistance(lat1, lng1, lat2, lng2) {
   return R * c;
 }
 
+const createUserPinIcon = (googleMaps) => ({
+  url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="36" height="46" viewBox="0 0 36 46">
+      <path d="M18 0 C8.06 0 0 8.06 0 18 C0 30.5 18 46 18 46 C18 46 36 30.5 36 18 C36 8.06 27.94 0 18 0 Z" fill="#2563eb" stroke="#ffffff" stroke-width="2"/>
+      <circle cx="18" cy="14" r="4.2" fill="white"/>
+      <path d="M10.5 24 C11.8 20.6 14.6 18.8 18 18.8 C21.4 18.8 24.2 20.6 25.5 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+    </svg>
+  `),
+  scaledSize: new googleMaps.Size(36, 46),
+  anchor: new googleMaps.Point(18, 46),
+  origin: new googleMaps.Point(0, 0)
+});
+
 const DeliveryTrackingMap = ({ 
   orderId, 
   restaurantCoords, 
@@ -338,37 +351,38 @@ const DeliveryTrackingMap = ({
   // Check if delivery partner is assigned (memoized to avoid dependency issues)
   // MUST be defined BEFORE any useEffect that uses it
   const hasDeliveryPartner = useMemo(() => {
-    const deliveryStateStatus = order?.deliveryState?.status;
-    const currentPhase = order?.deliveryState?.currentPhase;
-    
-    // Check if delivery partner has accepted (key condition)
-    const hasAccepted = deliveryStateStatus === 'accepted';
-    const hasPartner = !!(order?.deliveryPartnerId || 
-              order?.deliveryPartner || 
-              order?.assignmentInfo?.deliveryPartnerId ||
-              hasAccepted ||
-              (deliveryStateStatus && deliveryStateStatus !== 'pending') ||
-              (currentPhase && currentPhase !== 'assigned' && currentPhase !== 'pending') ||
-              (currentPhase === 'en_route_to_pickup') ||
-              (currentPhase === 'at_pickup') ||
-              (currentPhase === 'en_route_to_delivery'));
-    
-    console.log('🔍 hasDeliveryPartner check:', {
-      hasPartner,
-      hasAccepted,
-      deliveryPartnerId: order?.deliveryPartnerId,
-      deliveryPartner: !!order?.deliveryPartner,
-      assignmentInfo: order?.assignmentInfo,
-      deliveryStateStatus,
-      deliveryStatePhase: currentPhase
-    });
-    
+    const deliveryStateStatus = String(order?.deliveryState?.status || '').toLowerCase();
+    const currentPhase = String(order?.deliveryState?.currentPhase || '').toLowerCase();
+
+    const hasPartnerId = Boolean(
+      order?.deliveryPartnerId ||
+      order?.deliveryPartner?._id ||
+      order?.assignmentInfo?.deliveryPartnerId
+    );
+
+    const assignmentStatuses = new Set([
+      'accepted',
+      'reached_pickup',
+      'en_route_to_delivery',
+    ]);
+
+    const assignmentPhases = new Set([
+      'en_route_to_pickup',
+      'at_pickup',
+      'en_route_to_delivery',
+      'at_delivery',
+    ]);
+
+    const hasAssignedStatus = assignmentStatuses.has(deliveryStateStatus);
+    const hasAssignedPhase = assignmentPhases.has(currentPhase);
+    const hasPartner = hasPartnerId || hasAssignedStatus || hasAssignedPhase;
+
     return hasPartner;
-  }, [order?.deliveryPartnerId, order?.deliveryPartner, order?.assignmentInfo?.deliveryPartnerId, order?.deliveryState?.status, order?.deliveryState?.currentPhase]);
+  }, [order?.deliveryPartnerId, order?.deliveryPartner?._id, order?.assignmentInfo?.deliveryPartnerId, order?.deliveryState?.status, order?.deliveryState?.currentPhase]);
 
   // Determine which route to show based on order phase
   const getRouteToShow = useCallback(() => {
-    const currentPhase = order?.deliveryState?.currentPhase || 'assigned';
+    const currentPhase = order?.deliveryState?.currentPhase || '';
     const status = order?.deliveryState?.status || 'pending';
     const orderStatus = order?.status || '';
 
@@ -717,23 +731,23 @@ const DeliveryTrackingMap = ({
     });
 
     socketRef.current.on('connect', () => {
-      console.log('✅ Socket connected for order:', orderId);
+      console.log('Socket connected for order:', orderId);
       orderAliases.forEach((alias) => {
         socketRef.current.emit('join-order-tracking', alias);
-        socketRef.current.emit('request-current-location', alias);
+        if (hasDeliveryPartner) {
+          socketRef.current.emit('request-current-location', alias);
+        }
       });
-      console.log('📡 Requested current location for order aliases:', orderAliases);
-      
-      // Also request location updates periodically
+
+      // Only request rider location after assignment.
       const locationRequestInterval = setInterval(() => {
-        if (socketRef.current && socketRef.current.connected) {
+        if (socketRef.current && socketRef.current.connected && hasDeliveryPartner) {
           orderAliases.forEach((alias) => {
             socketRef.current.emit('request-current-location', alias);
           });
         }
-      }, 5000); // Request every 5 seconds
-      
-      // Store interval ID for cleanup
+      }, 5000);
+
       socketRef.current._locationRequestInterval = locationRequestInterval;
     });
 
@@ -861,7 +875,7 @@ const DeliveryTrackingMap = ({
         socketRef.current.disconnect();
       }
     };
-  }, [orderId, order?.orderId, order?._id, order?.id, backendUrl, moveBikeSmoothly]);
+  }, [orderId, order?.orderId, order?._id, order?.id, backendUrl, moveBikeSmoothly, hasDeliveryPartner]);
 
   // Initialize Google Map (only once - prevent re-initialization)
   useEffect(() => {
@@ -1127,18 +1141,10 @@ const DeliveryTrackingMap = ({
 
         // Add user's live location marker (blue dot) and radius circle if available
         if (userLiveCoords && userLiveCoords.lat && userLiveCoords.lng) {
-          // Create blue dot marker for user's live location
           userLocationMarkerRef.current = new window.google.maps.Marker({
             position: { lat: userLiveCoords.lat, lng: userLiveCoords.lng },
             map: mapInstance.current,
-            icon: {
-              path: window.google.maps.SymbolPath.CIRCLE,
-              scale: 12,
-              fillColor: '#4285F4', // Google blue
-              fillOpacity: 1,
-              strokeColor: '#FFFFFF',
-              strokeWeight: 3
-            },
+            icon: createUserPinIcon(window.google.maps),
             zIndex: window.google.maps.Marker.MAX_ZINDEX + 2,
             optimized: false,
             title: "Your live location"
@@ -1208,7 +1214,7 @@ const DeliveryTrackingMap = ({
           if (hasDeliveryPartnerOnLoad && !bikeMarkerRef.current) {
             console.log('🚴 Map loaded - Delivery partner detected, waiting for REAL location from socket...');
             // Request current location immediately
-            if (socketRef.current && socketRef.current.connected) {
+            if (socketRef.current && socketRef.current.connected && hasDeliveryPartner) {
               socketRef.current.emit('request-current-location', orderId);
               console.log('📡 Requested current location immediately on map load');
             }
@@ -1252,7 +1258,7 @@ const DeliveryTrackingMap = ({
       // DO NOT show bike at restaurant - wait for real location from socket
       // Bike will be created when real location is received via socket
       console.log('⏳ Waiting for real location from socket - NOT showing at restaurant');
-      if (socketRef.current && socketRef.current.connected) {
+      if (socketRef.current && socketRef.current.connected && hasDeliveryPartner) {
         socketRef.current.emit('request-current-location', orderId);
       }
     }
@@ -1316,7 +1322,7 @@ const DeliveryTrackingMap = ({
           // Only use route.start if we don't have delivery boy location
           // But request real location from socket first
           console.log('⏳ Using route start, but requesting real location from socket...');
-          if (socketRef.current && socketRef.current.connected) {
+          if (socketRef.current && socketRef.current.connected && hasDeliveryPartner) {
             socketRef.current.emit('request-current-location', orderId);
           }
           console.log('🚴 Creating bike at route start (temporary):', route.start);
@@ -1325,7 +1331,7 @@ const DeliveryTrackingMap = ({
         // DO NOT use restaurant or customer location - wait for real location
         else {
           console.log('⏳⏳⏳ No real location yet - requesting from socket and waiting...');
-          if (socketRef.current && socketRef.current.connected) {
+          if (socketRef.current && socketRef.current.connected && hasDeliveryPartner) {
             socketRef.current.emit('request-current-location', orderId);
           }
           console.log('✅ Bike will be created when real location is received from socket');
@@ -1358,27 +1364,13 @@ const DeliveryTrackingMap = ({
       return;
     }
     
-    // Also check phase directly as fallback
     const currentPhase = order?.deliveryState?.currentPhase;
     const deliveryStateStatus = order?.deliveryState?.status;
-    
-    // Key check: If status is 'accepted', definitely show bike
-    const isAccepted = deliveryStateStatus === 'accepted';
-    const hasPartnerByPhase = isAccepted ||
-                              currentPhase === 'en_route_to_pickup' || 
-                              currentPhase === 'at_pickup' || 
-                              currentPhase === 'en_route_to_delivery' ||
-                              deliveryStateStatus === 'reached_pickup' ||
-                              deliveryStateStatus === 'order_confirmed' ||
-                              deliveryStateStatus === 'en_route_to_delivery';
-    
-    const shouldShowBike = hasDeliveryPartner || hasPartnerByPhase;
+    const shouldShowBike = hasDeliveryPartner;
     
     console.log('🚴🚴🚴 BIKE VISIBILITY CHECK:', {
       shouldShowBike,
-      isAccepted,
       hasDeliveryPartner,
-      hasPartnerByPhase,
       deliveryStateStatus,
       currentPhase,
       hasBikeMarker: !!bikeMarkerRef.current
@@ -1386,7 +1378,6 @@ const DeliveryTrackingMap = ({
     
     console.log('🔍 Checking delivery partner assignment:', {
       hasDeliveryPartner,
-      hasPartnerByPhase,
       shouldShowBike,
       currentPhase,
       deliveryStateStatus,
@@ -1416,18 +1407,14 @@ const DeliveryTrackingMap = ({
         console.log('⏳⏳⏳ WAITING for REAL location from socket - NOT showing at restaurant');
         console.log('📡 Requesting current location from backend immediately...');
         // Request location immediately
-        if (socketRef.current && socketRef.current.connected) {
+        if (socketRef.current && socketRef.current.connected && hasDeliveryPartner) {
           socketRef.current.emit('request-current-location', orderId);
         }
         // DO NOT show at restaurant - only wait for real location
         // Real location will come via socket and bike will be created then
         console.log('✅ Bike will be created when real location is received from socket');
       } 
-      // Priority 3: Use customer location as last resort
-      else if (customerCoords && customerCoords.lat && customerCoords.lng) {
-        console.log('📍 Creating bike at customer location (fallback):', customerCoords);
-        moveBikeSmoothly(customerCoords.lat, customerCoords.lng, 0);
-      } else {
+      else {
         console.error('❌ Cannot create bike marker - no coordinates available!', {
           restaurantCoords,
           customerCoords,
@@ -1467,7 +1454,7 @@ const DeliveryTrackingMap = ({
           console.warn('⚠️ Bike marker not created yet - waiting for real delivery boy location from socket');
           // Don't create fallback at restaurant - wait for real location
           // Real location will come via socket and bike will be created in moveBikeSmoothly
-          if (socketRef.current && socketRef.current.connected) {
+          if (socketRef.current && socketRef.current.connected && hasDeliveryPartner) {
             socketRef.current.emit('request-current-location', orderId);
             console.log('📡 Requested current location from socket for bike marker');
           }
@@ -1501,14 +1488,7 @@ const DeliveryTrackingMap = ({
         userLocationMarkerRef.current = new window.google.maps.Marker({
           position: userPos,
           map: mapInstance.current,
-          icon: {
-            path: window.google.maps.SymbolPath.CIRCLE,
-            scale: 12,
-            fillColor: '#4285F4',
-            fillOpacity: 1,
-            strokeColor: '#FFFFFF',
-            strokeWeight: 3
-          },
+          icon: createUserPinIcon(window.google.maps),
           zIndex: window.google.maps.Marker.MAX_ZINDEX + 2,
           optimized: false,
           title: "Your live location"
@@ -1637,3 +1617,4 @@ const DeliveryTrackingMap = ({
 };
 
 export default DeliveryTrackingMap;
+

@@ -33,6 +33,7 @@ import { useProfile } from "../../context/ProfileContext"
 import DeliveryTrackingMap from "../../components/DeliveryTrackingMap"
 import { orderAPI, restaurantAPI } from "@/lib/api"
 import { initRazorpayPayment } from "@/lib/utils/razorpay"
+import { saveOrderEditSession } from "../../utils/orderEditSession"
 import circleIcon from "@/assets/circleicon.png"
 
 // Animated checkmark component
@@ -71,7 +72,7 @@ const AnimatedCheckmark = ({ delay = 0 }) => (
 )
 
 // Real Delivery Map Component with User Live Location
-const DeliveryMap = ({ orderId, order, isVisible }) => {
+const DeliveryMap = ({ orderId, order, isVisible, userLiveCoords = null, userLocationAccuracy = null }) => {
   // Extract coordinates from order payload
   const getRestaurantCoords = () => {
     console.log('🔍 Getting restaurant coordinates from order:', {
@@ -132,6 +133,25 @@ const DeliveryMap = ({ orderId, order, isVisible }) => {
       };
     }
     if (
+      order?.address?.location?.coordinates &&
+      Array.isArray(order.address.location.coordinates) &&
+      order.address.location.coordinates.length >= 2
+    ) {
+      return {
+        lat: order.address.location.coordinates[1],
+        lng: order.address.location.coordinates[0]
+      };
+    }
+    if (
+      typeof order?.address?.location?.latitude === "number" &&
+      typeof order?.address?.location?.longitude === "number"
+    ) {
+      return {
+        lat: order.address.location.latitude,
+        lng: order.address.location.longitude
+      };
+    }
+    if (
       typeof order?.address?.latitude === "number" &&
       typeof order?.address?.longitude === "number"
     ) {
@@ -184,8 +204,8 @@ const DeliveryMap = ({ orderId, order, isVisible }) => {
         orderId={orderId}
         restaurantCoords={restaurantCoords}
         customerCoords={customerCoords}
-        userLiveCoords={null}
-        userLocationAccuracy={null}
+        userLiveCoords={userLiveCoords}
+        userLocationAccuracy={userLocationAccuracy}
         deliveryBoyData={deliveryBoyData}
         order={order}
       />
@@ -258,6 +278,83 @@ const resolveRestaurantPhone = (apiOrder = {}) => {
 }
 
 const sanitizePhoneForTel = (phone = "") => String(phone).replace(/[^\d+]/g, "")
+const toSlug = (value = "") =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+
+const resolveTrackingRestaurantName = (rawOrder = null) => {
+  return (
+    rawOrder?.restaurant ||
+    rawOrder?.restaurantName ||
+    rawOrder?.restaurantId?.name ||
+    rawOrder?.restaurantInfo?.name ||
+    "Restaurant"
+  )
+}
+
+const resolveTrackingRestaurantPhone = (rawOrder = null) => {
+  return (
+    rawOrder?.restaurantPhone ||
+    rawOrder?.restaurantId?.phone ||
+    rawOrder?.restaurantId?.ownerPhone ||
+    rawOrder?.restaurantId?.primaryContactNumber ||
+    rawOrder?.restaurantInfo?.phone ||
+    ""
+  )
+}
+
+const resolveTrackingDeliveryAddress = (rawOrder = null, defaultAddress = null) => {
+  if (!rawOrder) return "Add delivery address"
+
+  if (
+    typeof rawOrder?.deliveryAddress === "string" &&
+    rawOrder.deliveryAddress.trim() &&
+    rawOrder.deliveryAddress !== "Select location"
+  ) {
+    return rawOrder.deliveryAddress
+  }
+
+  if (
+    typeof rawOrder?.address?.formattedAddress === "string" &&
+    rawOrder.address.formattedAddress.trim() &&
+    rawOrder.address.formattedAddress !== "Select location"
+  ) {
+    return rawOrder.address.formattedAddress
+  }
+
+  if (rawOrder?.address) {
+    const orderAddressParts = []
+    if (rawOrder.address.street) orderAddressParts.push(rawOrder.address.street)
+    if (rawOrder.address.additionalDetails) orderAddressParts.push(rawOrder.address.additionalDetails)
+    if (rawOrder.address.city) orderAddressParts.push(rawOrder.address.city)
+    if (rawOrder.address.state) orderAddressParts.push(rawOrder.address.state)
+    if (rawOrder.address.zipCode) orderAddressParts.push(rawOrder.address.zipCode)
+    if (orderAddressParts.length > 0) return orderAddressParts.join(", ")
+  }
+
+  if (
+    typeof defaultAddress?.formattedAddress === "string" &&
+    defaultAddress.formattedAddress.trim() &&
+    defaultAddress.formattedAddress !== "Select location"
+  ) {
+    return defaultAddress.formattedAddress
+  }
+
+  if (defaultAddress) {
+    const defaultAddressParts = []
+    if (defaultAddress.street) defaultAddressParts.push(defaultAddress.street)
+    if (defaultAddress.additionalDetails) defaultAddressParts.push(defaultAddress.additionalDetails)
+    if (defaultAddress.city) defaultAddressParts.push(defaultAddress.city)
+    if (defaultAddress.state) defaultAddressParts.push(defaultAddress.state)
+    if (defaultAddress.zipCode) defaultAddressParts.push(defaultAddress.zipCode)
+    if (defaultAddressParts.length > 0) return defaultAddressParts.join(", ")
+  }
+
+  return "Add delivery address"
+}
 
 export default function OrderTracking() {
   const { orderId } = useParams()
@@ -288,6 +385,9 @@ export default function OrderTracking() {
   const [loadingEditMenuItems, setLoadingEditMenuItems] = useState(false)
 
   const defaultAddress = getDefaultAddress()
+  const restaurantDisplayName = resolveTrackingRestaurantName(order)
+  const restaurantDisplayPhone = resolveTrackingRestaurantPhone(order)
+  const deliveryAddressDisplay = resolveTrackingDeliveryAddress(order, defaultAddress)
   const isMoGroceryOrder = (rawOrder = null) => {
     const restaurantPlatform = String(rawOrder?.restaurantId?.platform || rawOrder?.platform || "").toLowerCase()
     const restaurantLabel = String(rawOrder?.restaurantName || rawOrder?.restaurant || rawOrder?.restaurantId?.name || "").toLowerCase()
@@ -399,6 +499,41 @@ export default function OrderTracking() {
     )
   }, [order?.deliveryState?.currentPhase, order?.deliveryState?.status, order?.status, riderInfo])
   const riderDialNumber = sanitizePhoneForTel(riderInfo?.phone || "")
+
+  const userLiveCoords = useMemo(() => {
+    const toFinite = (value) => {
+      const parsed = Number(value)
+      return Number.isFinite(parsed) ? parsed : null
+    }
+
+    const fromGeoJson = (coordinates) => {
+      if (!Array.isArray(coordinates) || coordinates.length < 2) return null
+      const lng = toFinite(coordinates[0])
+      const lat = toFinite(coordinates[1])
+      if (lat == null || lng == null) return null
+      return { lat, lng }
+    }
+
+    const fromLatLng = (obj) => {
+      if (!obj || typeof obj !== "object") return null
+      const lat = toFinite(obj.lat ?? obj.latitude)
+      const lng = toFinite(obj.lng ?? obj.longitude)
+      if (lat == null || lng == null) return null
+      return { lat, lng }
+    }
+
+    return (
+      fromGeoJson(order?.address?.coordinates) ||
+      fromGeoJson(order?.address?.location?.coordinates) ||
+      fromLatLng(order?.address) ||
+      fromLatLng(order?.address?.location) ||
+      fromGeoJson(defaultAddress?.coordinates) ||
+      fromGeoJson(defaultAddress?.location?.coordinates) ||
+      fromLatLng(defaultAddress) ||
+      fromLatLng(defaultAddress?.location) ||
+      null
+    )
+  }, [order?.address, defaultAddress])
 
   const canModifyOrder = useMemo(() => {
     const status = String(order?.status || "").toLowerCase()
@@ -904,20 +1039,55 @@ export default function OrderTracking() {
       return
     }
 
-    const initialEditableItems = order.items.map((item, index) => ({
-      key: `${item.itemId || item.name}-${index}`,
-      itemId: item.itemId || null,
-      name: item.name,
-      quantity: Math.max(1, Number(item.quantity || 1)),
-      price: Number(item.price || 0),
-      image: item.image || "",
-      description: item.description || "",
-      isVeg: item.isVeg !== false
-    }))
+    const restaurantId = resolveOrderRestaurantId(order)
+    const restaurantSlug =
+      String(order?.restaurantId?.slug || order?.restaurantSlug || "").trim() ||
+      toSlug(order?.restaurant)
 
-    setEditableItems(initialEditableItems)
-    setShowEditDialog(true)
-    loadRestaurantItemsForEdit(order)
+    if (!restaurantSlug) {
+      toast.error("Restaurant menu is unavailable for this order.")
+      return
+    }
+
+    const initialEditableItems = order.items.map((item, index) => {
+      const resolvedItemId = String(item.itemId || item._id || `${item.name}-${index}`)
+      return {
+        key: `${resolvedItemId}-${index}`,
+        itemId: resolvedItemId,
+        name: item.name,
+        quantity: Math.max(1, Number(item.quantity || 1)),
+        price: Number(item.price || 0),
+        image: item.image || "",
+        description: item.description || "",
+        isVeg: item.isVeg !== false
+      }
+    })
+
+    const expiresAt = Date.now() + Math.max(0, Number(modificationWindowSeconds || 0)) * 1000
+    const session = saveOrderEditSession({
+      orderRouteId: String(orderId || ""),
+      orderMongoId: String(order?._id || order?.id || ""),
+      restaurantId: restaurantId ? String(restaurantId) : "",
+      restaurantSlug,
+      restaurantName: order?.restaurant || order?.restaurantId?.name || "",
+      expiresAt,
+      items: initialEditableItems.map((item) => ({
+        itemId: String(item.itemId || ""),
+        name: item.name,
+        quantity: Math.max(1, Number(item.quantity || 1)),
+        price: Number(item.price || 0),
+        image: item.image || "",
+        description: item.description || "",
+        isVeg: item.isVeg !== false
+      })),
+    })
+
+    navigate(`/restaurants/${restaurantSlug}`, {
+      state: {
+        fromOrderEdit: true,
+        orderEditSession: session,
+      },
+    })
   }
 
   function resolveOrderRestaurantId(rawOrder) {
@@ -1292,7 +1462,7 @@ export default function OrderTracking() {
         <div className="max-w-lg mx-auto text-center py-20">
           <h1 className="text-lg sm:text-xl md:text-2xl font-bold mb-4">Order Not Found</h1>
           <p className="text-gray-600 mb-6">{error || 'The order you\'re looking for doesn\'t exist.'}</p>
-          <Link to="/user/orders">
+          <Link to="/orders" replace>
             <Button>Back to Orders</Button>
           </Link>
         </div>
@@ -1419,7 +1589,7 @@ export default function OrderTracking() {
       >
         {/* Navigation bar */}
         <div className="flex items-center justify-between px-4 py-3">
-          <Link to="/user/orders">
+          <Link to="/orders" replace>
             <motion.button 
               className="w-10 h-10 flex items-center justify-center"
               whileTap={{ scale: 0.9 }}
@@ -1427,7 +1597,7 @@ export default function OrderTracking() {
               <ArrowLeft className="w-6 h-6" />
             </motion.button>
           </Link>
-          <h2 className="font-semibold text-lg">{order.restaurant}</h2>
+          <h2 className="font-semibold text-lg">{restaurantDisplayName}</h2>
           <motion.button 
             className="w-10 h-10 flex items-center justify-center"
             whileTap={{ scale: 0.9 }}
@@ -1494,6 +1664,8 @@ export default function OrderTracking() {
           orderId={orderId}
           order={order}
           isVisible={!showConfirmation && order !== null}
+          userLiveCoords={userLiveCoords}
+          userLocationAccuracy={null}
         />
       )}
 
@@ -1639,54 +1811,11 @@ export default function OrderTracking() {
           <SectionItem 
             icon={HomeIcon}
             title="Delivery at Location"
-            subtitle={(() => {
-              // Priority 1: Use order address formattedAddress (live location address)
-              if (order?.address?.formattedAddress && order.address.formattedAddress !== "Select location") {
-                return order.address.formattedAddress
-              }
-              
-              // Priority 2: Build full address from order address parts
-              if (order?.address) {
-                const orderAddressParts = []
-                if (order.address.street) orderAddressParts.push(order.address.street)
-                if (order.address.additionalDetails) orderAddressParts.push(order.address.additionalDetails)
-                if (order.address.city) orderAddressParts.push(order.address.city)
-                if (order.address.state) orderAddressParts.push(order.address.state)
-                if (order.address.zipCode) orderAddressParts.push(order.address.zipCode)
-                if (orderAddressParts.length > 0) {
-                  return orderAddressParts.join(', ')
-                }
-              }
-              
-              // Priority 3: Use defaultAddress formattedAddress (live location address)
-              if (defaultAddress?.formattedAddress && defaultAddress.formattedAddress !== "Select location") {
-                return defaultAddress.formattedAddress
-              }
-              
-              // Priority 4: Build full address from defaultAddress parts
-              if (defaultAddress) {
-                const defaultAddressParts = []
-                if (defaultAddress.street) defaultAddressParts.push(defaultAddress.street)
-                if (defaultAddress.additionalDetails) defaultAddressParts.push(defaultAddress.additionalDetails)
-                if (defaultAddress.city) defaultAddressParts.push(defaultAddress.city)
-                if (defaultAddress.state) defaultAddressParts.push(defaultAddress.state)
-                if (defaultAddress.zipCode) defaultAddressParts.push(defaultAddress.zipCode)
-                if (defaultAddressParts.length > 0) {
-                  return defaultAddressParts.join(', ')
-                }
-              }
-              
-              return 'Add delivery address'
-            })()}
+            subtitle={deliveryAddressDisplay}
             onClick={() => navigate("/profile/shipping")}
             rightContent={
               <span className="text-green-600 font-medium text-sm">Edit</span>
             }
-          />
-          <SectionItem 
-            icon={MessageSquare}
-            title="Add delivery instructions"
-            subtitle=""
           />
         </motion.div>
           </>
@@ -1704,12 +1833,14 @@ export default function OrderTracking() {
               <span className="text-2xl">🍔</span>
             </div>
             <div className="flex-1">
-              <p className="font-semibold text-gray-900">{isPlanSubscriptionOrder ? purchasedPlanName : order.restaurant}</p>
-              {order?.restaurantPhone ? (
-                <p className="text-xs text-gray-500">{order.restaurantPhone}</p>
+              <p className="font-semibold text-gray-900">{isPlanSubscriptionOrder ? purchasedPlanName : restaurantDisplayName}</p>
+              {restaurantDisplayPhone ? (
+                <p className="text-xs text-gray-500">{restaurantDisplayPhone}</p>
               ) : null}
               <p className="text-sm text-gray-500">
-                {isPlanSubscriptionOrder ? "Plan purchase receipt" : (order.address?.city || 'Local Area')}
+                {isPlanSubscriptionOrder
+                  ? "Plan purchase receipt"
+                  : (order?.address?.city || defaultAddress?.city || "Local Area")}
               </p>
             </div>
             {!isPlanSubscriptionOrder && (
@@ -1721,7 +1852,7 @@ export default function OrderTracking() {
                     order?.restaurantId?.phone ||
                     order?.restaurantId?.ownerPhone ||
                     order?.restaurantId?.primaryContactNumber ||
-                    order?.restaurantPhone ||
+                    restaurantDisplayPhone ||
                     ""
                   const dialNumber = sanitizePhoneForTel(restaurantPhone)
                   if (dialNumber) {

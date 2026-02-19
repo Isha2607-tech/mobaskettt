@@ -267,6 +267,40 @@ function smoothLocation(locationHistory) {
   return [avgLat, avgLng]
 }
 
+function extractCustomerCoordsFromOrder(order) {
+  if (!order || typeof order !== "object") return null
+
+  const toFinite = (value) => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  const fromGeoJson = (coordinates) => {
+    if (!Array.isArray(coordinates) || coordinates.length < 2) return null
+    const lng = toFinite(coordinates[0])
+    const lat = toFinite(coordinates[1])
+    if (lat == null || lng == null) return null
+    return { lat, lng }
+  }
+
+  const fromLatLng = (obj) => {
+    if (!obj || typeof obj !== "object") return null
+    const lat = toFinite(obj.lat ?? obj.latitude)
+    const lng = toFinite(obj.lng ?? obj.longitude)
+    if (lat == null || lng == null) return null
+    return { lat, lng }
+  }
+
+  return (
+    fromGeoJson(order?.address?.location?.coordinates) ||
+    fromGeoJson(order?.address?.coordinates) ||
+    fromLatLng(order?.address) ||
+    fromLatLng(order?.address?.location) ||
+    fromLatLng(order?.customerLocation) ||
+    null
+  )
+}
+
 /**
  * Animate marker smoothly from current position to new position
  * @param {Object} marker - Google Maps Marker instance
@@ -441,6 +475,7 @@ export default function DeliveryHome() {
   const directionsRendererRef = useRef(null) // Directions Renderer instance
   const directionsMapInstanceRef = useRef(null) // Directions map instance
   const restaurantMarkerRef = useRef(null) // Restaurant marker on directions map
+  const customerMarkerRef = useRef(null) // Customer marker on main map
   const directionsBikeMarkerRef = useRef(null) // Bike marker on directions map
   const lastRouteRecalculationRef = useRef(null) // Track last route recalculation time (API cost optimization)
   const lastBikePositionRef = useRef(null) // Track last bike position for deviation detection
@@ -712,8 +747,14 @@ export default function DeliveryHome() {
   const stopNewOrderAlertSound = useCallback((reason = "unknown") => {
     if (!alertAudioRef.current) return
     try {
+      alertAudioRef.current.onplaying = null
+      alertAudioRef.current.onended = null
+      alertAudioRef.current.onerror = null
+      alertAudioRef.current.loop = false
       alertAudioRef.current.pause()
       alertAudioRef.current.currentTime = 0
+      alertAudioRef.current.removeAttribute("src")
+      alertAudioRef.current.load()
       alertAudioRef.current = null
       console.log(`[NewOrder] Audio stopped (${reason})`)
     } catch (error) {
@@ -735,6 +776,34 @@ export default function DeliveryHome() {
 
     return statusValues.some((value) => value.includes('cancel'))
   }, [])
+
+  const shouldStopAlertForOrderState = useCallback((order) => {
+    if (!order) return false
+    const statusValues = [
+      order?.orderStatus,
+      order?.status,
+      order?.deliveryState?.status,
+      order?.deliveryPhase,
+      order?.deliveryState?.currentPhase
+    ]
+      .filter(Boolean)
+      .map((value) => String(value).toLowerCase())
+
+    return statusValues.some((value) =>
+      value.includes("accept") ||
+      value.includes("picked") ||
+      value.includes("out_for_delivery") ||
+      value.includes("en_route") ||
+      value.includes("deliver") ||
+      value.includes("complete") ||
+      value.includes("reject") ||
+      value.includes("cancel")
+    )
+  }, [])
+
+  const isActiveOrderCancelled = useMemo(() => {
+    return isOrderCancelledState(selectedRestaurant) || isOrderCancelledState(newOrder)
+  }, [isOrderCancelledState, selectedRestaurant, newOrder])
 
   const isCancelledConflictError = useCallback((error) => {
     const status = error?.response?.status
@@ -1474,24 +1543,18 @@ export default function DeliveryHome() {
             console.log('[NewOrder] 🔊 Audio started playing, looping:', audio.loop)
             
             // Verify audio is actually playing and ensure it loops
-            audio.addEventListener('playing', () => {
+            audio.onplaying = () => {
               console.log('[NewOrder] ✅ Audio is now playing')
-            })
+            }
             
-            // Manually restart if loop doesn't work
-            audio.addEventListener('ended', () => {
-              console.log('[NewOrder] 🔄 Audio ended, restarting...')
-              if (showNewOrderPopup && alertAudioRef.current === audio) {
-                audio.currentTime = 0
-                audio.play().catch(err => {
-                  console.error('[NewOrder] ❌ Failed to restart audio:', err)
-                })
-              }
-            })
-            
-            audio.addEventListener('error', (e) => {
+            // Keep ended handler non-restarting to avoid stale closure loops.
+            audio.onended = () => {
+              console.log('[NewOrder] ℹ️ Audio ended')
+            }
+
+            audio.onerror = (e) => {
               console.error('[NewOrder] ❌ Audio error:', e)
-            })
+            }
             
             // Double-check loop is enabled
             if (!audio.loop) {
@@ -1519,6 +1582,31 @@ export default function DeliveryHome() {
       stopNewOrderAlertSound("popup closed")
     }
   }, [showNewOrderPopup, popupOrderId, stopNewOrderAlertSound])
+
+  // Global watchdog: sound must stop unless order is in active new-order stage.
+  useEffect(() => {
+    const shouldForceStop =
+      !showNewOrderPopup ||
+      !isOnline ||
+      isActiveOrderCancelled ||
+      shouldStopAlertForOrderState(newOrder) ||
+      shouldStopAlertForOrderState(selectedRestaurant)
+
+    if (shouldForceStop) {
+      stopNewOrderAlertSound("watchdog force stop")
+      if (showNewOrderPopup && (isActiveOrderCancelled || shouldStopAlertForOrderState(newOrder) || shouldStopAlertForOrderState(selectedRestaurant))) {
+        setShowNewOrderPopup(false)
+      }
+    }
+  }, [
+    showNewOrderPopup,
+    isOnline,
+    isActiveOrderCancelled,
+    newOrder,
+    selectedRestaurant,
+    shouldStopAlertForOrderState,
+    stopNewOrderAlertSound
+  ])
 
   // Reset countdown when popup closes
   useEffect(() => {
@@ -1556,6 +1644,12 @@ export default function DeliveryHome() {
     showNewOrderPopup,
     stopNewOrderAlertSound
   ])
+
+  // Immediately hide any order slider/popup if the active order is cancelled.
+  useEffect(() => {
+    if (!isActiveOrderCancelled) return
+    handleCancelledOrderConflict(null, 'Order was cancelled by user.')
+  }, [isActiveOrderCancelled, handleCancelledOrderConflict])
 
   // Simulate audio playback for Earnings Guarantee
   useEffect(() => {
@@ -2627,6 +2721,8 @@ export default function DeliveryHome() {
                 responseEarnings: response.data.data.estimatedEarnings
               });
 
+              const customerCoords = extractCustomerCoordsFromOrder(order)
+
               restaurantInfo = {
                 id: order._id || order.orderId,
                 orderId: order.orderId, // Correct order ID from backend
@@ -2644,8 +2740,8 @@ export default function DeliveryHome() {
                 customerAddress: order.address?.formattedAddress || 
                                 (order.address?.street ? `${order.address.street}, ${order.address.city || ''}, ${order.address.state || ''}`.trim() : '') ||
                                 selectedRestaurant?.customerAddress,
-                customerLat: order.address?.location?.coordinates?.[1],
-                customerLng: order.address?.location?.coordinates?.[0],
+                customerLat: customerCoords?.lat ?? selectedRestaurant?.customerLat,
+                customerLng: customerCoords?.lng ?? selectedRestaurant?.customerLng,
                 items: order.items || [],
                 total: order.pricing?.total || 0,
                 paymentMethod: order.paymentMethod ?? order.payment?.method ?? 'razorpay', // backend-resolved first (COD vs Online)
@@ -4843,6 +4939,8 @@ export default function DeliveryHome() {
             pickupDistance = 'Calculating...';
           }
           
+          const customerCoords = extractCustomerCoordsFromOrder(firstOrder)
+
           const restaurantData = {
             id: firstOrder._id?.toString() || firstOrder.orderId,
             orderId: firstOrder.orderId,
@@ -4862,8 +4960,8 @@ export default function DeliveryHome() {
                            (firstOrder.address?.street 
                              ? `${firstOrder.address.street}, ${firstOrder.address.city || ''}, ${firstOrder.address.state || ''}`.trim()
                              : 'Customer address'),
-            customerLat: firstOrder.address?.location?.coordinates?.[1],
-            customerLng: firstOrder.address?.location?.coordinates?.[0],
+            customerLat: customerCoords?.lat,
+            customerLng: customerCoords?.lng,
             items: firstOrder.items || [],
             total: firstOrder.pricing?.total || 0,
             payment: firstOrder.payment?.method || 'COD',
@@ -5787,6 +5885,102 @@ export default function DeliveryHome() {
     }
   }, [selectedRestaurant?.lat, selectedRestaurant?.lng, selectedRestaurant?.name])
 
+  // Auto-switch destination context from restaurant -> customer once pickup is complete.
+  useEffect(() => {
+    if (!selectedRestaurant) {
+      if (navigationMode !== 'restaurant') {
+        setNavigationMode('restaurant')
+      }
+      return
+    }
+
+    const orderStatus = String(selectedRestaurant?.orderStatus || selectedRestaurant?.status || '').toLowerCase()
+    const deliveryPhase = String(selectedRestaurant?.deliveryPhase || selectedRestaurant?.deliveryState?.currentPhase || '').toLowerCase()
+    const deliveryStateStatus = String(selectedRestaurant?.deliveryState?.status || '').toLowerCase()
+
+    const isCustomerLeg =
+      orderStatus === 'out_for_delivery' ||
+      orderStatus === 'picked_up' ||
+      deliveryPhase === 'picked_up' ||
+      deliveryPhase === 'en_route_to_delivery' ||
+      deliveryStateStatus === 'order_confirmed' ||
+      deliveryStateStatus === 'en_route_to_delivery'
+
+    const nextMode = isCustomerLeg ? 'customer' : 'restaurant'
+    if (navigationMode !== nextMode) {
+      setNavigationMode(nextMode)
+    }
+  }, [
+    selectedRestaurant,
+    selectedRestaurant?.orderStatus,
+    selectedRestaurant?.status,
+    selectedRestaurant?.deliveryPhase,
+    selectedRestaurant?.deliveryState?.currentPhase,
+    selectedRestaurant?.deliveryState?.status,
+    navigationMode
+  ])
+
+  // Keep a dedicated customer marker synced on the main map during delivery leg.
+  useEffect(() => {
+    if (showHomeSections || !window.deliveryMapInstance) {
+      if (customerMarkerRef.current) {
+        customerMarkerRef.current.setMap(null);
+      }
+      return;
+    }
+
+    const customerLat = Number(selectedRestaurant?.customerLat);
+    const customerLng = Number(selectedRestaurant?.customerLng);
+    const hasCustomerCoords =
+      Number.isFinite(customerLat) &&
+      Number.isFinite(customerLng) &&
+      !(customerLat === 0 && customerLng === 0);
+    const shouldShowCustomerMarker = navigationMode === 'customer' && hasCustomerCoords;
+
+    if (!shouldShowCustomerMarker) {
+      if (customerMarkerRef.current) {
+        customerMarkerRef.current.setMap(null);
+      }
+      return;
+    }
+
+    const customerUserPinIconUrl = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="36" height="46" viewBox="0 0 36 46">
+        <path d="M18 0 C8.06 0 0 8.06 0 18 C0 30.5 18 46 18 46 C18 46 36 30.5 36 18 C36 8.06 27.94 0 18 0 Z" fill="#2563eb" stroke="#ffffff" stroke-width="2"/>
+        <circle cx="18" cy="14" r="4.2" fill="white"/>
+        <path d="M10.5 24 C11.8 20.6 14.6 18.8 18 18.8 C21.4 18.8 24.2 20.6 25.5 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+      </svg>
+    `);
+
+    const position = { lat: customerLat, lng: customerLng };
+    const icon = {
+      url: customerUserPinIconUrl,
+      scaledSize: new window.google.maps.Size(36, 46),
+      anchor: new window.google.maps.Point(18, 46)
+    };
+
+    if (!customerMarkerRef.current) {
+      customerMarkerRef.current = new window.google.maps.Marker({
+        position,
+        map: window.deliveryMapInstance,
+        icon,
+        title: selectedRestaurant?.customerName || 'Customer',
+        zIndex: 25
+      });
+    } else {
+      customerMarkerRef.current.setPosition(position);
+      customerMarkerRef.current.setIcon(icon);
+      customerMarkerRef.current.setTitle(selectedRestaurant?.customerName || 'Customer');
+      customerMarkerRef.current.setMap(window.deliveryMapInstance);
+    }
+  }, [
+    showHomeSections,
+    navigationMode,
+    selectedRestaurant?.customerLat,
+    selectedRestaurant?.customerLng,
+    selectedRestaurant?.customerName
+  ])
+
   // Calculate route using Google Maps Directions API (Zomato-style road-based routing)
   // Optimized for TWO_WHEELER mode with DRIVING fallback
   // NOTE: Must be defined BEFORE the useEffect that uses it (Rules of Hooks)
@@ -6626,7 +6820,7 @@ export default function DeliveryHome() {
             ? order.restaurantId
             : {}
           const restaurantCoords = restaurant?.location?.coordinates || []
-          const customerCoords = order?.address?.location?.coordinates || []
+          const customerCoords = extractCustomerCoordsFromOrder(order)
 
           const restoredRestaurant = {
             ...savedRestaurant,
@@ -6649,11 +6843,11 @@ export default function DeliveryHome() {
             customerAddress:
               order?.address?.formattedAddress ||
               savedRestaurant?.customerAddress,
-            customerLat: Number.isFinite(Number(customerCoords?.[1]))
-              ? Number(customerCoords[1])
+            customerLat: Number.isFinite(Number(customerCoords?.lat))
+              ? Number(customerCoords.lat)
               : savedRestaurant?.customerLat,
-            customerLng: Number.isFinite(Number(customerCoords?.[0]))
-              ? Number(customerCoords[0])
+            customerLng: Number.isFinite(Number(customerCoords?.lng))
+              ? Number(customerCoords.lng)
               : savedRestaurant?.customerLng,
             orderStatus: order?.status || savedRestaurant?.orderStatus || savedRestaurant?.status,
             status: order?.status || savedRestaurant?.status || savedRestaurant?.orderStatus,
@@ -6691,13 +6885,38 @@ export default function DeliveryHome() {
 
           // Recalculate route using Directions API (preferred) or use saved coordinates (fallback)
           // Don't restore directionsResponse from localStorage - Google Maps objects can't be serialized
-          if (activeOrderData.restaurantInfo && activeOrderData.restaurantInfo.lat && activeOrderData.restaurantInfo.lng && riderLocation && riderLocation.length === 2) {
+          const restoredOrder = selectedRestaurantRef.current || activeOrderData.restaurantInfo || {}
+          const restoredOrderStatus = String(restoredOrder?.orderStatus || restoredOrder?.status || '').toLowerCase()
+          const restoredDeliveryPhase = String(restoredOrder?.deliveryPhase || restoredOrder?.deliveryState?.currentPhase || '').toLowerCase()
+          const restoredDeliveryStateStatus = String(restoredOrder?.deliveryState?.status || '').toLowerCase()
+          const isPickedUpPhase =
+            restoredOrderStatus === 'out_for_delivery' ||
+            restoredOrderStatus === 'picked_up' ||
+            restoredDeliveryPhase === 'en_route_to_delivery' ||
+            restoredDeliveryPhase === 'picked_up' ||
+            restoredDeliveryStateStatus === 'order_confirmed' ||
+            restoredDeliveryStateStatus === 'en_route_to_delivery'
+
+          const hasCustomerLocation =
+            restoredOrder?.customerLat != null &&
+            restoredOrder?.customerLng != null &&
+            Number.isFinite(Number(restoredOrder.customerLat)) &&
+            Number.isFinite(Number(restoredOrder.customerLng)) &&
+            !(Number(restoredOrder.customerLat) === 0 && Number(restoredOrder.customerLng) === 0)
+
+          const destinationForRestore = isPickedUpPhase && hasCustomerLocation
+            ? { lat: Number(restoredOrder.customerLat), lng: Number(restoredOrder.customerLng) }
+            : (activeOrderData.restaurantInfo && activeOrderData.restaurantInfo.lat && activeOrderData.restaurantInfo.lng)
+              ? { lat: activeOrderData.restaurantInfo.lat, lng: activeOrderData.restaurantInfo.lng }
+              : null
+
+          if (destinationForRestore && riderLocation && riderLocation.length === 2) {
             // Try to recalculate with Directions API first (if flag indicates we had Directions API before)
             if (activeOrderData.hasDirectionsAPI) {
               console.log('🔄 Recalculating route with Directions API for restored order...');
               calculateRouteWithDirectionsAPI(
                 riderLocation,
-                { lat: activeOrderData.restaurantInfo.lat, lng: activeOrderData.restaurantInfo.lng }
+                destinationForRestore
               ).then(result => {
                 if (result && result.routes && result.routes.length > 0) {
                   setDirectionsResponse(result);
@@ -6808,13 +7027,19 @@ export default function DeliveryHome() {
       if (liveTrackingPolylineShadowRef.current) {
         liveTrackingPolylineShadowRef.current.setMap(window.deliveryMapInstance);
       }
-    } else if (!shouldUseCurrentDirections && liveTrackingPolylineRef.current) {
-      liveTrackingPolylineRef.current.setMap(null);
-      liveTrackingPolylineRef.current = null;
+    } else if (!shouldUseCurrentDirections) {
+      if (liveTrackingPolylineRef.current) {
+        liveTrackingPolylineRef.current.setMap(null);
+        liveTrackingPolylineRef.current = null;
+      }
       if (liveTrackingPolylineShadowRef.current) {
         liveTrackingPolylineShadowRef.current.setMap(null);
         liveTrackingPolylineShadowRef.current = null;
       }
+      // Prevent stale restaurant-route directions from being reused during delivery leg.
+      setDirectionsResponse(null);
+      directionsResponseRef.current = null;
+      fullRoutePolylineRef.current = [];
     }
   }, [selectedRestaurant, riderLocation, updateLiveTrackingPolyline, isDirectionsRouteToLocation]);
 
@@ -8262,8 +8487,16 @@ export default function DeliveryHome() {
       deliveryPhase === 'picked_up' ||
       deliveryStateStatus === 'order_confirmed' ||
       deliveryStateStatus === 'en_route_to_delivery';
+    const hasCustomerLocation =
+      selectedRestaurant?.customerLat != null &&
+      selectedRestaurant?.customerLng != null &&
+      Number.isFinite(Number(selectedRestaurant.customerLat)) &&
+      Number.isFinite(Number(selectedRestaurant.customerLng)) &&
+      !(Number(selectedRestaurant.customerLat) === 0 && Number(selectedRestaurant.customerLng) === 0);
 
-    if (isPickedUpPhase) {
+    // During delivery leg, prefer live directions polyline if available.
+    // If it is unavailable, keep fallback route visible and trimmed from rider.
+    if (isPickedUpPhase && liveTrackingPolylineRef.current) {
       if (routePolylineRef.current) {
         routePolylineRef.current.setMap(null);
       }
@@ -8290,13 +8523,65 @@ export default function DeliveryHome() {
     const coordsToUse = coordinates || routePolyline;
 
     if (coordsToUse && coordsToUse.length > 0) {
-      // Convert coordinates to Google Maps LatLng format
-      const path = coordsToUse.map(coord => {
-        if (Array.isArray(coord) && coord.length >= 2) {
-          return new window.google.maps.LatLng(coord[0], coord[1]);
+      const normalizedPoints = coordsToUse
+        .map((coord) => {
+          if (Array.isArray(coord) && coord.length >= 2) {
+            const lat = Number(coord[0]);
+            const lng = Number(coord[1]);
+            if (Number.isFinite(lat) && Number.isFinite(lng)) {
+              return { lat, lng };
+            }
+          }
+          if (coord && typeof coord === "object") {
+            const lat = Number(coord.lat);
+            const lng = Number(coord.lng);
+            if (Number.isFinite(lat) && Number.isFinite(lng)) {
+              return { lat, lng };
+            }
+          }
+          return null;
+        })
+        .filter(Boolean);
+
+      // During delivery leg, only allow fallback path if it ends near customer location.
+      if (isPickedUpPhase && hasCustomerLocation && normalizedPoints.length > 0) {
+        const lastPoint = normalizedPoints[normalizedPoints.length - 1];
+        const distanceToCustomer = calculateDistance(
+          lastPoint.lat,
+          lastPoint.lng,
+          Number(selectedRestaurant.customerLat),
+          Number(selectedRestaurant.customerLng)
+        );
+
+        // If restored/old pickup route is still in state, do not render it in delivery leg.
+        if (!Number.isFinite(distanceToCustomer) || distanceToCustomer > 300) {
+          if (routePolylineRef.current) {
+            routePolylineRef.current.setMap(null);
+          }
+          return;
         }
-        return null;
-      }).filter(coord => coord !== null);
+      }
+
+      const riderPos = (riderLocation && riderLocation.length === 2)
+        ? { lat: Number(riderLocation[0]), lng: Number(riderLocation[1]) }
+        : (lastLocationRef.current && lastLocationRef.current.length === 2)
+          ? { lat: Number(lastLocationRef.current[0]), lng: Number(lastLocationRef.current[1]) }
+          : null;
+
+      let forwardPoints = normalizedPoints;
+      if (
+        riderPos &&
+        Number.isFinite(riderPos.lat) &&
+        Number.isFinite(riderPos.lng) &&
+        normalizedPoints.length > 1
+      ) {
+        const { segmentIndex, nearestPoint } = findNearestPointOnPolyline(normalizedPoints, riderPos);
+        const trimmedPoints = trimPolylineBehindRider(normalizedPoints, nearestPoint, segmentIndex);
+        forwardPoints = [{ lat: riderPos.lat, lng: riderPos.lng }, ...trimmedPoints];
+      }
+
+      // Convert to Google Maps LatLng format
+      const path = forwardPoints.map((point) => new window.google.maps.LatLng(point.lat, point.lng));
 
       if (path.length > 0) {
         // Fallback route line: render when live tracking/directions path is unavailable
@@ -9862,7 +10147,7 @@ export default function DeliveryHome() {
 
       {/* New Order Popup with Countdown Timer - Custom Implementation */}
       <AnimatePresence>
-        {showNewOrderPopup && (newOrder || selectedRestaurant) && isOnline && (
+        {showNewOrderPopup && (newOrder || selectedRestaurant) && isOnline && !isActiveOrderCancelled && (
           <>
             {/* Backdrop */}
             {!isNewOrderPopupMinimized && (
@@ -10315,7 +10600,7 @@ export default function DeliveryHome() {
       {/* Reached Pickup Popup - shown when order is ready (from order_ready socket) or when rider is within 500m */}
       {/* Don't show if Order ID confirmation popup is showing */}
       <BottomPopup
-        isOpen={showreachedPickupPopup && !showOrderIdConfirmationPopup}
+        isOpen={showreachedPickupPopup && !showOrderIdConfirmationPopup && !isActiveOrderCancelled}
         onClose={() => setShowreachedPickupPopup(false)}
         showCloseButton={false}
         closeOnBackdropClick={false}
@@ -10647,7 +10932,7 @@ export default function DeliveryHome() {
 
       {/* Order ID Confirmation Popup - shown after Reached Pickup swipe is confirmed */}
       <BottomPopup
-        isOpen={showOrderIdConfirmationPopup}
+        isOpen={showOrderIdConfirmationPopup && !isActiveOrderCancelled}
         onClose={() => setShowOrderIdConfirmationPopup(false)}
         showCloseButton={false}
         closeOnBackdropClick={false}
@@ -10803,7 +11088,7 @@ export default function DeliveryHome() {
 
       {/* Reached Drop Popup - shown instantly after Order Picked Up confirmation */}
       <BottomPopup
-        isOpen={showReachedDropPopup}
+        isOpen={showReachedDropPopup && !isActiveOrderCancelled}
         onClose={() => setShowReachedDropPopup(false)}
         showCloseButton={false}
         closeOnBackdropClick={false}
@@ -10843,10 +11128,6 @@ export default function DeliveryHome() {
             <button className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
               <Phone className="w-5 h-5 text-gray-700" />
               <span className="text-gray-700 font-medium">Call</span>
-            </button>
-            <button className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-              <MapPin className="w-5 h-5 text-gray-700" />
-              <span className="text-gray-700 font-medium">Chat</span>
             </button>
             <button className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors">
               <MapPin className="w-5 h-5 text-white" />

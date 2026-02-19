@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, useLocation as useRouterLocation } from "react-router-dom";
 import { restaurantAPI, diningAPI, orderAPI } from "@/lib/api";
 import { API_BASE_URL } from "@/lib/api/config";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
-import { useLocation } from "../../hooks/useLocation";
+import { useLocation as useUserLocation } from "../../hooks/useLocation";
 import { useZone } from "../../hooks/useZone";
 import {
   ArrowLeft,
@@ -43,13 +43,20 @@ import { useCart } from "../../context/CartContext";
 import { useProfile } from "../../context/ProfileContext";
 import AddToCartAnimation from "../../components/AddToCartAnimation";
 import { getCompanyNameAsync } from "@/lib/utils/businessSettings";
+import {
+  clearOrderEditSession,
+  getOrderEditRemainingSeconds,
+  getOrderEditSession,
+  saveOrderEditSession,
+} from "../../utils/orderEditSession";
 
 export default function RestaurantDetails() {
   const { slug } = useParams();
   const navigate = useNavigate();
+  const routerLocation = useRouterLocation();
   const [searchParams] = useSearchParams();
   const showOnlyUnder250 = searchParams.get("under250") === "true";
-  const { addToCart, updateQuantity, removeFromCart, getCartItem, cart } =
+  const { addToCart, updateQuantity, removeFromCart, getCartItem, cart, clearCart } =
     useCart();
   const {
     vegMode,
@@ -62,7 +69,7 @@ export default function RestaurantDetails() {
     removeFavorite,
     isFavorite,
   } = useProfile();
-  const { location: userLocation } = useLocation(); // Get user's current location
+  const { location: userLocation } = useUserLocation(); // Get user's current location
   const {
     zoneId,
     zone,
@@ -99,6 +106,65 @@ export default function RestaurantDetails() {
   const [loadingRestaurant, setLoadingRestaurant] = useState(true);
   const [restaurantError, setRestaurantError] = useState(null);
   const fetchedRestaurantRef = useRef(false); // Track if restaurant has been fetched for current slug
+  const [orderEditSession, setOrderEditSession] = useState(() => getOrderEditSession());
+  const [editSecondsLeft, setEditSecondsLeft] = useState(() =>
+    getOrderEditRemainingSeconds(getOrderEditSession()),
+  );
+  const initializedEditSessionRef = useRef("");
+
+  const formatCountdown = (seconds) => {
+    const safeSeconds = Math.max(0, Number(seconds) || 0);
+    const mins = Math.floor(safeSeconds / 60);
+    const secs = safeSeconds % 60;
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  };
+
+  const normalizedSlug = String(slug || "").trim().toLowerCase();
+  const normalizedSessionSlug = String(orderEditSession?.restaurantSlug || "")
+    .trim()
+    .toLowerCase();
+  const normalizedSessionRestaurantId = String(orderEditSession?.restaurantId || "").trim();
+  const normalizedRestaurantId = String(
+    restaurant?.restaurantId || restaurant?.id || restaurant?._id || "",
+  ).trim();
+  const isOrderEditSessionActive = editSecondsLeft > 0 && Boolean(orderEditSession?.orderRouteId);
+  const isOrderEditSessionForCurrentRestaurant = Boolean(
+    isOrderEditSessionActive &&
+      ((normalizedSessionSlug && normalizedSessionSlug === normalizedSlug) ||
+        (normalizedSessionRestaurantId &&
+          normalizedRestaurantId &&
+          normalizedSessionRestaurantId === normalizedRestaurantId)),
+  );
+
+  useEffect(() => {
+    const incomingSession = routerLocation.state?.orderEditSession;
+    if (incomingSession?.orderRouteId) {
+      const saved = saveOrderEditSession(incomingSession);
+      setOrderEditSession(saved);
+      setEditSecondsLeft(getOrderEditRemainingSeconds(saved));
+      return;
+    }
+
+    const saved = getOrderEditSession();
+    setOrderEditSession(saved);
+    setEditSecondsLeft(getOrderEditRemainingSeconds(saved));
+  }, [routerLocation.state]);
+
+  useEffect(() => {
+    if (!orderEditSession?.orderRouteId) return;
+
+    const tick = () => {
+      const next = getOrderEditRemainingSeconds(orderEditSession);
+      setEditSecondsLeft(next);
+      if (next <= 0) {
+        clearOrderEditSession();
+      }
+    };
+
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [orderEditSession]);
 
   // Fetch restaurant data from API
   useEffect(() => {
@@ -1109,6 +1175,51 @@ export default function RestaurantDetails() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurant?.name, cart]);
 
+  useEffect(() => {
+    if (!isOrderEditSessionForCurrentRestaurant) return;
+    if (!restaurant || !restaurant.name) return;
+    if (!Array.isArray(orderEditSession?.items) || orderEditSession.items.length === 0) return;
+
+    const sessionKey = `${orderEditSession.orderRouteId}:${orderEditSession.restaurantId || orderEditSession.restaurantSlug || ""}`;
+    if (initializedEditSessionRef.current === sessionKey) return;
+
+    clearCart("mofood");
+
+    const validRestaurantId =
+      restaurant?._id || restaurant?.restaurantId || restaurant?.id || orderEditSession.restaurantId;
+
+    orderEditSession.items.forEach((item, index) => {
+      const itemId = String(item?.itemId || `${item?.name || "item"}-${index}`);
+      const cartItem = {
+        id: itemId,
+        name: item?.name || "Item",
+        price: Number(item?.price || 0),
+        image: item?.image || "",
+        restaurant: restaurant.name,
+        restaurantId: validRestaurantId,
+        platform: "mofood",
+        restaurantPlatform: "mofood",
+        description: item?.description || "",
+        isVeg: item?.isVeg !== false,
+      };
+
+      addToCart(cartItem);
+      const qty = Math.max(1, Number(item?.quantity || 1));
+      if (qty > 1) {
+        updateQuantity(itemId, qty);
+      }
+    });
+
+    initializedEditSessionRef.current = sessionKey;
+  }, [
+    addToCart,
+    clearCart,
+    isOrderEditSessionForCurrentRestaurant,
+    orderEditSession,
+    restaurant,
+    updateQuantity,
+  ]);
+
   // Helper function to update item quantity in both local state and cart
   const updateItemQuantity = (item, newQuantity, event = null) => {
     // CRITICAL: Check if user is in service zone or restaurant is available
@@ -1898,6 +2009,26 @@ export default function RestaurantDetails() {
           </div>
         </div>
       </div>
+      {isOrderEditSessionForCurrentRestaurant && (
+        <div className="px-4 mt-3 max-w-2xl mx-auto w-full">
+          <div className="bg-orange-50 border border-orange-200 rounded-2xl px-4 py-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold text-orange-700 uppercase tracking-wide">
+                Editing order #{orderEditSession?.orderRouteId}
+              </p>
+              <p className="text-sm font-semibold text-orange-900">
+                Add items before timer ends
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-[11px] font-medium text-orange-700">Time left</p>
+              <p className="text-lg font-extrabold text-orange-900 tabular-nums">
+                {formatCountdown(editSecondsLeft)}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Menu Content Section */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 py-4 space-y-4">
         {/* Filter/Category Buttons */}

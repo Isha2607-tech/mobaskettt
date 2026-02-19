@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -24,6 +24,14 @@ import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
 import { useZone } from "../../user/hooks/useZone";
 import { adminAPI, locationAPI, orderAPI, restaurantAPI, userAPI } from "@/lib/api";
 import { initRazorpayPayment } from "@/lib/utils/razorpay";
+import { Loader } from "@googlemaps/js-api-loader";
+import { getGoogleMapsApiKey } from "@/lib/utils/googleMapsApiKey";
+import {
+  clearOrderEditSession,
+  getOrderEditRemainingSeconds,
+  getOrderEditSession,
+  saveOrderEditSession,
+} from "@/module/user/utils/orderEditSession";
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
@@ -53,6 +61,10 @@ export default function CheckoutPage() {
   const [isSavingAddress, setIsSavingAddress] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
   const [walletLoading, setWalletLoading] = useState(false);
+  const [orderEditSession, setOrderEditSession] = useState(() => getOrderEditSession());
+  const [editSecondsLeft, setEditSecondsLeft] = useState(() =>
+    getOrderEditRemainingSeconds(getOrderEditSession()),
+  );
   const [newAddress, setNewAddress] = useState({
     label: "Home",
     street: "",
@@ -64,6 +76,13 @@ export default function CheckoutPage() {
     longitude: "",
     isDefault: false,
   });
+  const [addressSuggestions, setAddressSuggestions] = useState([]);
+  const [loadingAddressSuggestions, setLoadingAddressSuggestions] = useState(false);
+  const [showAddressSuggestions, setShowAddressSuggestions] = useState(false);
+  const [googlePlacesReady, setGooglePlacesReady] = useState(false);
+  const autocompleteServiceRef = useRef(null);
+  const placesServiceRef = useRef(null);
+  const suggestionsDebounceRef = useRef(null);
 
   const deliveryType =
     location.state?.deliveryType === "scheduled" ? "scheduled" : "now";
@@ -78,6 +97,41 @@ export default function CheckoutPage() {
   );
   const restaurantId = foodItems[0]?.restaurantId || null;
   const restaurantName = foodItems[0]?.restaurant || "Restaurant";
+  const isOrderEditMode =
+    editSecondsLeft > 0 &&
+    Boolean(orderEditSession?.orderRouteId) &&
+    (!orderEditSession?.restaurantId ||
+      String(orderEditSession.restaurantId) === String(restaurantId || ""));
+
+  useEffect(() => {
+    const incomingSession = location.state?.orderEditSession;
+    if (incomingSession?.orderRouteId) {
+      const saved = saveOrderEditSession(incomingSession);
+      setOrderEditSession(saved);
+      setEditSecondsLeft(getOrderEditRemainingSeconds(saved));
+      return;
+    }
+
+    const saved = getOrderEditSession();
+    setOrderEditSession(saved);
+    setEditSecondsLeft(getOrderEditRemainingSeconds(saved));
+  }, [location.state]);
+
+  useEffect(() => {
+    const tick = () => {
+      const session = getOrderEditSession();
+      const remaining = getOrderEditRemainingSeconds(session);
+      if (remaining <= 0 && session) {
+        clearOrderEditSession();
+      }
+      setOrderEditSession(remaining > 0 ? session : null);
+      setEditSecondsLeft(remaining);
+    };
+
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const defaultAddress = getDefaultAddress();
@@ -110,7 +164,174 @@ export default function CheckoutPage() {
       longitude: "",
       isDefault: false,
     });
+    setAddressSuggestions([]);
+    setShowAddressSuggestions(false);
   };
+
+  const parseAddressComponents = useCallback((components = []) => {
+    const findByType = (type) =>
+      components.find((component) => component?.types?.includes(type))?.long_name || "";
+
+    const streetNumber = findByType("street_number");
+    const route = findByType("route");
+    const sublocality =
+      findByType("sublocality_level_1") ||
+      findByType("sublocality") ||
+      findByType("neighborhood");
+    const city =
+      findByType("locality") ||
+      findByType("administrative_area_level_2");
+    const state = findByType("administrative_area_level_1");
+    const zipCode = findByType("postal_code");
+
+    return {
+      street: [streetNumber, route].filter(Boolean).join(" ").trim(),
+      additionalDetails: sublocality,
+      city,
+      state,
+      zipCode,
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!showAddAddressForm) return undefined;
+    if (autocompleteServiceRef.current && placesServiceRef.current) {
+      setGooglePlacesReady(true);
+      return undefined;
+    }
+
+    const initGooglePlaces = async () => {
+      try {
+        const apiKey = await getGoogleMapsApiKey();
+        if (!apiKey || !isMounted) return;
+
+        const loader = new Loader({
+          apiKey,
+          version: "weekly",
+          libraries: ["places"],
+        });
+        const google = await loader.load();
+        if (!isMounted) return;
+
+        autocompleteServiceRef.current = new google.maps.places.AutocompleteService();
+        placesServiceRef.current = new google.maps.places.PlacesService(document.createElement("div"));
+        setGooglePlacesReady(true);
+      } catch (error) {
+        console.error("Checkout address suggestions init failed:", error);
+        if (isMounted) setGooglePlacesReady(false);
+      }
+    };
+
+    initGooglePlaces();
+    return () => {
+      isMounted = false;
+    };
+  }, [showAddAddressForm]);
+
+  const fetchAddressSuggestions = useCallback(
+    (inputValue) => {
+      const query = String(inputValue || "").trim();
+      if (!query || query.length < 3 || !autocompleteServiceRef.current) {
+        setAddressSuggestions([]);
+        setLoadingAddressSuggestions(false);
+        return;
+      }
+
+      setLoadingAddressSuggestions(true);
+      autocompleteServiceRef.current.getPlacePredictions(
+        {
+          input: query,
+          componentRestrictions: { country: "in" },
+          types: ["address"],
+        },
+        (predictions, status) => {
+          const ok =
+            status === window.google?.maps?.places?.PlacesServiceStatus?.OK ||
+            status === "OK";
+          setAddressSuggestions(ok && Array.isArray(predictions) ? predictions.slice(0, 6) : []);
+          setLoadingAddressSuggestions(false);
+        },
+      );
+    },
+    [],
+  );
+
+  const handleStreetInputChange = (value) => {
+    setNewAddress((prev) => ({ ...prev, street: value }));
+    setShowAddressSuggestions(Boolean(value));
+
+    if (suggestionsDebounceRef.current) {
+      clearTimeout(suggestionsDebounceRef.current);
+    }
+    suggestionsDebounceRef.current = setTimeout(() => {
+      fetchAddressSuggestions(value);
+    }, 220);
+  };
+
+  const handleAddressSuggestionSelect = useCallback(
+    (suggestion) => {
+      if (!suggestion?.place_id || !placesServiceRef.current) {
+        setNewAddress((prev) => ({ ...prev, street: suggestion?.description || prev.street }));
+        setShowAddressSuggestions(false);
+        return;
+      }
+
+      placesServiceRef.current.getDetails(
+        {
+          placeId: suggestion.place_id,
+          fields: ["formatted_address", "address_components", "geometry"],
+        },
+        (placeResult, status) => {
+          const ok =
+            status === window.google?.maps?.places?.PlacesServiceStatus?.OK ||
+            status === "OK";
+          if (!ok || !placeResult) {
+            setNewAddress((prev) => ({ ...prev, street: suggestion.description || prev.street }));
+            setShowAddressSuggestions(false);
+            return;
+          }
+
+          const parsed = parseAddressComponents(placeResult.address_components || []);
+          const lat = placeResult?.geometry?.location?.lat?.();
+          const lng = placeResult?.geometry?.location?.lng?.();
+          const formatted = String(placeResult.formatted_address || "");
+          const fallbackStreet =
+            parsed.street ||
+            suggestion?.structured_formatting?.main_text ||
+            suggestion.description;
+
+          setNewAddress((prev) => ({
+            ...prev,
+            street: fallbackStreet || prev.street,
+            additionalDetails: parsed.additionalDetails || prev.additionalDetails,
+            city: parsed.city || prev.city,
+            state: parsed.state || prev.state,
+            zipCode: parsed.zipCode || prev.zipCode,
+            latitude: Number.isFinite(lat) ? String(lat) : prev.latitude,
+            longitude: Number.isFinite(lng) ? String(lng) : prev.longitude,
+          }));
+
+          if (formatted && !parsed.additionalDetails) {
+            setNewAddress((prev) => ({
+              ...prev,
+              additionalDetails: prev.additionalDetails || formatted,
+            }));
+          }
+          setShowAddressSuggestions(false);
+        },
+      );
+    },
+    [parseAddressComponents],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (suggestionsDebounceRef.current) {
+        clearTimeout(suggestionsDebounceRef.current);
+      }
+    };
+  }, []);
 
   const formatAddressLine = (address) =>
     [
@@ -457,6 +678,95 @@ export default function CheckoutPage() {
       return;
     }
 
+    if (isOrderEditMode) {
+      if (!orderEditSession?.orderRouteId) {
+        toast.error("Edit session not found.");
+        clearOrderEditSession();
+        return;
+      }
+
+      setIsPlacingOrder(true);
+      try {
+        const items = buildOrderItems();
+        const invalidItem = items.find(
+          (i) => !i.itemId || !i.name || !Number.isFinite(i.price) || i.quantity <= 0,
+        );
+        if (invalidItem) {
+          throw new Error("Cart item data is invalid. Please refresh and try again.");
+        }
+
+        const response = await orderAPI.editOrderCart(orderEditSession.orderRouteId, items);
+        if (!response?.data?.success) {
+          throw new Error(response?.data?.message || "Failed to edit order.");
+        }
+
+        const responseData = response?.data?.data || {};
+        const requiresAdditionalPayment = Boolean(responseData?.requiresAdditionalPayment);
+
+        if (requiresAdditionalPayment) {
+          const razorpay = responseData?.razorpay || {};
+          const additionalAmount = Number(responseData?.additionalAmount || 0);
+
+          if (!razorpay?.orderId || !razorpay?.key) {
+            throw new Error("Additional payment initialization failed.");
+          }
+
+          await new Promise((resolve, reject) => {
+            initRazorpayPayment({
+              key: razorpay.key,
+              amount: razorpay.amount,
+              currency: razorpay.currency || "INR",
+              order_id: razorpay.orderId,
+              name: "MoBasket",
+              description: `Additional payment for edited order ${orderEditSession.orderRouteId}`.trim(),
+              prefill: {
+                name: userProfile?.name || "",
+                email: userProfile?.email || "",
+                contact: (userProfile?.phone || "").replace(/\D/g, "").slice(-10),
+              },
+              notes: {
+                orderId: String(orderEditSession.orderRouteId || ""),
+                purpose: "order_edit_additional_payment",
+              },
+              handler: async (paymentResponse) => {
+                try {
+                  await orderAPI.verifyEditedOrderCartPayment(orderEditSession.orderRouteId, {
+                    razorpayOrderId: paymentResponse.razorpay_order_id,
+                    razorpayPaymentId: paymentResponse.razorpay_payment_id,
+                    razorpaySignature: paymentResponse.razorpay_signature,
+                  });
+                  resolve();
+                } catch (verifyError) {
+                  reject(verifyError);
+                }
+              },
+              onClose: () => reject(new Error("Payment cancelled")),
+              onError: (paymentError) => reject(paymentError),
+            });
+          });
+
+          toast.success(`Additional payment successful (${formatCurrency(additionalAmount)}). Order updated.`);
+        } else {
+          toast.success("Order updated successfully.");
+        }
+
+        clearCart("mofood");
+        clearOrderEditSession();
+        navigate(`/orders/${orderEditSession.orderRouteId}`);
+      } catch (error) {
+        const backendMessage = error?.response?.data?.message;
+        const localMessage = error?.message;
+        if (localMessage === "Payment cancelled") {
+          toast.info("Payment cancelled. Edited items were not applied.");
+        } else {
+          toast.error(backendMessage || localMessage || "Failed to edit order.");
+        }
+      } finally {
+        setIsPlacingOrder(false);
+      }
+      return;
+    }
+
     const sanitizedPhone = String(userProfile?.phone || "").replace(/\D/g, "");
     if (!sanitizedPhone || sanitizedPhone.length < 10) {
       toast.error("Please add your phone number in profile before ordering.");
@@ -665,6 +975,25 @@ export default function CheckoutPage() {
         </div>
       </div>
 
+      {isOrderEditMode && (
+        <div className="px-4 pt-4">
+          <div className="bg-orange-50 border border-orange-200 rounded-2xl px-4 py-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold text-orange-700 uppercase tracking-wide">
+                Editing order #{orderEditSession?.orderRouteId}
+              </p>
+              <p className="text-sm font-semibold text-orange-900">
+                Add items before timer ends
+              </p>
+            </div>
+            <p className="text-lg font-extrabold text-orange-900 tabular-nums">
+              {String(Math.floor(editSecondsLeft / 60)).padStart(2, "0")}:
+              {String(editSecondsLeft % 60).padStart(2, "0")}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="px-4 py-4">
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-orange-100">
           <div className="flex items-start gap-3">
@@ -737,13 +1066,49 @@ export default function CheckoutPage() {
                       {isDetectingAddress ? "Detecting..." : "Detect Current Location"}
                     </button>
 
-                    <input
-                      type="text"
-                      value={newAddress.street}
-                      onChange={(e) => setNewAddress((prev) => ({ ...prev, street: e.target.value }))}
-                      placeholder="Street / House No."
-                      className="h-8 w-full rounded-lg border border-gray-200 px-2 text-xs"
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={newAddress.street}
+                        onChange={(e) => handleStreetInputChange(e.target.value)}
+                        onFocus={() => {
+                          if (newAddress.street.trim().length >= 3) {
+                            setShowAddressSuggestions(true);
+                            fetchAddressSuggestions(newAddress.street);
+                          }
+                        }}
+                        onBlur={() => {
+                          setTimeout(() => setShowAddressSuggestions(false), 150);
+                        }}
+                        placeholder="Street / House No."
+                        className="h-8 w-full rounded-lg border border-gray-200 px-2 text-xs"
+                      />
+                      {showAddressSuggestions && (
+                        <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+                          {loadingAddressSuggestions ? (
+                            <p className="px-3 py-2 text-xs text-gray-500">Loading suggestions...</p>
+                          ) : addressSuggestions.length > 0 ? (
+                            addressSuggestions.map((suggestion) => (
+                              <button
+                                key={suggestion.place_id}
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => handleAddressSuggestionSelect(suggestion)}
+                                className="block w-full border-b border-gray-100 px-3 py-2 text-left text-xs text-gray-700 hover:bg-orange-50 last:border-b-0"
+                              >
+                                {suggestion.description}
+                              </button>
+                            ))
+                          ) : (
+                            <p className="px-3 py-2 text-xs text-gray-500">
+                              {googlePlacesReady
+                                ? "No address suggestions found."
+                                : "Preparing suggestions..."}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <input
                       type="text"
                       value={newAddress.additionalDetails}
@@ -988,76 +1353,78 @@ export default function CheckoutPage() {
         </div>
       </div>
 
-      <div className="px-4 mb-4">
-        <div className="bg-white rounded-2xl p-4 shadow-sm border border-orange-100">
-          <h3 className="text-sm font-bold text-gray-900 mb-3">Payment Method</h3>
-          <div className="space-y-2">
-            <button
-              onClick={() => setPaymentMethod("card")}
-              className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${
-                paymentMethod === "card"
-                  ? "border-[#ff8100] bg-[#ff8100]/10"
-                  : "border-gray-200 bg-white"
-              }`}
-            >
-              <CreditCard
-                className={`w-5 h-5 ${paymentMethod === "card" ? "text-[#ff8100]" : "text-gray-400"}`}
-              />
-              <span
-                className={`text-sm font-medium ${paymentMethod === "card" ? "text-[#ff8100]" : "text-gray-700"}`}
+      {!isOrderEditMode && (
+        <div className="px-4 mb-4">
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-orange-100">
+            <h3 className="text-sm font-bold text-gray-900 mb-3">Payment Method</h3>
+            <div className="space-y-2">
+              <button
+                onClick={() => setPaymentMethod("card")}
+                className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${
+                  paymentMethod === "card"
+                    ? "border-[#ff8100] bg-[#ff8100]/10"
+                    : "border-gray-200 bg-white"
+                }`}
               >
-                Credit/Debit Card
-              </span>
-            </button>
-            <button
-              onClick={() => setPaymentMethod("wallet")}
-              className={`w-full flex items-center justify-between gap-3 p-3 rounded-lg border-2 transition-colors ${
-                paymentMethod === "wallet"
-                  ? "border-[#ff8100] bg-[#ff8100]/10"
-                  : "border-gray-200 bg-white"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Wallet
-                  className={`w-5 h-5 ${paymentMethod === "wallet" ? "text-[#ff8100]" : "text-gray-400"}`}
+                <CreditCard
+                  className={`w-5 h-5 ${paymentMethod === "card" ? "text-[#ff8100]" : "text-gray-400"}`}
                 />
-                <div className="text-left">
-                  <span
-                    className={`block text-sm font-medium ${paymentMethod === "wallet" ? "text-[#ff8100]" : "text-gray-700"}`}
-                  >
-                    MoBasket Wallet
-                  </span>
-                  <span className="block text-xs text-gray-500">
-                    {walletLoading
-                      ? "Checking balance..."
-                      : `Available: ${formatCurrency(walletBalance)}`}
-                  </span>
-                </div>
-              </div>
-              {!walletLoading && !hasSufficientWalletBalance && (
-                <span className="text-[11px] font-semibold text-red-500">Low balance</span>
-              )}
-            </button>
-            <button
-              onClick={() => setPaymentMethod("cash")}
-              className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${
-                paymentMethod === "cash"
-                  ? "border-[#ff8100] bg-[#ff8100]/10"
-                  : "border-gray-200 bg-white"
-              }`}
-            >
-              <ShoppingBag
-                className={`w-5 h-5 ${paymentMethod === "cash" ? "text-[#ff8100]" : "text-gray-400"}`}
-              />
-              <span
-                className={`text-sm font-medium ${paymentMethod === "cash" ? "text-[#ff8100]" : "text-gray-700"}`}
+                <span
+                  className={`text-sm font-medium ${paymentMethod === "card" ? "text-[#ff8100]" : "text-gray-700"}`}
+                >
+                  Credit/Debit Card
+                </span>
+              </button>
+              <button
+                onClick={() => setPaymentMethod("wallet")}
+                className={`w-full flex items-center justify-between gap-3 p-3 rounded-lg border-2 transition-colors ${
+                  paymentMethod === "wallet"
+                    ? "border-[#ff8100] bg-[#ff8100]/10"
+                    : "border-gray-200 bg-white"
+                }`}
               >
-                Cash on Delivery
-              </span>
-            </button>
+                <div className="flex items-center gap-3">
+                  <Wallet
+                    className={`w-5 h-5 ${paymentMethod === "wallet" ? "text-[#ff8100]" : "text-gray-400"}`}
+                  />
+                  <div className="text-left">
+                    <span
+                      className={`block text-sm font-medium ${paymentMethod === "wallet" ? "text-[#ff8100]" : "text-gray-700"}`}
+                    >
+                      MoBasket Wallet
+                    </span>
+                    <span className="block text-xs text-gray-500">
+                      {walletLoading
+                        ? "Checking balance..."
+                        : `Available: ${formatCurrency(walletBalance)}`}
+                    </span>
+                  </div>
+                </div>
+                {!walletLoading && !hasSufficientWalletBalance && (
+                  <span className="text-[11px] font-semibold text-red-500">Low balance</span>
+                )}
+              </button>
+              <button
+                onClick={() => setPaymentMethod("cash")}
+                className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${
+                  paymentMethod === "cash"
+                    ? "border-[#ff8100] bg-[#ff8100]/10"
+                    : "border-gray-200 bg-white"
+                }`}
+              >
+                <ShoppingBag
+                  className={`w-5 h-5 ${paymentMethod === "cash" ? "text-[#ff8100]" : "text-gray-400"}`}
+                />
+                <span
+                  className={`text-sm font-medium ${paymentMethod === "cash" ? "text-[#ff8100]" : "text-gray-700"}`}
+                >
+                  Cash on Delivery
+                </span>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-6">
         <Button
@@ -1070,6 +1437,8 @@ export default function CheckoutPage() {
         >
           {isPlacingOrder
             ? "Processing..."
+            : isOrderEditMode
+              ? "Save Changes"
             : paymentMethod === "cash"
               ? "Place Order"
               : paymentMethod === "wallet"

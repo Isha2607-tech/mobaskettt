@@ -15,6 +15,11 @@ import { toast } from "sonner";
 import DeliveryScheduler from "@/components/DeliveryScheduler";
 import { useCart } from "../../user/context/CartContext";
 import api, { restaurantAPI } from "@/lib/api";
+import {
+  clearOrderEditSession,
+  getOrderEditRemainingSeconds,
+  getOrderEditSession,
+} from "@/module/user/utils/orderEditSession";
 
 export default function CartPage() {
   const navigate = useNavigate();
@@ -27,13 +32,38 @@ export default function CartPage() {
   const [addons, setAddons] = useState([]);
   const [loadingAddons, setLoadingAddons] = useState(false);
   const [restaurantSchedule, setRestaurantSchedule] = useState(null);
+  const [orderEditSession, setOrderEditSession] = useState(() => getOrderEditSession());
+  const [editSecondsLeft, setEditSecondsLeft] = useState(() =>
+    getOrderEditRemainingSeconds(getOrderEditSession()),
+  );
 
   // Filter food items only (exclude grocery items)
   const cartItems = cart.filter((item) => !isGroceryItem(item));
   const restaurantId = cartItems[0]?.restaurantId || null;
   const restaurantName = cartItems[0]?.restaurant || "Restaurant";
+  const isEditSessionActive =
+    editSecondsLeft > 0 &&
+    Boolean(orderEditSession?.orderRouteId) &&
+    (!orderEditSession?.restaurantId ||
+      String(orderEditSession.restaurantId) === String(restaurantId || ""));
 
   const [discountCode, setDiscountCode] = useState("");
+
+  useEffect(() => {
+    const tick = () => {
+      const session = getOrderEditSession();
+      const remaining = getOrderEditRemainingSeconds(session);
+      if (remaining <= 0 && session) {
+        clearOrderEditSession();
+      }
+      setOrderEditSession(remaining > 0 ? session : null);
+      setEditSecondsLeft(remaining);
+    };
+
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const handleQuantityChange = (id, change) => {
     const item = cartItems.find((i) => i.id === id);
@@ -132,6 +162,7 @@ export default function CartPage() {
         ...deliveryOptions,
         items: cartItems,
         total: cartTotal,
+        orderEditSession: isEditSessionActive ? orderEditSession : null,
       },
     });
   };
@@ -152,6 +183,24 @@ export default function CartPage() {
       </div>
 
       {/* Empty Cart State */}
+      {isEditSessionActive && (
+        <div className="px-4 pt-4">
+          <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 flex items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-semibold text-orange-700 uppercase tracking-wide">
+                Editing order #{orderEditSession?.orderRouteId}
+              </p>
+              <p className="text-sm font-semibold text-orange-900">
+                Complete changes before timer ends
+              </p>
+            </div>
+            <p className="text-lg font-extrabold text-orange-900 tabular-nums">
+              {String(Math.floor(editSecondsLeft / 60)).padStart(2, "0")}:
+              {String(editSecondsLeft % 60).padStart(2, "0")}
+            </p>
+          </div>
+        </div>
+      )}
       {cartItems.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 px-4">
           <ShoppingBag className="w-16 h-16 text-gray-300 mb-4" />
