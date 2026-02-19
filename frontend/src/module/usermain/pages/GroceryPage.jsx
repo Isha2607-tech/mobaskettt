@@ -1290,9 +1290,9 @@ const GroceryPage = () => {
                     {cardImages.map((imageSrc, imageIdx) => (
                       <div
                         key={`${item.id}-${imageIdx}`}
-                        className="h-14 rounded-xl bg-white border border-[#eceff3] overflow-hidden flex items-center justify-center p-1"
+                        className="h-14 rounded-xl bg-white border border-[#eceff3] overflow-hidden flex items-center justify-center p-0.5"
                       >
-                        <img src={imageSrc} alt={item.name} className="w-full h-full object-contain" />
+                        <img src={imageSrc} alt={item.name} className="w-full h-full object-contain scale-125" />
                       </div>
                     ))}
                     {item.countLabel ? (
