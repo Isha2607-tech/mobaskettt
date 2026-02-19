@@ -39,6 +39,7 @@ import GroceryCategories from "../pages/grocery/GroceryCategories";
 import GrocerySubcategories from "../pages/grocery/GrocerySubcategories";
 import GroceryCatalogProducts from "../pages/grocery/GroceryCatalogProducts";
 import GroceryPlans from "../pages/grocery/GroceryPlans";
+import GroceryStockManagement from "../pages/grocery/GroceryStockManagement";
 // Promotions Management
 import BasicCampaign from "../pages/campaigns/BasicCampaign";
 import FoodCampaign from "../pages/campaigns/FoodCampaign";
@@ -221,6 +222,7 @@ export default function AdminRouter() {
         <Route path="grocery-categories" element={<GroceryCategories />} />
         <Route path="grocery-subcategories" element={<GrocerySubcategories />} />
         <Route path="grocery-products-catalog" element={<GroceryCatalogProducts />} />
+        <Route path="grocery-stock-management" element={<GroceryStockManagement />} />
         <Route path="grocery-plans" element={<GroceryPlans />} />
 
         {/* PROMOTIONS MANAGEMENT */}

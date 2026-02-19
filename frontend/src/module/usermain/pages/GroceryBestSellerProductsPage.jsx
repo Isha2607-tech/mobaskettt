@@ -116,6 +116,43 @@ export default function GroceryBestSellerProductsPage() {
     }
   };
 
+  const handleProductCardClick = (product) => {
+    const productId = product?._id || product?.id;
+    if (!productId) return;
+
+    const image =
+      Array.isArray(product?.images) && product.images[0]
+        ? product.images[0]
+        : "https://via.placeholder.com/200";
+
+    navigate(`/food/${productId}`, {
+      state: {
+        item: {
+          id: productId,
+          name: product?.name || "Product",
+          description: product?.description || "",
+          weight: product?.unit || "",
+          price: Number(product?.sellingPrice || 0),
+          mrp: Number(product?.mrp || 0),
+          image,
+          categoryId: String(
+            product?.category?._id ||
+            product?.category?.id ||
+            product?.category ||
+            ""
+          ).trim(),
+          subcategoryId: String(
+            product?.subcategory?._id ||
+            product?.subcategory?.id ||
+            product?.subcategory ||
+            ""
+          ).trim(),
+          platform: "mogrocery",
+        },
+      },
+    });
+  };
+
   return (
     <div className="min-h-screen bg-white pb-24">
       <div className="sticky top-0 z-20 bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-3">
@@ -138,7 +175,11 @@ export default function GroceryBestSellerProductsPage() {
       {!loading && !error && products.length > 0 && (
         <div className="grid grid-cols-2 gap-3 px-4 py-4 md:grid-cols-3">
           {products.map((product) => (
-            <div key={product._id} className="rounded-2xl border border-slate-200 p-3 bg-white shadow-sm flex flex-col min-h-[240px]">
+            <div
+              key={product._id}
+              className="rounded-2xl border border-slate-200 p-3 bg-white shadow-sm flex flex-col min-h-[240px] cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => handleProductCardClick(product)}
+            >
               <div className="w-full aspect-square bg-slate-50 rounded-xl overflow-hidden mb-2 flex items-center justify-center">
                 <img
                   src={Array.isArray(product.images) && product.images[0] ? product.images[0] : "https://via.placeholder.com/200"}

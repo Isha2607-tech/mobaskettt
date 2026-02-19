@@ -503,9 +503,11 @@ const GroceryPage = () => {
             (Array.isArray(product?.subcategories) && product.subcategories[0]?._id) ||
             product?.subcategory?._id ||
             null;
+          const productId = String(product?._id || product?.id || productIndex);
 
           return {
-            _id: `product-card-${product?._id || product?.id || productIndex}`,
+            _id: `product-card-${productId}`,
+            productId,
             name: product?.name || "Product",
             image: getProductImage(product),
             __kind: "product",
@@ -880,8 +882,45 @@ const GroceryPage = () => {
     navigate("/categories");
   };
 
+  const buildProductDetailState = (product) => {
+    const sellingPrice = Number(product?.sellingPrice ?? product?.price ?? 0);
+    const mrp = Number(product?.mrp ?? sellingPrice ?? 0);
+    const discountPercent =
+      mrp > sellingPrice && mrp > 0
+        ? Math.max(1, Math.round(((mrp - sellingPrice) / mrp) * 100))
+        : 0;
+
+    return {
+      id: product?._id || product?.id,
+      name: product?.name || "Product",
+      description: product?.description || "",
+      weight: product?.unit || "200 g",
+      price: sellingPrice,
+      mrp,
+      time: product?.time || "8 MINS",
+      image: getProductImage(product),
+      discount: discountPercent > 0 ? `${discountPercent}% OFF` : "",
+      categoryId: product?.category?._id || product?.category?.id || product?.category || "",
+      category: product?.category || null,
+      subcategoryId:
+        (Array.isArray(product?.subcategories) && product.subcategories[0]?._id) ||
+        product?.subcategory?._id ||
+        product?.subcategory?.id ||
+        product?.subcategory ||
+        "",
+      platform: "mogrocery",
+    };
+  };
+
   const handleProductCardClick = (product, fallbackCategoryId = "") => {
-    const categoryId = product?.category?._id || product?.category?.id || product?.category || fallbackCategoryId;
+    const productId = product?._id || product?.id;
+    if (productId) {
+      navigate(`/food/${productId}`, { state: { item: buildProductDetailState(product) } });
+      return;
+    }
+
+    const categoryId =
+      product?.category?._id || product?.category?.id || product?.category || fallbackCategoryId;
     if (!categoryId) return;
     openCollectionSheet({
       categoryId,
@@ -1536,6 +1575,19 @@ const GroceryPage = () => {
                 key={card._id}
                 className="flex flex-col items-center gap-1.5 cursor-pointer active:scale-95 transition-transform"
                 onClick={() => {
+                  if (card.__kind === "product") {
+                    const matchedProduct = allProducts.find(
+                      (product) =>
+                        String(product?._id || product?.id || "") ===
+                        String(card.productId || "")
+                    );
+
+                    if (matchedProduct) {
+                      handleProductCardClick(matchedProduct, category?._id || category?.slug || category?.name);
+                      return;
+                    }
+                  }
+
                   if (card.targetSubcategoryId) {
                     openCollectionSheet({
                       categoryId: category?._id || category?.slug || category?.name,
@@ -1720,7 +1772,8 @@ const GroceryPage = () => {
                         return (
                           <div
                             key={`collection-product-${productId}`}
-                            className="rounded-[16px] border border-slate-200 bg-white shadow-sm p-2 relative"
+                            className="rounded-[16px] border border-slate-200 bg-white shadow-sm p-2 relative cursor-pointer"
+                            onClick={() => handleProductCardClick(product)}
                           >
                             {discountPercent > 0 && (
                               <span className="absolute top-2 left-2 z-10 bg-[#facc15] text-[10px] font-black text-slate-900 px-1.5 py-0.5 rounded">
@@ -1837,7 +1890,8 @@ const GroceryPage = () => {
                         return (
                           <div
                             key={`wishlist-product-${productId}`}
-                            className="rounded-[16px] border border-slate-200 bg-white shadow-sm p-2 relative"
+                            className="rounded-[16px] border border-slate-200 bg-white shadow-sm p-2 relative cursor-pointer"
+                            onClick={() => handleProductCardClick(product)}
                           >
                             <button
                               type="button"

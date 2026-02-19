@@ -355,6 +355,12 @@ export const mogroceryMenuData = [
       },
       {
         type: "link",
+        label: "Stock Management",
+        path: "/admin/grocery-stock-management",
+        icon: "Package",
+      },
+      {
+        type: "link",
         label: "Product Addons List",
         path: "/admin/grocery-addons",
         icon: "Package",

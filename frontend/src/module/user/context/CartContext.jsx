@@ -391,6 +391,82 @@ export function CartProvider({ children }) {
     });
   };
 
+  const updateQuantityByPlatform = (
+    itemId,
+    quantity,
+    platform = "mofood",
+    sourcePosition = null,
+    productInfo = null,
+  ) => {
+    const resolvedPlatform = platform === "mogrocery" ? "mogrocery" : "mofood";
+    const setTargetCart = resolvedPlatform === "mogrocery" ? setGroceryCart : setFoodCart;
+
+    if (quantity <= 0) {
+      setTargetCart((prev) => {
+        const itemToRemove = prev.find((i) => i.id === itemId);
+        if (itemToRemove && sourcePosition && productInfo) {
+          const removeEvent = {
+            product: {
+              id: productInfo.id || itemToRemove.id,
+              name: productInfo.name || itemToRemove.name,
+              imageUrl:
+                productInfo.imageUrl ||
+                productInfo.image ||
+                itemToRemove.image ||
+                itemToRemove.imageUrl,
+            },
+            sourcePosition,
+          };
+          setLastRemoveEvent(removeEvent);
+          if (resolvedPlatform === "mogrocery") {
+            setLastRemoveEventGrocery(removeEvent);
+            setTimeout(() => setLastRemoveEventGrocery(null), 1500);
+          } else {
+            setLastRemoveEventFood(removeEvent);
+            setTimeout(() => setLastRemoveEventFood(null), 1500);
+          }
+          setTimeout(() => setLastRemoveEvent(null), 1500);
+        }
+        return prev.filter((i) => i.id !== itemId);
+      });
+      return;
+    }
+
+    setTargetCart((prev) => {
+      const existingItem = prev.find((i) => i.id === itemId);
+      if (
+        existingItem &&
+        quantity < (existingItem.quantity || 0) &&
+        sourcePosition &&
+        productInfo
+      ) {
+        const removeEvent = {
+          product: {
+            id: productInfo.id || existingItem.id,
+            name: productInfo.name || existingItem.name,
+            imageUrl:
+              productInfo.imageUrl ||
+              productInfo.image ||
+              existingItem.image ||
+              existingItem.imageUrl,
+          },
+          sourcePosition,
+        };
+        setLastRemoveEvent(removeEvent);
+        if (resolvedPlatform === "mogrocery") {
+          setLastRemoveEventGrocery(removeEvent);
+          setTimeout(() => setLastRemoveEventGrocery(null), 1500);
+        } else {
+          setLastRemoveEventFood(removeEvent);
+          setTimeout(() => setLastRemoveEventFood(null), 1500);
+        }
+        setTimeout(() => setLastRemoveEvent(null), 1500);
+      }
+
+      return prev.map((i) => (i.id === itemId ? { ...i, quantity } : i));
+    });
+  };
+
   const getCartCount = () =>
     activeCart.reduce((total, item) => total + (item.quantity || 0), 0);
 
@@ -537,6 +613,7 @@ export function CartProvider({ children }) {
     addToCart,
     removeFromCart,
     updateQuantity,
+    updateQuantityByPlatform,
     getCartCount,
     isInCart,
     getCartItem,

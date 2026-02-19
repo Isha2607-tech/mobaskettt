@@ -20,6 +20,7 @@ const DEFAULT_CATEGORY_IMAGE = "https://via.placeholder.com/40"
 
 const getInitialFormData = () => ({
   name: "",
+  description: "",
   image: DEFAULT_CATEGORY_IMAGE,
   status: true,
   type: "",
@@ -227,6 +228,7 @@ export default function Category({ scope = "food", defaultGroceryEntity = "categ
                 id: item._id,
                 sl: index + 1,
                 name: item.name || "",
+                description: item.description || "",
                 image: firstImage || DEFAULT_CATEGORY_IMAGE,
                 status: item.isActive !== false,
                 type: `${categoryName}${item?.unit ? ` (${item.unit})` : ""}`,
@@ -449,6 +451,7 @@ export default function Category({ scope = "food", defaultGroceryEntity = "categ
       setFormData({
         ...getInitialFormData(),
         name: category.name || "",
+        description: category.description || "",
         image: category.image || DEFAULT_CATEGORY_IMAGE,
         status: category.status !== undefined ? category.status : true,
         parentCategory: category.parentCategoryId || "",
@@ -678,6 +681,7 @@ export default function Category({ scope = "food", defaultGroceryEntity = "categ
           category: formData.productCategory,
           subcategories: formData.productSubcategories,
           name: formData.name,
+          description: (formData.description || "").trim(),
           mrp: Number(formData.mrp || 0),
           sellingPrice: Number(formData.sellingPrice || 0),
           unit: formData.unit || "",
@@ -1536,6 +1540,18 @@ export default function Category({ scope = "food", defaultGroceryEntity = "categ
                           <label htmlFor="inStock" className="text-sm font-medium text-slate-700">
                             In Stock
                           </label>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-2">
+                            Product Details
+                          </label>
+                          <textarea
+                            value={formData.description}
+                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                            placeholder="Enter product details shown on product page"
+                            rows={3}
+                            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                          />
                         </div>
                       </>
                     )}

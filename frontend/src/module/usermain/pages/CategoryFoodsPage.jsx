@@ -10,7 +10,6 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { motion } from "framer-motion";
 import { useCart } from "../../user/context/CartContext";
 import WishlistButton from "@/components/WishlistButton";
 
@@ -384,6 +383,24 @@ export function CategoryFoodsContent({
   /* End of change */
   const [selectedCategory, setSelectedCategory] = useState(initialCategory);
 
+  const handleProductCardClick = (item) => {
+    navigate(`/food/${item.id}`, {
+      state: {
+        item: {
+          id: item.id,
+          name: item.name || "Product",
+          description: item.description || "",
+          weight: item.weight || "",
+          price: Number(item.price || 0),
+          mrp: Number(item.mrp || 0),
+          image: item.image,
+          categoryId: String(item?.category || selectedCategory || "").trim(),
+          platform: "mogrocery",
+        },
+      },
+    });
+  };
+
   // Update selectedCategory when initialCategory prop changes
   useEffect(() => {
     setSelectedCategory(initialCategory);
@@ -486,9 +503,7 @@ export function CategoryFoodsContent({
                 <div
                   key={item.id}
                   className="flex flex-col bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 cursor-pointer hover:shadow-md transition-shadow h-full"
-                  onClick={() =>
-                    navigate(`/food/${item.id}`, { state: { item } })
-                  }
+                  onClick={() => handleProductCardClick(item)}
                 >
                   {/* Image Section */}
                   <div className="relative w-full h-40 md:h-48 p-2 bg-white">

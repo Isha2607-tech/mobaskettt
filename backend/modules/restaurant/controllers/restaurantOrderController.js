@@ -6,6 +6,7 @@ import asyncHandler from '../../../shared/middleware/asyncHandler.js';
 import { notifyRestaurantOrderUpdate } from '../../order/services/restaurantNotificationService.js';
 import { assignOrderToDeliveryBoy, findNearestDeliveryBoys, findNearestDeliveryBoy } from '../../order/services/deliveryAssignmentService.js';
 import { notifyDeliveryBoyNewOrder, notifyMultipleDeliveryBoys } from '../../order/services/deliveryNotificationService.js';
+import { restoreGroceryStockForOrder } from '../../order/services/groceryStockService.js';
 import mongoose from 'mongoose';
 
 /**
@@ -574,6 +575,7 @@ export const rejectOrder = asyncHandler(async (req, res) => {
     order.cancelledBy = 'restaurant';
     order.cancelledAt = new Date();
     await order.save();
+    await restoreGroceryStockForOrder(order);
 
     // Calculate refund amount but don't process automatically
     // Admin will process refund manually via refund button

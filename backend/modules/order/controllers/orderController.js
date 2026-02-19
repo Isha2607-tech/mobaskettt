@@ -18,6 +18,7 @@ import OrderEvent from '../models/OrderEvent.js';
 import UserWallet from '../../user/models/UserWallet.js';
 import Menu from '../../restaurant/models/Menu.js';
 import User from '../../auth/models/User.js';
+import { reduceGroceryStockForOrder, restoreGroceryStockForOrder } from '../services/groceryStockService.js';
 
 const logger = winston.createLogger({
   level: 'info',
@@ -865,6 +866,8 @@ export const createOrder = async (req, res) => {
           });
         }
 
+        await reduceGroceryStockForOrder(order);
+
         // Check if transaction already exists for this order (prevent duplicate)
         const existingTransaction = wallet.transactions.find(
           t => t.orderId && t.orderId.toString() === order._id.toString() && t.type === 'deduction'
@@ -941,6 +944,7 @@ export const createOrder = async (req, res) => {
         } else {
           order.status = 'scheduled';
         }
+
         await saveOrderWithIdRetry(order);
 
         // Notify restaurant only for non-scheduled orders.
@@ -989,6 +993,8 @@ export const createOrder = async (req, res) => {
     // For cash-on-delivery orders, confirm immediately and notify restaurant.
     // Online (Razorpay) orders follow the existing verifyOrderPayment flow.
     if (normalizedPaymentMethod === 'cash') {
+      await reduceGroceryStockForOrder(order);
+
       // Best-effort payment record; even if it fails we still proceed with order.
       try {
         const payment = new Payment({
@@ -1267,6 +1273,8 @@ export const switchOrderToCash = async (req, res) => {
       startOrderModificationWindow(order);
     }
 
+    await reduceGroceryStockForOrder(order);
+
     await saveOrderWithIdRetry(order);
 
     try {
@@ -1417,6 +1425,8 @@ export const verifyOrderPayment = async (req, res) => {
       });
     }
 
+    await reduceGroceryStockForOrder(order);
+
     // Create payment record
     const payment = new Payment({
       paymentId: `PAY-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -1464,6 +1474,7 @@ export const verifyOrderPayment = async (req, res) => {
       order.tracking.confirmed = { status: true, timestamp: new Date() };
       startOrderModificationWindow(order);
     }
+
     await saveOrderWithIdRetry(order);
 
     // Calculate order settlement and hold escrow
@@ -1813,6 +1824,7 @@ export const cancelOrder = async (req, res) => {
     order.cancelledBy = 'user';
     order.cancelledAt = new Date();
     await order.save();
+    await restoreGroceryStockForOrder(order);
 
     // Calculate refund amount only for online payments (Razorpay) and wallet
     // COD orders don't need refund since payment hasn't been made

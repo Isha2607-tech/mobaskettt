@@ -341,6 +341,26 @@ const orderSchema = new mongoose.Schema({
       }
     }
   },
+  stockSync: {
+    grocery: {
+      reduced: {
+        type: Boolean,
+        default: false
+      },
+      reducedAt: {
+        type: Date,
+        default: null
+      },
+      restored: {
+        type: Boolean,
+        default: false
+      },
+      restoredAt: {
+        type: Date,
+        default: null
+      }
+    }
+  },
   // Customer Review and Rating
   review: {
     rating: {

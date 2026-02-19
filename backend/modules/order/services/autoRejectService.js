@@ -1,6 +1,7 @@
 import Order from '../models/Order.js';
 import { notifyRestaurantOrderUpdate } from './restaurantNotificationService.js';
 import { calculateCancellationRefund } from './cancellationRefundService.js';
+import { restoreGroceryStockForOrder } from './groceryStockService.js';
 
 /**
  * Automatically reject orders that haven't been accepted within the accept time limit
@@ -58,6 +59,7 @@ export async function processAutoRejectOrders() {
           currentOrder.cancelledAt = now;
 
           await currentOrder.save();
+          await restoreGroceryStockForOrder(currentOrder);
 
           rejectedOrders.push({
             orderId: currentOrder.orderId,

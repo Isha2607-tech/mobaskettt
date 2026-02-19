@@ -1,6 +1,7 @@
 import Order from '../../order/models/Order.js';
 import { successResponse, errorResponse } from '../../../shared/utils/response.js';
 import asyncHandler from '../../../shared/middleware/asyncHandler.js';
+import { restoreGroceryStockForOrder } from '../../order/services/groceryStockService.js';
 import mongoose from 'mongoose';
 
 const normalizePlatform = (value) => (value === 'mogrocery' ? 'mogrocery' : 'mofood');
@@ -765,6 +766,7 @@ export const rejectOrderRequest = asyncHandler(async (req, res) => {
     order.cancellationReason = reason.trim();
     order.cancelledAt = new Date();
     await order.save();
+    await restoreGroceryStockForOrder(order);
 
     if (order.payment?.method === 'razorpay' || order.payment?.method === 'wallet') {
       try {
