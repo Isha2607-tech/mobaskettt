@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams, useNavigate, useSearchParams, useLocation as useRouterLocation } from "react-router-dom";
@@ -136,6 +136,37 @@ export default function RestaurantDetails() {
           normalizedSessionRestaurantId === normalizedRestaurantId)),
   );
 
+  const refreshRestaurantMenu = useCallback(async () => {
+    const restaurantIdForMenu =
+      restaurant?.id || restaurant?.restaurantId || restaurant?._id;
+    if (!restaurantIdForMenu) return;
+
+    try {
+      const menuResponse = await restaurantAPI.getMenuByRestaurantId(restaurantIdForMenu);
+      const menuSections = menuResponse?.data?.data?.menu?.sections || [];
+
+      setRestaurant((prev) => {
+        if (!prev) return prev;
+        const existingSections = Array.isArray(prev.menuSections) ? prev.menuSections : [];
+        const personalizedSection = existingSections.find(
+          (section) => section?.isPersonalizedRecommended,
+        );
+        const nextSections = personalizedSection
+          ? [personalizedSection, ...menuSections]
+          : menuSections;
+
+        return {
+          ...prev,
+          menuSections: nextSections,
+        };
+      });
+    } catch (error) {
+      if (error?.response?.status !== 404) {
+        console.warn("Menu refresh failed:", error?.message || error);
+      }
+    }
+  }, [restaurant?.id, restaurant?.restaurantId, restaurant?._id]);
+
   useEffect(() => {
     const incomingSession = routerLocation.state?.orderEditSession;
     if (incomingSession?.orderRouteId) {
@@ -165,6 +196,35 @@ export default function RestaurantDetails() {
     const timer = window.setInterval(tick, 1000);
     return () => window.clearInterval(timer);
   }, [orderEditSession]);
+
+  useEffect(() => {
+    if (!restaurant) return;
+
+    const handleFocus = () => {
+      refreshRestaurantMenu();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshRestaurantMenu();
+      }
+    };
+
+    const pollTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        refreshRestaurantMenu();
+      }
+    }, 10000);
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(pollTimer);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [Boolean(restaurant), refreshRestaurantMenu]);
 
   // Fetch restaurant data from API
   useEffect(() => {

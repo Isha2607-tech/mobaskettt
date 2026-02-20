@@ -23,7 +23,13 @@ const resolvePlatformMatch = (platformQuery) => {
   }
 
   // Default to mofood for this controller.
-  return 'mofood';
+  // Include legacy restaurants where platform may be missing/blank.
+  return { $in: ['mofood', 'food', '', null] };
+};
+
+const isUnapprovedApprovalStatus = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized !== 'approved';
 };
 
 const buildApprovalMenuCandidates = async ({ platform, restaurantMongoId }) => {
@@ -69,7 +75,7 @@ export const getPendingFoodApprovals = asyncHandler(async (req, res) => {
 
       for (const section of menu.sections || []) {
         for (const item of section.items || []) {
-          if (item.approvalStatus === 'pending') {
+          if (isUnapprovedApprovalStatus(item.approvalStatus)) {
             pendingRequests.push({
               _id: item.id,
               id: item.id,
@@ -96,7 +102,7 @@ export const getPendingFoodApprovals = asyncHandler(async (req, res) => {
 
         for (const subsection of section.subsections || []) {
           for (const item of subsection.items || []) {
-            if (item.approvalStatus === 'pending') {
+            if (isUnapprovedApprovalStatus(item.approvalStatus)) {
               pendingRequests.push({
                 _id: item.id,
                 id: item.id,
@@ -126,7 +132,7 @@ export const getPendingFoodApprovals = asyncHandler(async (req, res) => {
       }
 
       for (const addon of menu.addons || []) {
-        if (addon.approvalStatus === 'pending') {
+        if (isUnapprovedApprovalStatus(addon.approvalStatus)) {
           pendingRequests.push({
             _id: addon.id,
             id: addon.id,
