@@ -360,6 +360,21 @@ export default function Home() {
   const [showAllCategoriesModal, setShowAllCategoriesModal] = useState(false);
   const isHandlingSwitchOff = useRef(false);
 
+  const isLikelyImageUrl = (value) => {
+    const src = String(value || "").trim();
+    if (!src) return false;
+    return src.startsWith("http://") || src.startsWith("https://") || src.startsWith("/");
+  };
+
+  const fallbackImageBySeed = (seed) => {
+    const str = String(seed || "");
+    const hash = str.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+    return foodImages[hash % foodImages.length] || foodImages[0];
+  };
+
+  const sanitizeImageSrc = (src, seed = "") =>
+    isLikelyImageUrl(src) ? src : fallbackImageBySeed(seed);
+
   // Swipe functionality for hero banner carousel
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
@@ -997,6 +1012,8 @@ export default function Home() {
                 distanceInKm: distanceInKm, // Store numeric distance for sorting
                 image: image,
                 images: allImages, // Array of cover images for carousel (separate from menu images)
+                menuImages: fallbackImages, // Product/menu images (preferred for category icons)
+                coverImages, // Store-front/banner images
                 priceRange: restaurant.priceRange || "$$", // Use from API or default
                 featuredDish:
                   restaurant.featuredDish ||
@@ -1302,7 +1319,13 @@ export default function Home() {
         derived.push({
           id: `rest-cat-${slug}-${index}`,
           name: cuisine,
-          image: restaurant?.image || foodImages[0],
+          // Prefer product/menu image for category icon; never fall back to storefront image.
+          image: sanitizeImageSrc(
+            (Array.isArray(restaurant?.menuImages) && restaurant.menuImages.length > 0
+              ? restaurant.menuImages[0]
+              : fallbackImageBySeed(slug)),
+            slug,
+          ),
           slug,
           label: cuisine,
         });
@@ -1310,8 +1333,26 @@ export default function Home() {
     });
 
     if (derived.length > 0) return derived;
-    return fallbackCategories;
+    return fallbackCategories.map((category) => ({
+      ...category,
+      image: sanitizeImageSrc(category?.image, category?.slug || category?.name),
+    }));
   }, [restaurantsData, fallbackCategories]);
+
+  const topBrandRestaurants = useMemo(
+    () =>
+      (restaurantsData || [])
+        .filter((restaurant) => String(restaurant?.name || "").trim())
+        .map((restaurant) => ({
+          ...restaurant,
+          image: sanitizeImageSrc(
+            restaurant?.image,
+            restaurant?.slug || restaurant?.id || restaurant?.name,
+          ),
+        }))
+        .slice(0, 10),
+    [restaurantsData],
+  );
 
   // Featured foods removed - will be handled by restaurants data from API
   const filteredFeaturedFoods = useMemo(() => {
@@ -1730,15 +1771,15 @@ export default function Home() {
                         to={`/user/category/${category.slug || category.name.toLowerCase().replace(/\s+/g, "-")}`}
                       >
                         <div className="flex flex-col items-center gap-2 w-[62px] sm:w-24 md:w-28">
-                          <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all">
-                            <OptimizedImage
-                              src={category.image}
+                        <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all">
+                            <img
+                              src={sanitizeImageSrc(category.image, category.slug || category.name)}
                               alt={category.name}
-                              className="w-full h-full bg-white rounded-full"
-                              sizes="(max-width: 640px) 56px, (max-width: 768px) 80px, 96px"
-                              objectFit="cover"
-                              placeholder="blur"
-                              onError={() => { }}
+                              className="w-full h-full bg-white rounded-full object-cover"
+                              onError={(e) => {
+                                e.currentTarget.src = fallbackImageBySeed(category.slug || category.name);
+                              }}
+                              loading="lazy"
                             />
                           </div>
                           <span className="text-xs sm:text-sm md:text-base font-semibold text-gray-800 dark:text-gray-200 text-center">
@@ -1799,14 +1840,14 @@ export default function Home() {
                     >
                       <div className="flex flex-col items-center gap-2 w-[62px] sm:w-24 md:w-28">
                         <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all">
-                          <OptimizedImage
-                            src={category.imageUrl}
+                          <img
+                            src={sanitizeImageSrc(category.imageUrl, category.slug || category.label)}
                             alt={category.label}
-                            className="w-full h-full bg-white rounded-full"
-                            sizes="(max-width: 640px) 56px, (max-width: 768px) 80px, 96px"
-                            objectFit="cover"
-                            placeholder="blur"
-                            onError={() => { }}
+                            className="w-full h-full bg-white rounded-full object-cover"
+                            onError={(e) => {
+                              e.currentTarget.src = fallbackImageBySeed(category.slug || category.label);
+                            }}
+                            loading="lazy"
                           />
                         </div>
                         <span className="text-xs sm:text-sm md:text-base font-semibold text-gray-800 dark:text-gray-200 text-center">
@@ -1875,9 +1916,9 @@ export default function Home() {
             }}
           >
             {/* Map through restaurants data - show first 10 */}
-            {restaurantsData.length > 0 ? (
+            {topBrandRestaurants.length > 0 ? (
               <>
-                {restaurantsData.slice(0, 10).map((restaurant, index) => (
+                {topBrandRestaurants.map((restaurant, index) => (
                   <motion.div
                     key={`brand-${restaurant.id || index}`}
                     className="flex-shrink-0"
@@ -1898,14 +1939,14 @@ export default function Home() {
                     >
                       <div className="flex flex-col items-center gap-2 w-[62px] sm:w-24 md:w-28">
                         <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all border border-gray-100 dark:border-gray-800">
-                          <OptimizedImage
-                            src={restaurant.image}
+                          <img
+                            src={sanitizeImageSrc(restaurant.image, restaurant.slug || restaurant.id || restaurant.name)}
                             alt={restaurant.name}
-                            className="w-full h-full bg-white rounded-full"
-                            sizes="(max-width: 640px) 56px, (max-width: 768px) 80px, 96px"
-                            objectFit="cover"
-                            placeholder="blur"
-                            onError={() => { }}
+                            className="w-full h-full bg-white rounded-full object-cover"
+                            onError={(e) => {
+                              e.currentTarget.src = fallbackImageBySeed(restaurant.slug || restaurant.id || restaurant.name);
+                            }}
+                            loading="lazy"
                           />
                         </div>
                         <span className="text-xs sm:text-sm md:text-base font-semibold text-gray-800 dark:text-gray-200 text-center line-clamp-1 w-full px-1">

@@ -75,6 +75,22 @@ export default function CategoryPage() {
   const [loadingRestaurants, setLoadingRestaurants] = useState(true);
   const [categoryKeywords, setCategoryKeywords] = useState({});
 
+  const getCategoryKeywords = (categoryId) => {
+    const mapped = categoryKeywords[categoryId];
+    if (Array.isArray(mapped) && mapped.length > 0) {
+      return mapped;
+    }
+
+    const normalized = String(categoryId || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+
+    if (!normalized) return [];
+
+    return [normalized];
+  };
+
   // Fetch categories from admin API
   useEffect(() => {
     const fetchCategories = async () => {
@@ -117,17 +133,21 @@ export default function CategoryPage() {
 
           setCategories(transformedCategories);
 
-          // Generate category keywords dynamically from category names
+          // Generate strict category keywords from category names/slugs
           const keywordsMap = {};
           categoriesArray.forEach((cat) => {
             const categoryId = cat.slug || cat.id;
-            const categoryName = cat.name.toLowerCase();
-
-            // Generate keywords from category name
-            const words = categoryName
-              .split(/[\s-]+/)
-              .filter((w) => w.length > 0);
-            keywordsMap[categoryId] = [categoryName, ...words];
+            const categoryName = String(cat.name || "")
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, " ")
+              .trim();
+            const categorySlug = String(cat.slug || cat.id || "")
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, " ")
+              .trim();
+            keywordsMap[categoryId] = Array.from(
+              new Set([categoryName, categorySlug].filter(Boolean)),
+            );
           });
 
           setCategoryKeywords(keywordsMap);
@@ -167,7 +187,7 @@ export default function CategoryPage() {
       return false;
     }
 
-    const keywords = categoryKeywords[categoryId] || [];
+    const keywords = getCategoryKeywords(categoryId);
     if (keywords.length === 0) {
       return false;
     }
@@ -194,6 +214,32 @@ export default function CategoryPage() {
           }
         }
       }
+
+      if (section.subsections && Array.isArray(section.subsections)) {
+        for (const subsection of section.subsections) {
+          const subsectionNameLower = (subsection.name || "").toLowerCase();
+          if (keywords.some((keyword) => subsectionNameLower.includes(keyword))) {
+            return true;
+          }
+
+          if (subsection.items && Array.isArray(subsection.items)) {
+            for (const item of subsection.items) {
+              const itemNameLower = (item.name || "").toLowerCase();
+              const itemCategoryLower = (item.category || "").toLowerCase();
+
+              if (
+                keywords.some(
+                  (keyword) =>
+                    itemNameLower.includes(keyword) ||
+                    itemCategoryLower.includes(keyword),
+                )
+              ) {
+                return true;
+              }
+            }
+          }
+        }
+      }
     }
 
     return false;
@@ -205,50 +251,90 @@ export default function CategoryPage() {
       return [];
     }
 
-    const keywords = categoryKeywords[categoryId] || [];
+    const keywords = getCategoryKeywords(categoryId);
     if (keywords.length === 0) {
       return [];
     }
 
     const matchingDishes = [];
+    const seenDishIds = new Set();
+
+    const appendDish = (item, section, subsection = null) => {
+      const originalPrice = item.originalPrice || item.price || 0;
+      const discountPercent = item.discountPercent || 0;
+      const finalPrice =
+        discountPercent > 0
+          ? Math.round(originalPrice * (1 - discountPercent / 100))
+          : originalPrice;
+
+      const rawItemId = item._id || item.id || `${item.name}-${finalPrice}`;
+      const stableItemId = String(rawItemId || "").trim();
+      const dedupeKey = stableItemId || `${item.name}-${finalPrice}`;
+      if (seenDishIds.has(dedupeKey)) return;
+      seenDishIds.add(dedupeKey);
+
+      const dishImage =
+        item.image?.url ||
+        item.image ||
+        subsection?.image?.url ||
+        subsection?.image ||
+        section?.image?.url ||
+        section?.image ||
+        null;
+
+      matchingDishes.push({
+        name: item.name,
+        price: finalPrice,
+        image: dishImage,
+        originalPrice: originalPrice,
+        itemId: stableItemId || `${item.name}-${finalPrice}`,
+        foodType: item.foodType,
+      });
+    };
 
     for (const section of menu.sections) {
+      const sectionNameLower = (section.name || "").toLowerCase();
+      const sectionMatches = keywords.some((keyword) =>
+        sectionNameLower.includes(keyword),
+      );
+
       if (section.items && Array.isArray(section.items)) {
         for (const item of section.items) {
           const itemNameLower = (item.name || "").toLowerCase();
           const itemCategoryLower = (item.category || "").toLowerCase();
+          const itemMatches = keywords.some(
+            (keyword) =>
+              itemNameLower.includes(keyword) ||
+              itemCategoryLower.includes(keyword),
+          );
 
-          if (
-            keywords.some(
-              (keyword) =>
-                itemNameLower.includes(keyword) ||
-                itemCategoryLower.includes(keyword),
-            )
-          ) {
-            // Calculate final price considering discounts
-            const originalPrice = item.originalPrice || item.price || 0;
-            const discountPercent = item.discountPercent || 0;
-            const finalPrice =
-              discountPercent > 0
-                ? Math.round(originalPrice * (1 - discountPercent / 100))
-                : originalPrice;
+          if (sectionMatches || itemMatches) {
+            appendDish(item, section);
+          }
+        }
+      }
 
-            // Get dish image (prioritize item image, then section image)
-            const dishImage =
-              item.image?.url ||
-              item.image ||
-              section.image?.url ||
-              section.image ||
-              null;
+      if (section.subsections && Array.isArray(section.subsections)) {
+        for (const subsection of section.subsections) {
+          const subsectionNameLower = (subsection.name || "").toLowerCase();
+          const subsectionMatches = keywords.some((keyword) =>
+            subsectionNameLower.includes(keyword),
+          );
 
-            matchingDishes.push({
-              name: item.name,
-              price: finalPrice,
-              image: dishImage,
-              originalPrice: originalPrice,
-              itemId: item._id || item.id || `${item.name}-${finalPrice}`,
-              foodType: item.foodType, // Include foodType for vegMode filtering
-            });
+          if (subsection.items && Array.isArray(subsection.items)) {
+            for (const item of subsection.items) {
+              const itemNameLower = (item.name || "").toLowerCase();
+              const itemCategoryLower = (item.category || "").toLowerCase();
+              const itemMatches = keywords.some(
+                (keyword) =>
+                  itemNameLower.includes(keyword) ||
+                  itemCategoryLower.includes(keyword),
+              );
+
+              if (sectionMatches || subsectionMatches || itemMatches) {
+                appendDish(item, section, subsection);
+              }
+            }
           }
         }
       }
@@ -575,7 +661,6 @@ export default function CategoryPage() {
         if (r.menu) {
           const hasCategoryItem = checkCategoryInMenu(r.menu, selectedCategory);
           if (hasCategoryItem) {
-            // Get ALL matching dishes for this category
             const categoryDishes = getAllCategoryDishesFromMenu(
               r.menu,
               selectedCategory,
@@ -598,31 +683,6 @@ export default function CategoryPage() {
               });
             } else {
               // If no dishes found but menu exists, skip this restaurant
-            }
-          }
-        } else {
-          // No menu - check other criteria
-          if (r.category === selectedCategory) {
-            expandedDishes.push(r);
-          } else if (selectedCategory === "paneer-tikka" && r.hasPaneer) {
-            expandedDishes.push(r);
-          } else {
-            const keywords = categoryKeywords[selectedCategory] || [];
-            if (keywords.length > 0) {
-              const featuredDishLower = (r.featuredDish || "").toLowerCase();
-              const cuisineLower = (r.cuisine || "").toLowerCase();
-              const nameLower = (r.name || "").toLowerCase();
-
-              if (
-                keywords.some(
-                  (keyword) =>
-                    featuredDishLower.includes(keyword) ||
-                    cuisineLower.includes(keyword) ||
-                    nameLower.includes(keyword),
-                )
-              ) {
-                expandedDishes.push(r);
-              }
             }
           }
         }
@@ -680,7 +740,6 @@ export default function CategoryPage() {
         if (r.menu) {
           const hasCategoryItem = checkCategoryInMenu(r.menu, selectedCategory);
           if (hasCategoryItem) {
-            // Get ALL matching dishes for this category
             const categoryDishes = getAllCategoryDishesFromMenu(
               r.menu,
               selectedCategory,
@@ -706,31 +765,6 @@ export default function CategoryPage() {
                   categoryDishImage: dish.image,
                 });
               });
-            }
-          }
-        } else {
-          // No menu - check other criteria
-          if (r.category === selectedCategory) {
-            expandedDishes.push(r);
-          } else if (selectedCategory === "paneer-tikka" && r.hasPaneer) {
-            expandedDishes.push(r);
-          } else {
-            const keywords = categoryKeywords[selectedCategory] || [];
-            if (keywords.length > 0) {
-              const featuredDishLower = (r.featuredDish || "").toLowerCase();
-              const cuisineLower = (r.cuisine || "").toLowerCase();
-              const nameLower = (r.name || "").toLowerCase();
-
-              if (
-                keywords.some(
-                  (keyword) =>
-                    featuredDishLower.includes(keyword) ||
-                    cuisineLower.includes(keyword) ||
-                    nameLower.includes(keyword),
-                )
-              ) {
-                expandedDishes.push(r);
-              }
             }
           }
         }
@@ -1006,8 +1040,8 @@ export default function CategoryPage() {
       {/* Content */}
       <div className="px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 py-4 sm:py-6 md:py-8 lg:py-10 space-y-6 md:space-y-8 lg:space-y-10">
         <div className="max-w-7xl mx-auto">
-          {/* RECOMMENDED FOR YOU Section - Hide when "All" category is selected */}
-          {filteredRecommended.length > 0 && selectedCategory !== "all" && (
+          {/* RECOMMENDED FOR YOU Section - Show only on "All" category */}
+          {filteredRecommended.length > 0 && selectedCategory === "all" && (
             <section>
               <h2 className="text-xs sm:text-sm md:text-base font-semibold text-gray-400 dark:text-gray-500 tracking-widest uppercase mb-4 md:mb-6">
                 RECOMMENDED FOR YOU
