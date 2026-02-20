@@ -44,6 +44,8 @@ const normalizeProduct = (item = {}, fallbackId = "") => {
       (Array.isArray(item?.subcategories) ? item.subcategories[0]?._id : "") ||
       "",
     platform: item?.platform || "mogrocery",
+    storeName: item?.storeId?.name || item?.storeName || "",
+    storeId: item?.storeId,
   };
 };
 
@@ -329,6 +331,11 @@ export default function FoodDetailPage() {
           </div>
 
           <h1 className="text-[20px] font-[900] text-slate-900 leading-snug">{product.name}</h1>
+          {product.storeName && (
+            <p className="text-[12px] text-slate-600 mt-1.5 font-medium">
+              Sold by <span className="font-semibold text-slate-800">{product.storeName}</span>
+            </p>
+          )}
           <p className="text-[13px] font-semibold text-slate-500 mt-1">{product.weight}</p>
 
           <div className="flex items-center gap-2 mt-2.5">

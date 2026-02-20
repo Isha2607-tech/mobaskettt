@@ -9,6 +9,7 @@ import AdminSettings from "../pages/AdminSettings";
 import NewRefundRequests from "../pages/refunds/NewRefundRequests";
 import FoodApproval from "../pages/restaurant/FoodApproval";
 import GroceryApproval from "../pages/grocery/GroceryApproval";
+import GroceryProductApproval from "../pages/grocery/GroceryProductApproval";
 import OrdersPage from "../pages/orders/OrdersPage";
 import OrderDetectDelivery from "../pages/OrderDetectDelivery";
 import Category from "../pages/categories/Category";
@@ -22,6 +23,7 @@ import DeliveryBoyViewMap from "../pages/restaurant/DeliveryBoyViewMap";
 import RestaurantsList from "../pages/restaurant/RestaurantsList";
 import AddRestaurant from "../pages/restaurant/AddRestaurant";
 import JoiningRequest from "../pages/restaurant/JoiningRequest";
+import GroceryStoreJoiningRequest from "../pages/grocery/GroceryStoreJoiningRequest";
 import RestaurantCommission from "../pages/restaurant/RestaurantCommission";
 import RestaurantComplaints from "../pages/restaurant/RestaurantComplaints";
 import RestaurantsBulkImport from "../pages/restaurant/RestaurantsBulkImport";
@@ -192,12 +194,14 @@ export default function AdminRouter() {
         <Route path="zone-setup/view/:id" element={<ViewZone />} />
         <Route path="food-approval" element={<FoodApproval />} />
         <Route path="grocery-approval" element={<GroceryApproval />} />
+        <Route path="grocery-product-approval" element={<GroceryProductApproval />} />
         {/* Restaurants/Stores */}
         <Route path="restaurants" element={<PlatformAwareRoute mofoodComponent={RestaurantsList} mogroceryComponent={GroceryStoresList} />} />
         <Route path="grocery-stores" element={<GroceryStoresList />} />
         <Route path="grocery-stores/add" element={<AddGroceryStore />} />
         <Route path="restaurants/add" element={<AddRestaurant />} />
         <Route path="restaurants/joining-request" element={<JoiningRequest />} />
+        <Route path="grocery-stores/joining-request" element={<GroceryStoreJoiningRequest />} />
         <Route path="restaurants/commission" element={<RestaurantCommission />} />
         <Route path="restaurants/complaints" element={<RestaurantComplaints />} />
         <Route path="restaurants/bulk-import" element={<RestaurantsBulkImport />} />

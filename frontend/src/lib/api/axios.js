@@ -59,6 +59,9 @@ function getTokenForCurrentRoute() {
 
   if (path.startsWith("/admin")) {
     return localStorage.getItem("admin_accessToken");
+  } else if (path.startsWith("/store")) {
+    // Grocery store module
+    return localStorage.getItem("grocery-store_accessToken");
   } else if (
     path.startsWith("/restaurant") &&
     !path.startsWith("/restaurants") &&
@@ -74,6 +77,7 @@ function getTokenForCurrentRoute() {
     path.startsWith("/user") ||
     path === "/" ||
     (!path.startsWith("/admin") &&
+      !path.startsWith("/store") &&
       !(path.startsWith("/restaurant") && !path.startsWith("/restaurants")) &&
       !path.startsWith("/delivery"))
   ) {
@@ -146,6 +150,7 @@ apiClient.interceptors.request.use(
 
     const isAuthenticatedRoute =
       (path.startsWith("/admin") ||
+        path.startsWith("/store") ||
         (path.startsWith("/restaurant") &&
           !path.startsWith("/restaurants") &&
           !isPublicRestaurantRoute) ||
@@ -184,6 +189,9 @@ apiClient.interceptors.request.use(
                 ? "exists"
                 : "missing",
               restaurant: localStorage.getItem("restaurant_accessToken")
+                ? "exists"
+                : "missing",
+              "grocery-store": localStorage.getItem("grocery-store_accessToken")
                 ? "exists"
                 : "missing",
               delivery: localStorage.getItem("delivery_accessToken")
@@ -287,6 +295,10 @@ apiClient.interceptors.response.use(
       if (currentPath.startsWith("/admin")) {
         tokenKey = "admin_accessToken";
         expectedRole = "admin";
+      } else if (currentPath.startsWith("/store")) {
+        // Grocery store module
+        tokenKey = "grocery-store_accessToken";
+        expectedRole = "restaurant"; // Grocery stores use restaurant role but grocery-store module
       } else if (
         currentPath.startsWith("/restaurant") &&
         !currentPath.startsWith("/restaurants")
@@ -311,7 +323,8 @@ apiClient.interceptors.response.use(
       const role = getRoleFromToken(token);
 
       // Only store the token if the role matches the current module
-      if (!role || role !== expectedRole) {
+      // For grocery stores, accept restaurant role since they use the same backend role
+      if (!role || (role !== expectedRole && !(currentPath.startsWith("/store") && role === "restaurant"))) {
         if (import.meta.env.DEV) {
           console.warn(
             `[API Interceptor] Ignoring accessToken due to role mismatch. expected=${expectedRole}, actual=${role || "unknown"}`,
@@ -337,6 +350,9 @@ apiClient.interceptors.response.use(
 
         if (currentPath.startsWith("/admin")) {
           refreshEndpoint = "/admin/auth/refresh-token";
+        } else if (currentPath.startsWith("/store")) {
+          // Grocery store module
+          refreshEndpoint = "/grocery/store/auth/refresh-token";
         } else if (
           currentPath.startsWith("/restaurant") &&
           !currentPath.startsWith("/restaurants")
@@ -348,12 +364,16 @@ apiClient.interceptors.response.use(
         }
 
         // Try to refresh the token (single-flight).
-        // The refresh token is sent via httpOnly cookie automatically.
+        // Prefer sending refreshToken in body for store (cookie may not be sent cross-origin).
+        const body =
+          currentPath.startsWith("/store") && typeof localStorage !== "undefined"
+            ? { refreshToken: localStorage.getItem("grocery-store_refreshToken") || undefined }
+            : {};
         if (!refreshRequestPromise) {
           refreshRequestPromise = axios
             .post(
               `${API_BASE_URL}${refreshEndpoint}`,
-              {},
+              body,
               {
                 withCredentials: true,
               },
@@ -364,7 +384,8 @@ apiClient.interceptors.response.use(
         }
         const response = await refreshRequestPromise;
 
-        const { accessToken } = response.data.data || response.data;
+        const responseData = response.data.data || response.data;
+        const { accessToken, refreshToken: newRefreshToken } = responseData;
 
         if (accessToken) {
           // Determine which module's token to update based on current route
@@ -375,6 +396,10 @@ apiClient.interceptors.response.use(
           if (currentPath.startsWith("/admin")) {
             tokenKey = "admin_accessToken";
             expectedRole = "admin";
+          } else if (currentPath.startsWith("/store")) {
+            // Grocery store module
+            tokenKey = "grocery-store_accessToken";
+            expectedRole = "restaurant"; // Grocery stores use restaurant role but grocery-store module
           } else if (
             currentPath.startsWith("/restaurant") &&
             !currentPath.startsWith("/restaurants")
@@ -398,12 +423,20 @@ apiClient.interceptors.response.use(
           const role = getRoleFromToken(accessToken);
 
           // Only store token if role matches expected module; otherwise treat as invalid for this module
-          if (!role || role !== expectedRole) {
+          // For grocery stores, accept restaurant role since they use the same backend role
+          if (!role || (role !== expectedRole && !(currentPath.startsWith("/store") && role === "restaurant"))) {
             throw new Error("Role mismatch on refreshed token");
           }
 
           // Store new access token for the current module
           localStorage.setItem(tokenKey, accessToken);
+          if (currentPath.startsWith("/store") && newRefreshToken && typeof localStorage !== "undefined") {
+            try {
+              localStorage.setItem("grocery-store_refreshToken", newRefreshToken);
+            } catch (e) {
+              console.warn("Failed to store new refresh token", e);
+            }
+          }
 
           // Retry original request with new token
           originalRequest.headers.Authorization = `Bearer ${accessToken}`;
@@ -435,18 +468,18 @@ apiClient.interceptors.response.use(
           });
         }
 
-        // Refresh failed, clear module-specific token and redirect to login
-        // BUT: Don't auto-redirect on certain pages - let them handle errors gracefully
+        // Refresh failed: clear session and redirect to login only for modules that do full redirect.
+        // Store: do NOT clear or redirect (like delivery) so user stays on page and sees error.
         const currentPath = window.location.pathname;
         const isOnboardingPage = currentPath.includes("/onboarding");
         const isLandingPageManagement =
           currentPath.includes("/hero-banner-management") ||
           currentPath.includes("/landing-page");
         const isDeliveryPath = currentPath.startsWith("/delivery");
+        const isStorePath = currentPath.startsWith("/store");
 
-        // For landing page management, don't auto-logout on 401 - let component handle it
-        // Only auto-logout for other pages after token refresh fails
-        if (!isOnboardingPage && !isLandingPageManagement && !isDeliveryPath) {
+        // Don't auto-logout for store, delivery, onboarding, or landing page - let component show error
+        if (!isOnboardingPage && !isLandingPageManagement && !isDeliveryPath && !isStorePath) {
           if (currentPath.startsWith("/admin")) {
             localStorage.removeItem("admin_accessToken");
             localStorage.removeItem("admin_authenticated");

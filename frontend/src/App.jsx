@@ -35,6 +35,15 @@ import RestaurantOTP from "@/module/restaurant/pages/auth/OTP";
 import RestaurantGoogleCallback from "@/module/restaurant/pages/auth/GoogleCallback";
 import RestaurantWelcome from "@/module/restaurant/pages/auth/Welcome";
 
+// Grocery Store imports
+import GroceryStoreOnboarding from "@/module/grocery-store/pages/Onboarding";
+import GroceryStoreLogin from "@/module/grocery-store/pages/auth/Login";
+import GroceryStoreSignup from "@/module/grocery-store/pages/auth/Signup";
+import GroceryStoreOTP from "@/module/grocery-store/pages/auth/OTP";
+import GroceryStoreProductDetailsPage from "@/module/grocery-store/pages/ProductDetailsPage";
+import GroceryStoreProductsListPage from "@/module/grocery-store/pages/ProductsListPage";
+import GroceryStoreCategoriesPage from "@/module/grocery-store/pages/CategoriesPage";
+
 import AdvertisementsPage from "@/module/restaurant/pages/AdvertisementsPage";
 import AdDetailsPage from "@/module/restaurant/pages/AdDetailsPage";
 import NewAdvertisementPage from "@/module/restaurant/pages/NewAdvertisementPage";
@@ -220,6 +229,199 @@ export default function App() {
             <AuthRedirect module="restaurant">
               <RestaurantGoogleCallback />
             </AuthRedirect>
+          }
+        />
+
+        {/* Grocery Store Public Routes */}
+        <Route
+          path="/store/login"
+          element={
+            <AuthRedirect module="grocery-store">
+              <GroceryStoreLogin />
+            </AuthRedirect>
+          }
+        />
+        <Route
+          path="/store/signup"
+          element={
+            <AuthRedirect module="grocery-store">
+              <GroceryStoreSignup />
+            </AuthRedirect>
+          }
+        />
+        <Route
+          path="/store/otp"
+          element={
+            <AuthRedirect module="grocery-store">
+              <GroceryStoreOTP />
+            </AuthRedirect>
+          }
+        />
+
+        {/* Grocery Store Protected Routes */}
+        <Route
+          path="/store/onboarding"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <GroceryStoreOnboarding />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/store"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <OrdersMain />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/store/product/:id"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <GroceryStoreProductDetailsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/store/product/new"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <GroceryStoreProductDetailsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/store/products/all"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <GroceryStoreProductsListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/store/categories"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <GroceryStoreCategoriesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/store/inventory"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <Inventory />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/store/feedback"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <Feedback />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/store/explore"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <ExploreMore />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/store/wallet"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <WalletPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/store/settings"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <SettingsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/store/conversation"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <ConversationListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/store/privacy"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <PrivacyPolicyPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/store/terms"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <TermsAndConditionsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/store/coupon"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <CouponListPage />
+            </ProtectedRoute>
           }
         />
 

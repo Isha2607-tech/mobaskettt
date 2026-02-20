@@ -161,7 +161,9 @@ export const getSubcategories = async (req, res) => {
 export const getProducts = async (req, res) => {
   try {
     const { categoryId, subcategoryId, limit, activeOnly = 'true' } = req.query;
-    const filter = {};
+    const filter = {
+      approvalStatus: 'approved', // Only show approved products on public /grocery page
+    };
 
     if (activeOnly !== 'false') {
       filter.isActive = true;
@@ -449,6 +451,7 @@ export const getProductById = async (req, res) => {
       .populate('category', 'name slug section')
       .populate('subcategories', 'name slug')
       .populate('subcategory', 'name slug')
+      .populate('storeId', 'name location address')
       .lean();
 
     if (!product) {

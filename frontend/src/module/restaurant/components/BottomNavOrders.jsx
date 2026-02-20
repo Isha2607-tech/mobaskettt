@@ -13,11 +13,12 @@ import {
   Building2
 } from "lucide-react"
 
-const ordersTabs = [
-  { id: "orders", label: "Orders", icon: FileText, route: "/restaurant" },
-  { id: "inventory", label: "Inventory", icon: Package, route: "/restaurant/inventory" },
-  { id: "feedback", label: "Feedback", icon: MessageSquare, route: "/restaurant/feedback" },
-  { id: "explore", label: "Explore", icon: Compass, route: "/restaurant/explore" },
+// Helper function to get routes based on context
+const getOrdersTabs = (isGroceryStore) => [
+  { id: "orders", label: "Orders", icon: FileText, route: isGroceryStore ? "/store" : "/restaurant" },
+  { id: "inventory", label: "Inventory", icon: Package, route: isGroceryStore ? "/store/inventory" : "/restaurant/inventory" },
+  { id: "feedback", label: "Feedback", icon: MessageSquare, route: isGroceryStore ? "/store/feedback" : "/restaurant/feedback" },
+  { id: "explore", label: "Explore", icon: Compass, route: isGroceryStore ? "/store/explore" : "/restaurant/explore" },
 ]
 
 const hubTabs = [
@@ -37,28 +38,87 @@ const findActiveTab = (tabs, pathname) =>
 export default function BottomNavOrders() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
+  const isGroceryStore = pathname.startsWith('/store')
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [transitionPhase, setTransitionPhase] = useState('idle') // 'idle', 'entering', 'exiting'
   const [transitionDirection, setTransitionDirection] = useState('right')
   const prevIsHubModeRef = useRef(null)
 
-  // Hide on internal pages (create-offers flow)
+  // Hide on internal pages (create-offers flow) and hide hub mode for grocery stores
   const isInternalPage = pathname.includes("/create-offers")
-  if (isInternalPage) {
+  if (isInternalPage || isGroceryStore) {
+    // For grocery stores, only show orders tabs, no hub mode
+    if (isGroceryStore) {
+      const ordersTabs = getOrdersTabs(true)
+      const tabs = ordersTabs
+      const activeTab = useMemo(() => {
+        const match = findActiveTab(tabs, pathname)
+        return match?.id ?? "orders"
+      }, [tabs, pathname])
+
+      return (
+        <div className="sticky bottom-0 z-40 pb-3">
+          <div className="flex items-center gap-2 w-full">
+            <div className="flex-1">
+              <div className="bg-black rounded-full py-1.5 px-1 shadow-lg relative ml-1">
+                <div className="flex items-center justify-around relative">
+                  {tabs.map(tab => {
+                    const Icon = tab.icon
+                    const isActive = activeTab === tab.id
+
+                    return (
+                      <motion.button
+                        key={tab.id}
+                        onClick={() => {
+                          if (tab.route && tab.route !== pathname) {
+                            navigate(tab.route)
+                          }
+                        }}
+                        aria-current={isActive ? "page" : undefined}
+                        className="relative flex flex-col items-center gap-1 px-4 py-2 rounded-full overflow-hidden z-10"
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        {isActive && (
+                          <motion.div
+                            layoutId="bottomNavActive"
+                            className="absolute inset-0 bg-neutral-700 rounded-full -z-10"
+                            initial={false}
+                            transition={{
+                              type: "spring",
+                              stiffness: 500,
+                              damping: 30,
+                            }}
+                          />
+                        )}
+                        <Icon className={`w-5 h-4 relative z-10 transition-colors duration-300 ease-in-out ${isActive ? "text-white" : "text-white/80"}`} />
+                        <span className={`text-[11px] relative z-10 transition-colors duration-300 ease-in-out ${isActive ? "text-white" : "text-white/80"}`}>
+                          {tab.label}
+                        </span>
+                      </motion.button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )
+    }
     return null
   }
 
-  // 🔒 single source of truth for mode
+  // 🔒 single source of truth for mode (restaurant only)
   const isHubMode = useMemo(() => {
     return pathname.startsWith("/restaurant/hub") || pathname.startsWith("/restaurant/to-hub")
   }, [pathname])
 
+  const ordersTabs = getOrdersTabs(false)
   const tabs = isHubMode ? hubTabs : ordersTabs
 
   const activeTab = useMemo(() => {
     const match = findActiveTab(tabs, pathname)
     return match?.id ?? (isHubMode ? "hub" : "orders")
-  }, [tabs, pathname, isHubMode])
+  }, [tabs, pathname, isHubMode, isGroceryStore])
 
  
   // Handle mode change detection for transition
@@ -156,7 +216,8 @@ export default function BottomNavOrders() {
         
         // After old page slides out, navigate and start exit (new page slides in)
         setTimeout(() => {
-          navigate(isHubMode ? "/restaurant" : "/restaurant/to-hub")
+          const baseRoute = isGroceryStore ? "/store" : "/restaurant"
+          navigate(isHubMode ? baseRoute : "/restaurant/to-hub")
           // Start exit phase - new page slides in from opposite direction
           requestAnimationFrame(() => {
             setTransitionPhase('exiting')

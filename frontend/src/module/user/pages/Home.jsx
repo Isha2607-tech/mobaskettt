@@ -355,6 +355,7 @@ export default function Home() {
   const [loadingLandingConfig, setLoadingLandingConfig] = useState(true);
   const [restaurantsData, setRestaurantsData] = useState([]);
   const [loadingRestaurants, setLoadingRestaurants] = useState(true);
+  const [vegEligibilityByRestaurant, setVegEligibilityByRestaurant] = useState({});
   const [fallbackCategories, setFallbackCategories] = useState([]);
   const [loadingRealCategories, setLoadingRealCategories] = useState(true);
   const [showAllCategoriesModal, setShowAllCategoriesModal] = useState(false);
@@ -1165,10 +1166,79 @@ export default function Home() {
     );
   }, [location?.latitude, location?.longitude]);
 
+  // When Veg Mode is ON, keep only pure-veg restaurants on home.
+  // A restaurant is considered pure-veg only if every available approved menu item is Veg.
+  useEffect(() => {
+    const resolveVegEligibility = async () => {
+      if (!vegMode || !Array.isArray(restaurantsData) || restaurantsData.length === 0) {
+        setVegEligibilityByRestaurant({});
+        return;
+      }
+
+      try {
+        const checks = await Promise.all(
+          restaurantsData.map(async (restaurant) => {
+            const restaurantId = restaurant?.restaurantId || restaurant?.id;
+            if (!restaurantId) {
+              return [String(restaurant?.id || Math.random()), false];
+            }
+
+            try {
+              const menuResponse = await restaurantAPI.getMenuByRestaurantId(String(restaurantId));
+              const menuSections = menuResponse?.data?.data?.menu?.sections || [];
+              const items = [];
+
+              menuSections.forEach((section) => {
+                const sectionItems = Array.isArray(section?.items) ? section.items : [];
+                sectionItems.forEach((item) => items.push(item));
+
+                const subsections = Array.isArray(section?.subsections) ? section.subsections : [];
+                subsections.forEach((subsection) => {
+                  const subsectionItems = Array.isArray(subsection?.items) ? subsection.items : [];
+                  subsectionItems.forEach((item) => items.push(item));
+                });
+              });
+
+              const eligibleItems = items.filter((item) => {
+                const isAvailable = item?.isAvailable !== false;
+                const isApproved = !item?.approvalStatus || item?.approvalStatus === "approved";
+                return isAvailable && isApproved;
+              });
+
+              if (eligibleItems.length === 0) {
+                return [String(restaurantId), false];
+              }
+
+              const isPureVeg = eligibleItems.every(
+                (item) => String(item?.foodType || "").toLowerCase() === "veg",
+              );
+              return [String(restaurantId), isPureVeg];
+            } catch {
+              return [String(restaurantId), false];
+            }
+          }),
+        );
+
+        setVegEligibilityByRestaurant(Object.fromEntries(checks));
+      } catch {
+        setVegEligibilityByRestaurant({});
+      }
+    };
+
+    resolveVegEligibility();
+  }, [vegMode, restaurantsData]);
+
   // Filter restaurants and foods based on active filters
   const filteredRestaurants = useMemo(() => {
     // Use only API data - no mock data fallback
     let filtered = [...restaurantsData];
+
+    if (vegMode) {
+      filtered = filtered.filter((restaurant) => {
+        const restaurantId = String(restaurant?.restaurantId || restaurant?.id || "");
+        return Boolean(vegEligibilityByRestaurant[restaurantId]);
+      });
+    }
 
     // Search Filter
     if (heroSearch.trim()) {
@@ -1289,13 +1359,21 @@ export default function Home() {
     }
 
     return filtered;
-  }, [restaurantsData, heroSearch, activeFilters, selectedCuisine, sortBy]);
+  }, [restaurantsData, heroSearch, activeFilters, selectedCuisine, sortBy, vegMode, vegEligibilityByRestaurant]);
+
+  const restaurantsForVegMode = useMemo(() => {
+    if (!vegMode) return restaurantsData;
+    return restaurantsData.filter((restaurant) => {
+      const restaurantId = String(restaurant?.restaurantId || restaurant?.id || "");
+      return Boolean(vegEligibilityByRestaurant[restaurantId]);
+    });
+  }, [vegMode, restaurantsData, vegEligibilityByRestaurant]);
 
   const topCategories = useMemo(() => {
     const seen = new Set();
     const derived = [];
 
-    restaurantsData.forEach((restaurant, index) => {
+    restaurantsForVegMode.forEach((restaurant, index) => {
       const cuisineList = [
         ...(Array.isArray(restaurant?.cuisines) ? restaurant.cuisines : []),
         ...(String(restaurant?.cuisine || "")
@@ -1337,11 +1415,11 @@ export default function Home() {
       ...category,
       image: sanitizeImageSrc(category?.image, category?.slug || category?.name),
     }));
-  }, [restaurantsData, fallbackCategories]);
+  }, [restaurantsForVegMode, fallbackCategories]);
 
   const topBrandRestaurants = useMemo(
     () =>
-      (restaurantsData || [])
+      (restaurantsForVegMode || [])
         .filter((restaurant) => String(restaurant?.name || "").trim())
         .map((restaurant) => ({
           ...restaurant,
@@ -1351,7 +1429,7 @@ export default function Home() {
           ),
         }))
         .slice(0, 10),
-    [restaurantsData],
+    [restaurantsForVegMode],
   );
 
   // Featured foods removed - will be handled by restaurants data from API

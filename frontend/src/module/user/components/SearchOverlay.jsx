@@ -3,37 +3,22 @@ import { useNavigate } from "react-router-dom"
 import { X, Search, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { restaurantAPI } from "@/lib/api"
+import { useLocation } from "../hooks/useLocation"
+import { useZone } from "../hooks/useZone"
 
 // Import shared food images - prevents duplication
 import { foodImages } from "@/constants/images"
 
-// Recent search suggestions
-const recentSuggestions = [
-  "Biryani", "Cake", "Chhole Bhature", "Chicken Tanduri", "Donuts", "Dosa", "French Fries", "Idli"
-]
-
-// Categories matching the home page browse section - only unique categories
-const categories = [
-  { id: 1, name: "Biryani", image: foodImages[0] },
-  { id: 2, name: "Cake", image: foodImages[1] },
-  { id: 3, name: "Chhole Bhature", image: foodImages[2] },
-  { id: 4, name: "Chicken Tanduri", image: foodImages[3] },
-  { id: 5, name: "Donuts", image: foodImages[4] },
-  { id: 6, name: "Dosa", image: foodImages[5] },
-  { id: 7, name: "French Fries", image: foodImages[6] },
-  { id: 8, name: "Idli", image: foodImages[7] },
-  { id: 9, name: "Momos", image: foodImages[8] },
-  { id: 10, name: "Samosa", image: foodImages[9] },
-  { id: 11, name: "Starters", image: foodImages[10] },
-]
-
-// Use only unique categories (no duplicates)
-const allFoodsWithWhiteBg = categories
-
 export default function SearchOverlay({ isOpen, onClose, searchValue, onSearchChange }) {
   const navigate = useNavigate()
   const inputRef = useRef(null)
-  const [filteredFoods, setFilteredFoods] = useState(allFoodsWithWhiteBg)
+  const { location } = useLocation()
+  const { zoneId } = useZone(location, "mofood")
+  const [allAvailableFoods, setAllAvailableFoods] = useState([])
+  const [filteredFoods, setFilteredFoods] = useState([])
+  const [loadingFoods, setLoadingFoods] = useState(false)
+  const loadedZoneRef = useRef("")
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -60,15 +45,111 @@ export default function SearchOverlay({ isOpen, onClose, searchValue, onSearchCh
   }, [isOpen, onClose])
 
   useEffect(() => {
+    const fetchAvailableFoods = async () => {
+      if (!isOpen) return
+      const zoneKey = String(zoneId || "no-zone")
+      if (loadedZoneRef.current === zoneKey && allAvailableFoods.length > 0) return
+
+      try {
+        setLoadingFoods(true)
+        const params = { platform: "mofood" }
+        if (zoneId) params.zoneId = zoneId
+
+        const restaurantsResponse = await restaurantAPI.getRestaurants(params)
+        const restaurants =
+          restaurantsResponse?.data?.data?.restaurants ||
+          restaurantsResponse?.data?.data ||
+          []
+
+        const menuResponses = await Promise.all(
+          restaurants.map(async (restaurant) => {
+            try {
+              const restaurantId = restaurant?._id || restaurant?.restaurantId || restaurant?.id
+              if (!restaurantId) return null
+              const menuResponse = await restaurantAPI.getMenuByRestaurantId(String(restaurantId))
+              return {
+                restaurant,
+                menu: menuResponse?.data?.data?.menu || null,
+              }
+            } catch {
+              return null
+            }
+          }),
+        )
+
+        const dishMap = new Map()
+        const pushDish = (item, fallbackImage, restaurantName, restaurantId) => {
+          if (!item?.name) return
+          const isAvailable = item?.isAvailable !== false
+          const isApproved = !item?.approvalStatus || item?.approvalStatus === "approved"
+          if (!isAvailable || !isApproved) return
+
+          const key = String(item.name).trim().toLowerCase()
+          if (!key || dishMap.has(key)) return
+
+          const image =
+            item?.image?.url ||
+            item?.image ||
+            (Array.isArray(item?.images) ? item.images[0] : "") ||
+            fallbackImage ||
+            foodImages[0]
+
+          const itemId = item?._id || item?.id || `${restaurantId}-${key}`
+          dishMap.set(key, {
+            id: `${restaurantId || "r"}-${String(itemId)}`,
+            name: item.name,
+            image,
+            restaurantName: restaurantName || "",
+          })
+        }
+
+        menuResponses.forEach((entry) => {
+          if (!entry?.menu) return
+          const sections = Array.isArray(entry.menu.sections) ? entry.menu.sections : []
+          const fallbackImage =
+            entry?.restaurant?.profileImage?.url ||
+            (Array.isArray(entry?.restaurant?.menuImages) ? entry.restaurant.menuImages[0]?.url || entry.restaurant.menuImages[0] : "") ||
+            ""
+          const restaurantName = entry?.restaurant?.name || ""
+          const restaurantId = entry?.restaurant?._id || entry?.restaurant?.restaurantId || entry?.restaurant?.id || ""
+
+          sections.forEach((section) => {
+            const sectionItems = Array.isArray(section?.items) ? section.items : []
+            sectionItems.forEach((item) => pushDish(item, fallbackImage, restaurantName, restaurantId))
+
+            const subsections = Array.isArray(section?.subsections) ? section.subsections : []
+            subsections.forEach((subsection) => {
+              const subsectionItems = Array.isArray(subsection?.items) ? subsection.items : []
+              subsectionItems.forEach((item) => pushDish(item, fallbackImage, restaurantName, restaurantId))
+            })
+          })
+        })
+
+        const dishes = Array.from(dishMap.values())
+        setAllAvailableFoods(dishes)
+        setFilteredFoods(dishes)
+        loadedZoneRef.current = zoneKey
+      } catch {
+        setAllAvailableFoods([])
+        setFilteredFoods([])
+      } finally {
+        setLoadingFoods(false)
+      }
+    }
+
+    fetchAvailableFoods()
+  }, [isOpen, zoneId])
+
+  useEffect(() => {
     if (searchValue.trim() === "") {
-      setFilteredFoods(allFoodsWithWhiteBg)
+      setFilteredFoods(allAvailableFoods)
     } else {
-      const filtered = allFoodsWithWhiteBg.filter((food) =>
+      const filtered = allAvailableFoods.filter((food) =>
         food.name.toLowerCase().includes(searchValue.toLowerCase())
       )
       setFilteredFoods(filtered)
     }
-  }, [searchValue])
+  }, [searchValue, allAvailableFoods])
 
   const handleSuggestionClick = (suggestion) => {
     onSearchChange(suggestion)
@@ -139,17 +220,17 @@ export default function SearchOverlay({ isOpen, onClose, searchValue, onSearchCh
               Recent Searches
             </h3>
             <div className="flex gap-2 sm:gap-3 flex-wrap">
-              {recentSuggestions.slice(0, 8).map((suggestion, index) => (
+              {allAvailableFoods.slice(0, 8).map((food, index) => (
                 <button
-                  key={suggestion}
-                  onClick={() => handleSuggestionClick(suggestion)}
+                  key={food.id || food.name}
+                  onClick={() => handleSuggestionClick(food.name)}
                   className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full bg-orange-50 dark:bg-orange-900/20 hover:bg-orange-100 dark:hover:bg-orange-900/30 border border-orange-200 dark:border-orange-800 hover:border-orange-300 dark:hover:border-orange-700 text-gray-700 dark:text-gray-300 hover:text-primary-orange dark:hover:text-orange-400 transition-all duration-200 text-xs sm:text-sm font-medium shadow-sm hover:shadow-md"
                   style={{
                     animation: `scaleIn 0.3s ease-out ${0.1 + index * 0.02}s both`
                   }}
                 >
                   <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-primary-orange flex-shrink-0" />
-                  <span>{suggestion}</span>
+                  <span>{food.name}</span>
                 </button>
               ))}
             </div>
@@ -164,7 +245,11 @@ export default function SearchOverlay({ isOpen, onClose, searchValue, onSearchCh
             <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white mb-4 sm:mb-6">
               {searchValue.trim() === "" ? "All Dishes" : `Search Results (${filteredFoods.length})`}
             </h3>
-            {filteredFoods.length > 0 ? (
+            {loadingFoods ? (
+              <div className="text-center py-12 sm:py-16">
+                <p className="text-gray-600 dark:text-gray-400 text-base sm:text-lg font-semibold">Loading available dishes...</p>
+              </div>
+            ) : filteredFoods.length > 0 ? (
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 sm:gap-4 md:gap-5 lg:gap-6">
                 {filteredFoods.map((food, index) => (
                   <div

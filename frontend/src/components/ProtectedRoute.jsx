@@ -5,16 +5,32 @@ import { isModuleAuthenticated } from "@/lib/utils/auth";
  * Role-based Protected Route Component
  * Only allows access if user is authenticated for the specific module
  */
-export default function ProtectedRoute({ children, requiredRole, loginPath }) {
+export default function ProtectedRoute({ children, requiredRole, loginPath, module }) {
   const location = useLocation();
 
+  // Determine the module to check based on route path or explicit module prop
+  let moduleToCheck = module;
+  if (!moduleToCheck && location.pathname.startsWith('/store')) {
+    moduleToCheck = 'grocery-store';
+  } else if (!moduleToCheck && requiredRole) {
+    // Map role to module for backward compatibility
+    const roleModuleMap = {
+      'admin': 'admin',
+      'restaurant': 'restaurant',
+      'delivery': 'delivery',
+      'user': 'user',
+      'grocery-store': 'grocery-store'
+    };
+    moduleToCheck = roleModuleMap[requiredRole] || requiredRole;
+  }
+
   // Check if user is authenticated for the required module using module-specific token
-  if (!requiredRole) {
-    // If no role required, allow access
+  if (!moduleToCheck) {
+    // If no module/role required, allow access
     return children;
   }
 
-  const isAuthenticated = isModuleAuthenticated(requiredRole);
+  const isAuthenticated = isModuleAuthenticated(moduleToCheck);
 
   // If not authenticated for this module, redirect to login
   if (!isAuthenticated) {
@@ -27,10 +43,11 @@ export default function ProtectedRoute({ children, requiredRole, loginPath }) {
       'admin': '/admin/login',
       'restaurant': '/restaurant/login',
       'delivery': '/delivery/sign-in',
-      'user': '/user/auth/sign-in'
+      'user': '/user/auth/sign-in',
+      'grocery-store': '/store/login'
     };
     
-    const redirectPath = roleLoginPaths[requiredRole] || '/';
+    const redirectPath = roleLoginPaths[moduleToCheck] || roleLoginPaths[requiredRole] || '/';
     return <Navigate to={redirectPath} replace />;
   }
 

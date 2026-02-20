@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useLocation } from "react-router-dom"
 import { 
   User,
   Utensils,
@@ -18,19 +18,25 @@ import {
   CheckSquare,
   LogOut,
   LogIn,
-  UserPlus
+  UserPlus,
+  Package
 } from "lucide-react"
 
 export default function MenuOverlay({ showMenu, setShowMenu }) {
   const navigate = useNavigate()
+  const location = useLocation()
+  const isGroceryStore = location.pathname.startsWith('/store')
+  
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return localStorage.getItem("restaurant_authenticated") === "true"
+    const authKey = isGroceryStore ? "grocery-store_authenticated" : "restaurant_authenticated"
+    return localStorage.getItem(authKey) === "true"
   })
 
   // Listen for authentication state changes
   useEffect(() => {
     const checkAuth = () => {
-      setIsAuthenticated(localStorage.getItem("restaurant_authenticated") === "true")
+      const authKey = isGroceryStore ? "grocery-store_authenticated" : "restaurant_authenticated"
+      setIsAuthenticated(localStorage.getItem(authKey) === "true")
     }
 
     // Check on mount
@@ -40,43 +46,69 @@ export default function MenuOverlay({ showMenu, setShowMenu }) {
     window.addEventListener('storage', checkAuth)
     
     // Custom event for same-tab updates
-    window.addEventListener('restaurantAuthChanged', checkAuth)
+    const authEvent = isGroceryStore ? 'groceryStoreAuthChanged' : 'restaurantAuthChanged'
+    window.addEventListener(authEvent, checkAuth)
 
     return () => {
       window.removeEventListener('storage', checkAuth)
-      window.removeEventListener('restaurantAuthChanged', checkAuth)
+      window.removeEventListener(authEvent, checkAuth)
     }
-  }, [])
+  }, [isGroceryStore])
 
-  // Get menu options based on authentication state
+  // Get menu options based on authentication state and context (restaurant vs grocery store)
   const getMenuOptions = () => {
-    const baseOptions = [
-      { id: 4, name: "All Food", icon: Utensils, route: "/restaurant/food/all" },
-      { id: 6, name: "Restaurant Config", icon: Settings, route: "/restaurant/config" },
-      { id: 7, name: "Advertisements", icon: Monitor, route: "/restaurant/advertisements" },
-      { id: 9, name: "Categories", icon: Grid3x3, route: "/restaurant/categories" },
-      { id: 10, name: "Coupon", icon: Tag, route: "/restaurant/coupon" },
-      { id: 11, name: "My Business Plan", icon: FileText, route: "/restaurant/business-plan" },
-      { id: 12, name: "Reviews", icon: MessageSquare, route: "/restaurant/reviews" },
-      { id: 14, name: "Wallet Method", icon: Settings, route: "/restaurant/wallet" },
-      { id: 16, name: "Settings", icon: Settings, route: "/restaurant/settings" },
-      { id: 17, name: "Conversation", icon: MessageCircle, route: "/restaurant/conversation" },
-      { id: 18, name: "Privacy Policy", icon: Shield, route: "/restaurant/privacy" },
-      { id: 19, name: "Terms & Condition", icon: CheckSquare, route: "/restaurant/terms" },
-    ]
+    if (isGroceryStore) {
+      // Grocery store specific menu options
+      const baseOptions = [
+        { id: 4, name: "All Products", icon: Package, route: "/store/products/all" },
+        { id: 9, name: "Categories", icon: Grid3x3, route: "/store/categories" },
+        { id: 10, name: "Coupon", icon: Tag, route: "/store/coupon" },
+        { id: 14, name: "Wallet", icon: Settings, route: "/store/wallet" },
+        { id: 16, name: "Settings", icon: Settings, route: "/store/settings" },
+        { id: 17, name: "Conversation", icon: MessageCircle, route: "/store/conversation" },
+        { id: 18, name: "Privacy Policy", icon: Shield, route: "/store/privacy" },
+        { id: 19, name: "Terms & Condition", icon: CheckSquare, route: "/store/terms" },
+      ]
 
-    if (isAuthenticated) {
-      // If authenticated, show logout at the end
-      return [
-        ...baseOptions,
-        { id: 20, name: "Logout", icon: LogOut, route: "/logout", isLogout: true },
-      ]
+      if (isAuthenticated) {
+        return [
+          ...baseOptions,
+          { id: 20, name: "Logout", icon: LogOut, route: "/logout", isLogout: true },
+        ]
+      } else {
+        return [
+          { id: 1, name: "Login", icon: LogIn, route: "/store/login" },
+          ...baseOptions
+        ]
+      }
     } else {
-      // If not authenticated, show only login at the top
-      return [
-        { id: 1, name: "Login", icon: LogIn, route: "/restaurant/login" },
-        ...baseOptions
+      // Restaurant menu options
+      const baseOptions = [
+        { id: 4, name: "All Food", icon: Utensils, route: "/restaurant/food/all" },
+        { id: 6, name: "Restaurant Config", icon: Settings, route: "/restaurant/config" },
+        { id: 7, name: "Advertisements", icon: Monitor, route: "/restaurant/advertisements" },
+        { id: 9, name: "Categories", icon: Grid3x3, route: "/restaurant/categories" },
+        { id: 10, name: "Coupon", icon: Tag, route: "/restaurant/coupon" },
+        { id: 11, name: "My Business Plan", icon: FileText, route: "/restaurant/business-plan" },
+        { id: 12, name: "Reviews", icon: MessageSquare, route: "/restaurant/reviews" },
+        { id: 14, name: "Wallet Method", icon: Settings, route: "/restaurant/wallet" },
+        { id: 16, name: "Settings", icon: Settings, route: "/restaurant/settings" },
+        { id: 17, name: "Conversation", icon: MessageCircle, route: "/restaurant/conversation" },
+        { id: 18, name: "Privacy Policy", icon: Shield, route: "/restaurant/privacy" },
+        { id: 19, name: "Terms & Condition", icon: CheckSquare, route: "/restaurant/terms" },
       ]
+
+      if (isAuthenticated) {
+        return [
+          ...baseOptions,
+          { id: 20, name: "Logout", icon: LogOut, route: "/logout", isLogout: true },
+        ]
+      } else {
+        return [
+          { id: 1, name: "Login", icon: LogIn, route: "/restaurant/login" },
+          ...baseOptions
+        ]
+      }
     }
   }
 
@@ -150,13 +182,21 @@ export default function MenuOverlay({ showMenu, setShowMenu }) {
                           // Handle logout
                           if (window.confirm("Are you sure you want to logout?")) {
                             // Clear authentication state
-                            localStorage.removeItem("restaurant_authenticated")
-                            localStorage.removeItem("restaurant_user")
+                            if (isGroceryStore) {
+                              localStorage.removeItem("grocery-store_authenticated")
+                              localStorage.removeItem("grocery-store_user")
+                              localStorage.removeItem("grocery-store_accessToken")
+                              localStorage.removeItem("grocery-store_refreshToken")
+                              window.dispatchEvent(new Event('groceryStoreAuthChanged'))
+                              navigate("/store/login")
+                            } else {
+                              localStorage.removeItem("restaurant_authenticated")
+                              localStorage.removeItem("restaurant_user")
+                              localStorage.removeItem("restaurant_accessToken")
+                              window.dispatchEvent(new Event('restaurantAuthChanged'))
+                              navigate("/restaurant/login")
+                            }
                             setIsAuthenticated(false)
-                            // Dispatch custom event for same-tab updates
-                            window.dispatchEvent(new Event('restaurantAuthChanged'))
-                            // Redirect to login
-                            navigate("/restaurant/login")
                           }
                         } else {
                           navigate(option.route)

@@ -61,7 +61,8 @@ const zoneSchema = new mongoose.Schema(
       enum: ['kilometer', 'miles'],
       default: 'kilometer'
     },
-    // Zone coordinates (polygon points)
+
+    // Zone coordinates (polygon points) - main zone boundary (outermost)
     coordinates: {
       type: [coordinateSchema],
       required: true,
@@ -71,6 +72,34 @@ const zoneSchema = new mongoose.Schema(
         },
         message: 'Zone must have at least 3 coordinates'
       }
+    },
+    // Optional delivery layers: inner (center), outer (middle ring), outermost (full zone)
+    // Delivery charge is applied based on which layer the delivery address falls in.
+    layers: {
+      type: [{
+        type: {
+          type: String,
+          enum: ['inner', 'outer', 'outermost'],
+          required: true
+        },
+        coordinates: {
+          type: [coordinateSchema],
+          required: true,
+          validate: {
+            validator: function(coords) {
+              return Array.isArray(coords) && coords.length >= 3;
+            },
+            message: 'Each layer must have at least 3 coordinates'
+          }
+        },
+        deliveryCharge: {
+          type: Number,
+          default: 0,
+          min: 0
+        }
+      }],
+      default: undefined,
+      required: false
     },
     // Store coordinates (used by mogrocery)
     storeLocation: {

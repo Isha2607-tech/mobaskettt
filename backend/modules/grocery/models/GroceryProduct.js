@@ -33,7 +33,6 @@ const groceryProductSchema = new mongoose.Schema(
       required: [true, 'Product slug is required'],
       trim: true,
       lowercase: true,
-      unique: true,
       maxlength: [200, 'Product slug cannot exceed 200 characters'],
     },
     images: {
@@ -78,6 +77,23 @@ const groceryProductSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    storeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Restaurant',
+      default: null,
+      index: true,
+    },
+    approvalStatus: {
+      type: String,
+      enum: ['pending', 'approved', 'rejected'],
+      default: 'pending',
+      index: true,
+    },
+    rejectionReason: {
+      type: String,
+      trim: true,
+      default: '',
+    },
   },
   {
     timestamps: true,
@@ -87,6 +103,13 @@ const groceryProductSchema = new mongoose.Schema(
 groceryProductSchema.index({ category: 1, subcategories: 1, isActive: 1, order: 1 });
 groceryProductSchema.index({ category: 1, order: 1 });
 groceryProductSchema.index({ subcategories: 1, order: 1 });
+groceryProductSchema.index({ storeId: 1, category: 1 });
+groceryProductSchema.index({ storeId: 1, isActive: 1 });
+groceryProductSchema.index({ approvalStatus: 1, isActive: 1 });
+groceryProductSchema.index({ storeId: 1, approvalStatus: 1 });
+groceryProductSchema.index({ storeId: 1, slug: 1 }, { unique: true }); // Unique slug per store
+groceryProductSchema.index({ approvalStatus: 1, isActive: 1 });
+groceryProductSchema.index({ storeId: 1, approvalStatus: 1 });
 
 const GroceryProduct = mongoose.model('GroceryProduct', groceryProductSchema);
 

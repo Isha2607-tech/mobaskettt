@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useLocation } from "react-router-dom"
 import { checkOnboardingStatus } from "../utils/onboardingUtils"
 import { motion, AnimatePresence } from "framer-motion"
 import Lenis from "lenis"
@@ -8,7 +8,7 @@ import { toast } from "sonner"
 import BottomNavOrders from "../components/BottomNavOrders"
 import RestaurantNavbar from "../components/RestaurantNavbar"
 import notificationSound from "@/assets/audio/alert.mp3"
-import { restaurantAPI } from "@/lib/api"
+import { restaurantAPI, groceryStoreAPI } from "@/lib/api"
 import { useRestaurantNotifications } from "../hooks/useRestaurantNotifications"
 import { jsPDF } from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -38,7 +38,7 @@ const filterTabs = [
 ]
 
 // Completed Orders List Component
-function CompletedOrders({ onSelectOrder }) {
+function CompletedOrders({ onSelectOrder, orderAPI }) {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -48,7 +48,7 @@ function CompletedOrders({ onSelectOrder }) {
 
     const fetchOrders = async () => {
       try {
-        const response = await restaurantAPI.getOrders()
+        const response = await orderAPI.getOrders()
         
         if (!isMounted) return
         
@@ -240,7 +240,7 @@ function CompletedOrders({ onSelectOrder }) {
 }
 
 // Cancelled Orders List Component
-function CancelledOrders({ onSelectOrder }) {
+function CancelledOrders({ onSelectOrder, orderAPI }) {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -250,7 +250,7 @@ function CancelledOrders({ onSelectOrder }) {
 
     const fetchOrders = async () => {
       try {
-        const response = await restaurantAPI.getOrders()
+        const response = await orderAPI.getOrders()
         
         if (!isMounted) return
         
@@ -463,6 +463,12 @@ function CancelledOrders({ onSelectOrder }) {
 
 export default function OrdersMain() {
   const navigate = useNavigate()
+  const location = useLocation()
+  
+  // Determine if we're on grocery store route and use appropriate API
+  const isGroceryStore = location.pathname.startsWith('/store')
+  const orderAPI = isGroceryStore ? groceryStoreAPI : restaurantAPI
+  
   const [activeFilter, setActiveFilter] = useState(() => {
     try {
       const saved = localStorage.getItem(ACTIVE_FILTER_STORAGE_KEY)
@@ -526,11 +532,13 @@ export default function OrdersMain() {
     "Other reason"
   ]
 
-  // Fetch restaurant verification status
+  // Fetch restaurant/store verification status
   useEffect(() => {
     const fetchRestaurantStatus = async () => {
       try {
-        const response = await restaurantAPI.getCurrentRestaurant()
+        const response = isGroceryStore 
+          ? await groceryStoreAPI.getCurrentStore()
+          : await restaurantAPI.getCurrentRestaurant()
         const restaurant = response?.data?.data?.restaurant || response?.data?.restaurant
         if (restaurant) {
           setRestaurantStatus({
@@ -542,12 +550,18 @@ export default function OrdersMain() {
           
           // Check if onboarding is incomplete and redirect if needed
           const completedSteps = restaurant.onboarding?.completedSteps || 0
-          if (completedSteps < 4) {
+          const requiredSteps = isGroceryStore ? 1 : 4
+          if (completedSteps < requiredSteps) {
             // Onboarding is incomplete, redirect to onboarding page
-            const incompleteStep = await checkOnboardingStatus()
-            if (incompleteStep) {
-              navigate(`/restaurant/onboarding?step=${incompleteStep}`, { replace: true })
+            if (isGroceryStore) {
+              navigate(`/store/onboarding`, { replace: true })
               return
+            } else {
+              const incompleteStep = await checkOnboardingStatus()
+              if (incompleteStep) {
+                navigate(`/restaurant/onboarding?step=${incompleteStep}`, { replace: true })
+                return
+              }
             }
           }
         }
@@ -573,16 +587,23 @@ export default function OrdersMain() {
     return () => {
       window.removeEventListener('restaurantProfileRefresh', handleProfileRefresh)
     }
-  }, [navigate])
+  }, [navigate, isGroceryStore])
 
   // Handle reverify (resubmit for approval)
   const handleReverify = async () => {
     try {
       setIsReverifying(true)
-      await restaurantAPI.reverify()
+      if (!isGroceryStore) {
+        await restaurantAPI.reverify()
+      } else {
+        // Grocery stores might not have reverify, skip for now
+        console.warn('Reverify not available for grocery stores')
+      }
       
-      // Refresh restaurant status
-      const response = await restaurantAPI.getCurrentRestaurant()
+      // Refresh restaurant/store status
+      const response = isGroceryStore 
+        ? await groceryStoreAPI.getCurrentStore()
+        : await restaurantAPI.getCurrentRestaurant()
       const restaurant = response?.data?.data?.restaurant || response?.data?.restaurant
       if (restaurant) {
         setRestaurantStatus({
@@ -678,7 +699,7 @@ export default function OrdersMain() {
       if (showNewOrderPopupRef.current || newOrderRef.current) return
       
       try {
-        const response = await restaurantAPI.getOrders()
+        const response = await orderAPI.getOrders()
         if (response.data?.success && response.data.data?.orders) {
           // Find confirmed orders that haven't been shown yet
           const confirmedOrders = response.data.data.orders.filter(
@@ -778,7 +799,7 @@ export default function OrdersMain() {
     if (orderToAccept?.orderMongoId || orderToAccept?.orderId) {
       try {
         const orderId = orderToAccept.orderMongoId || orderToAccept.orderId
-        const response = await restaurantAPI.acceptOrder(orderId, prepTime)
+        const response = await orderAPI.acceptOrder(orderId, prepTime)
         console.log('✅ Order accepted:', orderId)
         toast.success('Order accepted successfully')
       } catch (error) {
@@ -824,7 +845,7 @@ export default function OrdersMain() {
     if (orderToReject?.orderMongoId || orderToReject?.orderId) {
       try {
         const orderId = orderToReject.orderMongoId || orderToReject.orderId
-        await restaurantAPI.rejectOrder(orderId, rejectReason)
+        await orderAPI.rejectOrder(orderId, rejectReason)
         console.log('✅ Order rejected:', orderId)
       } catch (error) {
         console.error('❌ Error rejecting order:', error)
@@ -866,7 +887,7 @@ export default function OrdersMain() {
     
     try {
       const orderId = orderToCancel.mongoId || orderToCancel.orderId
-      await restaurantAPI.rejectOrder(orderId, cancelReason.trim())
+      await orderAPI.rejectOrder(orderId, cancelReason.trim())
       toast.success('Order cancelled successfully')
       setShowCancelPopup(false)
       setOrderToCancel(null)
@@ -1149,17 +1170,17 @@ export default function OrdersMain() {
   const renderContent = () => {
     switch (activeFilter) {
       case "preparing":
-        return <PreparingOrders onSelectOrder={handleSelectOrder} onCancel={handleCancelClick} />
+        return <PreparingOrders onSelectOrder={handleSelectOrder} onCancel={handleCancelClick} orderAPI={orderAPI} />
       case "ready":
-        return <ReadyOrders onSelectOrder={handleSelectOrder} />
+        return <ReadyOrders onSelectOrder={handleSelectOrder} orderAPI={orderAPI} />
       case "out-for-delivery":
-        return <OutForDeliveryOrders onSelectOrder={handleSelectOrder} />
+        return <OutForDeliveryOrders onSelectOrder={handleSelectOrder} orderAPI={orderAPI} />
       case "scheduled":
-        return <ScheduledOrders onSelectOrder={handleSelectOrder} />
+        return <ScheduledOrders onSelectOrder={handleSelectOrder} orderAPI={orderAPI} />
       case "completed":
-        return <CompletedOrders onSelectOrder={handleSelectOrder} />
+        return <CompletedOrders onSelectOrder={handleSelectOrder} orderAPI={orderAPI} />
       case "cancelled":
-        return <CancelledOrders onSelectOrder={handleSelectOrder} />
+        return <CancelledOrders onSelectOrder={handleSelectOrder} orderAPI={orderAPI} />
       default:
         return <EmptyState />
     }
@@ -1871,7 +1892,7 @@ export default function OrdersMain() {
 
               {String(selectedOrder.status || "").toLowerCase() === "preparing" && !selectedOrder.deliveryPartnerId && (
                 <div className="mb-3">
-                  <ResendNotificationButton
+                  <ResendNotificationButton orderAPI={orderAPI}
                     orderId={selectedOrder.orderId}
                     mongoId={selectedOrder.mongoId}
                   />
@@ -1896,7 +1917,7 @@ export default function OrdersMain() {
 }
 
 // Resend Notification Button Component
-function ResendNotificationButton({ orderId, mongoId, onSuccess }) {
+function ResendNotificationButton({ orderId, mongoId, onSuccess, orderAPI }) {
   const [loading, setLoading] = useState(false);
 
   const handleResend = async (e) => {
@@ -1906,7 +1927,7 @@ function ResendNotificationButton({ orderId, mongoId, onSuccess }) {
     try {
       setLoading(true);
       const id = mongoId || orderId;
-      const response = await restaurantAPI.resendDeliveryNotification(id);
+      const response = await orderAPI.resendDeliveryNotification(id);
       
       if (response.data?.success) {
         toast.success(`Notification sent to ${response.data.data?.notifiedCount || 0} delivery partners`);
@@ -2079,7 +2100,7 @@ function OrderCard({
                   {deliveryPartnerId ? 'Assigned' : 'Not Assigned'}
                 </span>
                 {!deliveryPartnerId && (
-                  <ResendNotificationButton orderId={orderId} mongoId={mongoId} />
+                  <ResendNotificationButton orderAPI={orderAPI} orderId={orderId} mongoId={mongoId} />
                 )}
               </div>
             )}
@@ -2115,7 +2136,7 @@ function OrderCard({
 }
 
 // Preparing Orders List
-function PreparingOrders({ onSelectOrder, onCancel }) {
+function PreparingOrders({ onSelectOrder, onCancel, orderAPI }) {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [currentTime, setCurrentTime] = useState(new Date())
@@ -2129,7 +2150,7 @@ function PreparingOrders({ onSelectOrder, onCancel }) {
     const fetchOrders = async () => {
       try {
         // Fetch all orders and filter for 'preparing' status on frontend
-        const response = await restaurantAPI.getOrders()
+        const response = await orderAPI.getOrders()
         
         if (!isMounted) return
         
@@ -2230,7 +2251,7 @@ function PreparingOrders({ onSelectOrder, onCancel }) {
     try {
       setMarkingReadyById((prev) => ({ ...prev, [orderKey]: true }))
       markedReadyOrdersRef.current.add(orderKey)
-      await restaurantAPI.markOrderReady(id)
+      await orderAPI.markOrderReady(id)
       setOrders((prev) => prev.filter((order) => (order.mongoId || order.orderId) !== orderKey))
       toast.success("Order marked as ready")
     } catch (error) {
@@ -2273,7 +2294,7 @@ function PreparingOrders({ onSelectOrder, onCancel }) {
             try {
               console.log(`🔄 Auto-marking order ${order.orderId} as ready (ETA reached 0)`)
               markedReadyOrdersRef.current.add(orderKey) // Mark as processing
-              await restaurantAPI.markOrderReady(order.mongoId || order.orderId)
+              await orderAPI.markOrderReady(order.mongoId || order.orderId)
               console.log(`✅ Order ${order.orderId} marked as ready`)
               // Order will be removed from preparing list on next fetch
             } catch (error) {
@@ -2387,7 +2408,7 @@ function PreparingOrders({ onSelectOrder, onCancel }) {
 }
 
 // Ready Orders List
-function ReadyOrders({ onSelectOrder }) {
+function ReadyOrders({ onSelectOrder, orderAPI }) {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -2398,7 +2419,7 @@ function ReadyOrders({ onSelectOrder }) {
     const fetchOrders = async () => {
       try {
         // Fetch all orders and filter for 'ready' status on frontend
-        const response = await restaurantAPI.getOrders()
+        const response = await orderAPI.getOrders()
         
         if (!isMounted) return
         
@@ -2504,7 +2525,7 @@ function ReadyOrders({ onSelectOrder }) {
 }
 
 // Out for Delivery Orders List
-const OutForDeliveryOrders = ({ onSelectOrder }) => {
+const OutForDeliveryOrders = ({ onSelectOrder, orderAPI }) => {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -2515,7 +2536,7 @@ const OutForDeliveryOrders = ({ onSelectOrder }) => {
     const fetchOrders = async () => {
       try {
         // Fetch all orders and filter for 'out_for_delivery' status on frontend
-        const response = await restaurantAPI.getOrders()
+        const response = await orderAPI.getOrders()
         
         if (!isMounted) return
         
@@ -2621,7 +2642,7 @@ const OutForDeliveryOrders = ({ onSelectOrder }) => {
 }
 
 // Scheduled Orders List
-function ScheduledOrders({ onSelectOrder }) {
+function ScheduledOrders({ onSelectOrder, orderAPI }) {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -2631,7 +2652,7 @@ function ScheduledOrders({ onSelectOrder }) {
 
     const fetchOrders = async () => {
       try {
-        const response = await restaurantAPI.getOrders()
+        const response = await orderAPI.getOrders()
 
         if (!isMounted) return
 

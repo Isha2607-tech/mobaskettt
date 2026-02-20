@@ -90,6 +90,22 @@ const authenticateFlexible = async (req, res, next) => {
       }
     }
 
+    // Grocery store (mogrocery): token may have role 'restaurant' or missing; allow by platform
+    const groceryStore = await Restaurant.findOne({
+      _id: decoded.userId,
+      platform: 'mogrocery'
+    }).select('-password');
+
+    if (groceryStore) {
+      if (!groceryStore.isActive) {
+        return errorResponse(res, 401, 'Grocery store account is inactive');
+      }
+      req.user = groceryStore;
+      req.store = groceryStore;
+      req.token = decoded;
+      return next();
+    }
+
     // Otherwise, try regular user authentication
     const user = await User.findById(decoded.userId).select('-password');
     

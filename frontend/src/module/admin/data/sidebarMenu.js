@@ -337,6 +337,12 @@ export const mogroceryMenuData = [
     items: [
       {
         type: "link",
+        label: "Grocery Approval",
+        path: "/admin/grocery-product-approval",
+        icon: "CheckCircle2",
+      },
+      {
+        type: "link",
         label: "Categories",
         path: "/admin/grocery-categories",
         icon: "FolderTree",

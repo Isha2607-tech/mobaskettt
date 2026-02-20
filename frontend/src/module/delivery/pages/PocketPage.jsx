@@ -368,12 +368,14 @@ export default function PocketPage() {
   const totalCashLimit = Number.isFinite(Number(walletState?.totalCashLimit))
     ? Number(walletState.totalCashLimit)
     : 750
+  const cashInHand = Math.max(0, Number(walletState?.cashInHand) || Number(balances.cashInHand) || 0)
   const availableCashLimit =
     Number.isFinite(Number(walletState?.availableCashLimit)) &&
     Number(walletState?.availableCashLimit) >= 0
       ? Number(walletState.availableCashLimit)
-      : Math.max(0, totalCashLimit - (Number(balances.cashInHand) || 0))
-  const isPocketEligibleForRequests = pocketBalance > availableCashLimit
+      : Math.max(0, totalCashLimit - cashInHand)
+  const isCashLimitReached = totalCashLimit > 0 && cashInHand >= totalCashLimit
+  const isPocketEligibleForRequests = !isCashLimitReached && pocketBalance > availableCashLimit
   const depositAmount = pocketBalance < 0 ? Math.abs(pocketBalance) : 0
 
   // Customer tips balance - calculate from transactions
@@ -966,10 +968,18 @@ export default function PocketPage() {
                     : "bg-red-50 text-red-700"
                 }`}
               >
-                {isPocketEligibleForRequests
-                  ? "Eligible for order requests: Pocket balance is above available cash limit."
-                  : `Not eligible for order requests: Keep pocket balance above ₹${availableCashLimit.toFixed(2)}.`}
+                {isCashLimitReached
+                  ? `Cash limit reached: You have collected ₹${cashInHand.toFixed(2)} out of ₹${totalCashLimit.toFixed(2)}. Deposit cash to continue receiving orders.`
+                  : isPocketEligibleForRequests
+                    ? "Eligible for order requests: Pocket balance is above available cash limit."
+                    : `Not eligible for order requests: Keep pocket balance above ₹${availableCashLimit.toFixed(2)}.`}
               </div>
+
+              {isCashLimitReached && (
+                <div className="rounded-lg p-3 text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200">
+                  Action required: deposit collected cash now. New order requests are blocked until settlement.
+                </div>
+              )}
 
               {/* Warning Message */}
               {/* <div className="bg-yellow-500 rounded-lg p-3 flex items-start gap-3">
@@ -985,9 +995,13 @@ export default function PocketPage() {
               <div className="flex gap-3 pt-2">
                 <Button
                   onClick={() => setShowDepositPopup(true)}
-                  className="flex-1 bg-white hover:bg-gray-300 text-black border border-black font-semibold py-3 rounded-lg"
+                  className={`flex-1 font-semibold py-3 rounded-lg ${
+                    isCashLimitReached
+                      ? "bg-red-600 hover:bg-red-700 text-white border border-red-600"
+                      : "bg-white hover:bg-gray-300 text-black border border-black"
+                  }`}
                 >
-                  Deposit
+                  {isCashLimitReached ? "Deposit Now (Required)" : "Deposit"}
                 </Button>
               </div>
             </CardContent>

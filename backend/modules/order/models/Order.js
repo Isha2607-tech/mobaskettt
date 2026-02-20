@@ -101,6 +101,11 @@ const orderSchema = new mongoose.Schema({
       default: 0,
       min: 0
     },
+    deliveryLayerType: {
+      type: String,
+      enum: ['inner', 'outer', 'outermost'],
+      default: undefined
+    },
     platformFee: {
       type: Number,
       default: 0,

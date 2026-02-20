@@ -629,6 +629,158 @@ export const restaurantAPI = {
   },
 };
 
+// Export grocery store API helper functions
+export const groceryStoreAPI = {
+  // Grocery Store Authentication
+  sendOTP: (phone = null, purpose = 'login', email = null) => {
+    const payload = { purpose };
+    if (phone) payload.phone = phone;
+    if (email) payload.email = email;
+    return apiClient.post(API_ENDPOINTS.GROCERY_STORE.AUTH.SEND_OTP, payload);
+  },
+
+  verifyOTP: (phone = null, otp, purpose = 'login', name = null, email = null, password = null) => {
+    const payload = {
+      otp,
+      purpose,
+    };
+    if (phone != null) payload.phone = phone;
+    if (email != null) payload.email = email;
+    if (name != null) payload.name = name;
+    if (password != null) payload.password = password;
+    return apiClient.post(API_ENDPOINTS.GROCERY_STORE.AUTH.VERIFY_OTP, payload);
+  },
+
+  register: (name, email, password, phone = null, ownerName = null, ownerEmail = null, ownerPhone = null) => {
+    return apiClient.post(API_ENDPOINTS.GROCERY_STORE.AUTH.REGISTER, {
+      name,
+      email,
+      password,
+      phone,
+      ownerName,
+      ownerEmail,
+      ownerPhone,
+    });
+  },
+
+  login: (email, password) => {
+    return apiClient.post(API_ENDPOINTS.GROCERY_STORE.AUTH.LOGIN, { email, password });
+  },
+
+  firebaseGoogleLogin: (idToken) => {
+    return apiClient.post(API_ENDPOINTS.GROCERY_STORE.AUTH.FIREBASE_GOOGLE_LOGIN, { idToken });
+  },
+
+  refreshToken: () => {
+    return apiClient.post(API_ENDPOINTS.GROCERY_STORE.AUTH.REFRESH_TOKEN);
+  },
+
+  logout: () => {
+    return apiClient.post(API_ENDPOINTS.GROCERY_STORE.AUTH.LOGOUT);
+  },
+
+  getCurrentStore: () => {
+    return apiClient.get(API_ENDPOINTS.GROCERY_STORE.AUTH.ME);
+  },
+
+  // Onboarding
+  getOnboarding: () => {
+    return apiClient.get(API_ENDPOINTS.GROCERY_STORE.ONBOARDING);
+  },
+
+  updateOnboarding: (onboardingData) => {
+    return apiClient.put(API_ENDPOINTS.GROCERY_STORE.ONBOARDING, onboardingData);
+  },
+
+  // Profile
+  getStoreByOwner: () => {
+    return apiClient.get(API_ENDPOINTS.GROCERY_STORE.BY_OWNER);
+  },
+
+  // Orders
+  getOrders: (params = {}) => {
+    return apiClient.get(API_ENDPOINTS.GROCERY_STORE.ORDERS, { params });
+  },
+
+  getOrderById: (id) => {
+    return apiClient.get(API_ENDPOINTS.GROCERY_STORE.ORDER_BY_ID.replace(':id', id));
+  },
+
+  acceptOrder: (id, preparationTime = null) => {
+    return apiClient.patch(API_ENDPOINTS.GROCERY_STORE.ORDER_ACCEPT.replace(':id', id), {
+      preparationTime
+    });
+  },
+
+  rejectOrder: (id, reason = '') => {
+    return apiClient.patch(API_ENDPOINTS.GROCERY_STORE.ORDER_REJECT.replace(':id', id), {
+      reason
+    });
+  },
+
+  markOrderPreparing: (id) => {
+    return apiClient.patch(API_ENDPOINTS.GROCERY_STORE.ORDER_PREPARING.replace(':id', id));
+  },
+
+  markOrderReady: (id) => {
+    return apiClient.patch(API_ENDPOINTS.GROCERY_STORE.ORDER_READY.replace(':id', id));
+  },
+
+  resendDeliveryNotification: (id) => {
+    return apiClient.post(API_ENDPOINTS.GROCERY_STORE.ORDER_RESEND_DELIVERY_NOTIFICATION.replace(':id', id));
+  },
+
+  // Products
+  getProducts: (params = {}) => {
+    return apiClient.get(API_ENDPOINTS.GROCERY_STORE.PRODUCTS, { params });
+  },
+
+  getProductById: (id) => {
+    return apiClient.get(API_ENDPOINTS.GROCERY_STORE.PRODUCT_BY_ID.replace(':id', id));
+  },
+
+  updateProductStock: (id, stockData) => {
+    return apiClient.patch(API_ENDPOINTS.GROCERY_STORE.PRODUCT_UPDATE_STOCK.replace(':id', id), stockData);
+  },
+
+  createProduct: (productData) => {
+    return apiClient.post(API_ENDPOINTS.GROCERY_STORE.PRODUCT_CREATE, productData);
+  },
+
+  updateProduct: (id, productData) => {
+    return apiClient.put(API_ENDPOINTS.GROCERY_STORE.PRODUCT_UPDATE.replace(':id', id), productData);
+  },
+
+  deleteProduct: (id) => {
+    return apiClient.delete(API_ENDPOINTS.GROCERY_STORE.PRODUCT_DELETE.replace(':id', id));
+  },
+
+  // Public grocery catalog (categories/subcategories) – no auth required
+  getCategories: (params = {}) => {
+    return apiClient.get(API_ENDPOINTS.GROCERY_STORE.CATEGORIES, {
+      params: { activeOnly: 'false', ...params },
+    });
+  },
+  getSubcategories: (params = {}) => {
+    return apiClient.get(API_ENDPOINTS.GROCERY_STORE.SUBCATEGORIES, {
+      params: { activeOnly: 'false', ...params },
+    });
+  },
+
+  createCategoryRequest: (data) => {
+    return apiClient.post(API_ENDPOINTS.GROCERY_STORE.CATEGORY_REQUEST_CREATE, data);
+  },
+  getCategoryRequests: () => {
+    return apiClient.get(API_ENDPOINTS.GROCERY_STORE.CATEGORY_REQUESTS);
+  },
+  createSubcategoryRequest: (data) => {
+    return apiClient.post(API_ENDPOINTS.GROCERY_STORE.SUBCATEGORY_REQUEST_CREATE, data);
+  },
+  getSubcategoryRequests: () => {
+    return apiClient.get(API_ENDPOINTS.GROCERY_STORE.SUBCATEGORY_REQUESTS);
+  },
+};
+
 // Export delivery API helper functions
 export const deliveryAPI = {
   // Delivery Authentication
@@ -982,6 +1134,20 @@ export const adminAPI = {
   // Delete restaurant
   deleteRestaurant: (id) => {
     return apiClient.delete(API_ENDPOINTS.ADMIN.RESTAURANT_DELETE.replace(':id', id));
+  },
+
+  // Grocery Store Join Requests
+  getGroceryStoreJoinRequests: (params = {}) => {
+    return apiClient.get(API_ENDPOINTS.ADMIN.GROCERY_STORE_REQUESTS, { params });
+  },
+  approveGroceryStore: (id) => {
+    return apiClient.post(API_ENDPOINTS.ADMIN.GROCERY_STORE_APPROVE.replace(':id', id));
+  },
+  rejectGroceryStore: (id, reason) => {
+    return apiClient.post(API_ENDPOINTS.ADMIN.GROCERY_STORE_REJECT.replace(':id', id), { reason });
+  },
+  getGroceryStoreById: (id) => {
+    return apiClient.get(API_ENDPOINTS.ADMIN.GROCERY_STORE_BY_ID.replace(':id', id));
   },
 
   // Get all offers (with restaurant and dish details)
@@ -1352,6 +1518,23 @@ export const adminAPI = {
 
   toggleGroceryProductStatus: (id, isActive) => {
     return apiClient.put(`/grocery/products/${id}`, { isActive });
+  },
+
+  // Grocery Product Approval
+  getPendingGroceryProducts: (params = {}) => {
+    return apiClient.get('/admin/grocery/products/pending', { params });
+  },
+
+  approveGroceryProduct: (id) => {
+    return apiClient.patch(`/admin/grocery/products/${id}/approve`);
+  },
+
+  rejectGroceryProduct: (id, reason = '') => {
+    return apiClient.patch(`/admin/grocery/products/${id}/reject`, { reason });
+  },
+
+  bulkApproveGroceryProducts: (productIds) => {
+    return apiClient.post('/admin/grocery/products/bulk-approve', { productIds });
   },
 
   getGroceryPlans: (params = {}) => {

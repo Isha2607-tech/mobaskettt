@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useLocation } from "react-router-dom"
 import Lenis from "lenis"
 import {
   ArrowLeft,
@@ -33,7 +33,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card"
 import { DateRangeCalendar } from "@/components/ui/date-range-calendar"
 import { clearModuleAuth, clearAuthData } from "@/lib/utils/auth"
-import { restaurantAPI } from "@/lib/api"
+import { restaurantAPI, groceryStoreAPI } from "@/lib/api"
 import { firebaseAuth } from "@/lib/firebase"
 
 // Time Picker Wheel Component
@@ -333,6 +333,9 @@ function TimePickerWheel({
 
 export default function ExploreMore() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const isGroceryStore = location.pathname.startsWith('/store')
+  const baseRoute = isGroceryStore ? '/store' : '/restaurant'
   const [profileOpen, setProfileOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -358,20 +361,24 @@ export default function ExploreMore() {
   const [restaurantData, setRestaurantData] = useState(null)
   const [loadingRestaurant, setLoadingRestaurant] = useState(true)
 
-  // Fetch restaurant data on mount
+  // Fetch restaurant/store data on mount
   useEffect(() => {
     const fetchRestaurantData = async () => {
       try {
         setLoadingRestaurant(true)
-        const response = await restaurantAPI.getCurrentRestaurant()
-        const data = response?.data?.data?.restaurant || response?.data?.restaurant
+        const response = isGroceryStore 
+          ? await groceryStoreAPI.getCurrentStore()
+          : await restaurantAPI.getCurrentRestaurant()
+        const data = isGroceryStore
+          ? (response?.data?.data?.store || response?.data?.store || response?.data?.data?.restaurant || response?.data?.restaurant)
+          : (response?.data?.data?.restaurant || response?.data?.restaurant)
         if (data) {
           setRestaurantData(data)
         }
       } catch (error) {
         // Only log error if it's not a network/timeout error (backend might be down/slow)
         if (error.code !== 'ERR_NETWORK' && error.code !== 'ECONNABORTED' && !error.message?.includes('timeout')) {
-          console.error("Error fetching restaurant data:", error)
+          console.error("Error fetching restaurant/store data:", error)
         }
         // Continue with default values if fetch fails
       } finally {
@@ -380,7 +387,7 @@ export default function ExploreMore() {
     }
 
     fetchRestaurantData()
-  }, [])
+  }, [isGroceryStore])
 
   // Format address from location object
   const formatAddress = (location) => {
@@ -434,7 +441,11 @@ export default function ExploreMore() {
     try {
       // Call backend logout API to invalidate refresh token
       try {
-        await restaurantAPI.logout()
+        if (isGroceryStore) {
+          await groceryStoreAPI.logout()
+        } else {
+          await restaurantAPI.logout()
+        }
       } catch (apiError) {
         // Continue with logout even if API call fails (network issues, etc.)
         console.warn("Logout API call failed, continuing with local cleanup:", apiError)
@@ -452,36 +463,56 @@ export default function ExploreMore() {
         console.warn("Firebase logout failed, continuing with local cleanup:", firebaseError)
       }
 
-      // Clear restaurant module authentication data
-      clearModuleAuth("restaurant")
+      // Clear module authentication data
+      const module = isGroceryStore ? "grocery-store" : "restaurant"
+      clearModuleAuth(module)
       
       // Clear any onboarding data from localStorage
-      localStorage.removeItem("restaurant_onboarding")
-      localStorage.removeItem("restaurant_accessToken")
-      localStorage.removeItem("restaurant_authenticated")
-      localStorage.removeItem("restaurant_user")
-      
-      // Clear sessionStorage
-      sessionStorage.removeItem("restaurantAuthData")
-      
-      // Dispatch auth change event to notify other components
-      window.dispatchEvent(new Event("restaurantAuthChanged"))
-
-      // Small delay for UX, then navigate to welcome page
-      setTimeout(() => {
-        navigate("/restaurant/welcome", { replace: true })
-      }, 300)
+      if (isGroceryStore) {
+        localStorage.removeItem("grocery-store_onboarding")
+        localStorage.removeItem("grocery-store_accessToken")
+        localStorage.removeItem("grocery-store_refreshToken")
+        localStorage.removeItem("grocery-store_authenticated")
+        localStorage.removeItem("grocery-store_user")
+        sessionStorage.removeItem("groceryStoreAuthData")
+        window.dispatchEvent(new Event("groceryStoreAuthChanged"))
+        setTimeout(() => {
+          navigate("/store/login", { replace: true })
+        }, 300)
+      } else {
+        localStorage.removeItem("restaurant_onboarding")
+        localStorage.removeItem("restaurant_accessToken")
+        localStorage.removeItem("restaurant_authenticated")
+        localStorage.removeItem("restaurant_user")
+        sessionStorage.removeItem("restaurantAuthData")
+        window.dispatchEvent(new Event("restaurantAuthChanged"))
+        setTimeout(() => {
+          navigate("/restaurant/welcome", { replace: true })
+        }, 300)
+      }
     } catch (error) {
       // Even if there's an error, we should still clear local data and logout
       console.error("Error during logout:", error)
-      clearModuleAuth("restaurant")
-      localStorage.removeItem("restaurant_onboarding")
-      localStorage.removeItem("restaurant_accessToken")
-      localStorage.removeItem("restaurant_authenticated")
-      localStorage.removeItem("restaurant_user")
-      sessionStorage.removeItem("restaurantAuthData")
-      window.dispatchEvent(new Event("restaurantAuthChanged"))
-      navigate("/restaurant/welcome", { replace: true })
+      const module = isGroceryStore ? "grocery-store" : "restaurant"
+      clearModuleAuth(module)
+      if (isGroceryStore) {
+        localStorage.removeItem("grocery-store_onboarding")
+        localStorage.removeItem("grocery-store_accessToken")
+        localStorage.removeItem("grocery-store_refreshToken")
+        localStorage.removeItem("grocery-store_authenticated")
+        localStorage.removeItem("grocery-store_user")
+        sessionStorage.removeItem("groceryStoreAuthData")
+        window.dispatchEvent(new Event("groceryStoreAuthChanged"))
+        navigate("/store/login", { replace: true })
+      } else {
+        localStorage.removeItem("restaurant_onboarding")
+        localStorage.removeItem("restaurant_accessToken")
+        localStorage.removeItem("restaurant_authenticated")
+        localStorage.removeItem("restaurant_user")
+        sessionStorage.removeItem("restaurantAuthData")
+        window.dispatchEvent(new Event("restaurantAuthChanged"))
+        navigate("/restaurant/welcome", { replace: true })
+      }
     } finally {
       setIsLoggingOut(false)
     }
@@ -496,7 +527,11 @@ export default function ExploreMore() {
     try {
       // Call backend logout API to invalidate refresh token
       try {
-        await restaurantAPI.logout()
+        if (isGroceryStore) {
+          await groceryStoreAPI.logout()
+        } else {
+          await restaurantAPI.logout()
+        }
       } catch (apiError) {
         // Continue with logout even if API call fails (network issues, etc.)
         console.warn("Logout API call failed, continuing with local cleanup:", apiError)
@@ -518,35 +553,46 @@ export default function ExploreMore() {
       clearAuthData()
       
       // Clear any onboarding data from localStorage
-      localStorage.removeItem("restaurant_onboarding")
+      if (isGroceryStore) {
+        localStorage.removeItem("grocery-store_onboarding")
+        sessionStorage.removeItem("groceryStoreAuthData")
+        window.dispatchEvent(new Event("groceryStoreAuthChanged"))
+        setTimeout(() => {
+          navigate("/store/login", { replace: true })
+        }, 300)
+      } else {
+        localStorage.removeItem("restaurant_onboarding")
+        sessionStorage.removeItem("restaurantAuthData")
+        window.dispatchEvent(new Event("restaurantAuthChanged"))
+        setTimeout(() => {
+          navigate("/restaurant/welcome", { replace: true })
+        }, 300)
+      }
       
       // Clear sessionStorage for all modules
-      sessionStorage.removeItem("restaurantAuthData")
       sessionStorage.removeItem("adminAuthData")
       sessionStorage.removeItem("deliveryAuthData")
       sessionStorage.removeItem("userAuthData")
       
       // Dispatch auth change events to notify other components
-      window.dispatchEvent(new Event("restaurantAuthChanged"))
       window.dispatchEvent(new Event("adminAuthChanged"))
       window.dispatchEvent(new Event("deliveryAuthChanged"))
       window.dispatchEvent(new Event("userAuthChanged"))
-
-      // Small delay for UX, then navigate to welcome page
-      setTimeout(() => {
-        navigate("/restaurant/welcome", { replace: true })
-      }, 300)
     } catch (error) {
       // Even if there's an error, we should still clear local data and logout
       console.error("Error during logout from all devices:", error)
       clearAuthData()
-      localStorage.removeItem("restaurant_onboarding")
-      sessionStorage.removeItem("restaurantAuthData")
-      sessionStorage.removeItem("adminAuthData")
-      sessionStorage.removeItem("deliveryAuthData")
-      sessionStorage.removeItem("userAuthData")
-      window.dispatchEvent(new Event("restaurantAuthChanged"))
-      navigate("/restaurant/welcome", { replace: true })
+      if (isGroceryStore) {
+        localStorage.removeItem("grocery-store_onboarding")
+        sessionStorage.removeItem("groceryStoreAuthData")
+        window.dispatchEvent(new Event("groceryStoreAuthChanged"))
+        navigate("/store/login", { replace: true })
+      } else {
+        localStorage.removeItem("restaurant_onboarding")
+        sessionStorage.removeItem("restaurantAuthData")
+        window.dispatchEvent(new Event("restaurantAuthChanged"))
+        navigate("/restaurant/welcome", { replace: true })
+      }
     } finally {
       setIsLoggingOut(false)
     }
@@ -673,29 +719,35 @@ export default function ExploreMore() {
   }, [])
 
   // Section data
-  const manageOutletItems = [
+  const manageOutletItems = isGroceryStore ? [
+    { id: 1, label: "Store info", icon: Info, route: "/store/outlet-info" },
+  ] : [
     { id: 1, label: "Outlet info", icon: Info, route: "/restaurant/outlet-info" },
     { id: 2, label: "Outlet timings", icon: Clock, route: "/restaurant/outlet-timings" },
     { id: 3, label: "Manage staff", icon: Users, route: "/restaurant/contact-details" },
   ]
 
-  const settingsItems = [
+  const settingsItems = isGroceryStore ? [
+    { id: 3, label: "Delivery settings", icon: Truck, route: "/store/delivery-settings" },
+  ] : [
     { id: 3, label: "Delivery settings", icon: Truck, route: "/restaurant/delivery-settings" },
     { id: 4, label: "Zone Setup", icon: MapPin, route: "/restaurant/zone-setup" },
   ]
 
   const ordersItems = [
-    { id: 1, label: "Order history", icon: FileText, route: "/restaurant/orders/all" },
-    { id: 2, label: "Complaints", icon: Star, route: "/restaurant/feedback?tab=complaints" },
-    { id: 3, label: "Reviews", icon: MessageSquare, route: "/restaurant/feedback" },
+    { id: 1, label: "Order history", icon: FileText, route: `${baseRoute}/orders/all` },
+    { id: 2, label: "Complaints", icon: Star, route: `${baseRoute}/feedback?tab=complaints` },
+    { id: 3, label: "Reviews", icon: MessageSquare, route: `${baseRoute}/feedback` },
   ]
 
   const helpItems = [
-    { id: 1, label: "Help centre", icon: HelpCircle, route: "/restaurant/help-centre" },
-    { id: 3, label: "Share your feedback", icon: Edit, route: "/restaurant/Share-Feedback" },
+    { id: 1, label: "Help centre", icon: HelpCircle, route: `${baseRoute}/help-centre` },
+    { id: 3, label: "Share your feedback", icon: Edit, route: `${baseRoute}/Share-Feedback` },
   ]
 
-  const accountingItems = [
+  const accountingItems = isGroceryStore ? [
+    { id: 1, label: "Payout", icon: IndianRupee, route: "/store/wallet" },
+  ] : [
     { id: 1, label: "Payout", icon: IndianRupee, route: "/restaurant/hub-finance" },
     { id: 2, label: "Invoices", icon: Receipt, route: "/restaurant/hub-finance?tab=invoices" },
   ]
@@ -871,7 +923,7 @@ export default function ExploreMore() {
           <Card className="bg-white border-gray-200 py-3 mb-6 rounded-lg shadow-0">
             <CardContent className="px-4">
               <button
-                onClick={() => navigate("/restaurant/switch-outlet")}
+                onClick={() => navigate(isGroceryStore ? "/store/switch-outlet" : "/restaurant/switch-outlet")}
                 className="w-full flex items-center justify-between"
               >
                 <div className="flex items-center gap-3 flex-1">

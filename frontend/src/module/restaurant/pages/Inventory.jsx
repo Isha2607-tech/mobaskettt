@@ -17,8 +17,8 @@ import {
 import RestaurantNavbar from "../components/RestaurantNavbar"
 import BottomNavOrders from "../components/BottomNavOrders"
 import { Switch } from "@/components/ui/switch"
-import { useNavigate } from "react-router-dom"
-import { restaurantAPI } from "@/lib/api"
+import { useNavigate, useLocation } from "react-router-dom"
+import { restaurantAPI, groceryStoreAPI, adminAPI } from "@/lib/api"
 import { toast } from "sonner"
 
 const INVENTORY_STORAGE_KEY = "restaurant_inventory_state"
@@ -591,6 +591,9 @@ function SimpleCalendar({ selectedDate, onDateSelect, isOpen, onClose }) {
 
 export default function Inventory() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const isGroceryStore = location.pathname.startsWith('/store')
+  const baseRoute = isGroceryStore ? '/store' : '/restaurant'
   const [activeTab, setActiveTab] = useState("all-items")
   const [searchQuery, setSearchQuery] = useState("")
   const [filterOpen, setFilterOpen] = useState(false)
@@ -656,7 +659,62 @@ export default function Inventory() {
       try {
         setLoadingInventory(true)
         
-        // Fetch menu from API
+        // For grocery stores, use grocery products instead of menu
+        if (isGroceryStore) {
+          // Fetch grocery products and convert to inventory format
+          const productsResponse = await groceryStoreAPI.getProducts({ activeOnly: 'false' })
+          
+          if (productsResponse.data?.success && productsResponse.data?.data) {
+            const products = Array.isArray(productsResponse.data.data) 
+              ? productsResponse.data.data 
+              : productsResponse.data.data?.products || []
+            
+            // Group products by category
+            const categoryMap = new Map()
+            
+            products.forEach(product => {
+              const categoryId = product.category?._id || product.category
+              const categoryName = product.category?.name || 'Uncategorized'
+              
+              if (!categoryMap.has(categoryId)) {
+                categoryMap.set(categoryId, {
+                  id: categoryId,
+                  name: categoryName,
+                  description: '',
+                  itemCount: 0,
+                  inStock: true,
+                  items: [],
+                  order: 0
+                })
+              }
+              
+              const category = categoryMap.get(categoryId)
+              category.items.push({
+                id: product._id,
+                name: product.name || 'Unnamed Product',
+                inStock: product.inStock !== undefined ? product.inStock : true,
+                isVeg: true, // Grocery products are typically veg
+                isRecommended: false,
+                stockQuantity: product.stockQuantity || 0,
+                unit: product.unit || 'piece',
+                expiryDate: null,
+                lastRestocked: null,
+              })
+              category.itemCount++
+            })
+            
+            const convertedCategories = Array.from(categoryMap.values())
+            setCategories(convertedCategories)
+            setExpandedCategories(convertedCategories.map(c => c.id))
+          } else {
+            setCategories([])
+            setExpandedCategories([])
+          }
+          setLoadingInventory(false)
+          return
+        }
+        
+        // For restaurants, fetch menu from API
         const menuResponse = await restaurantAPI.getMenu()
         
         if (menuResponse.data && menuResponse.data.success && menuResponse.data.data && menuResponse.data.data.menu) {
@@ -745,14 +803,21 @@ export default function Inventory() {
     }
     
     fetchMenuData()
-  }, [])
+  }, [isGroceryStore])
 
   // Note: Menu items are now displayed from menu API
   // Stock status updates should be managed through the menu API, not inventory API
   // Auto-save disabled since we're displaying menu data, not inventory data
 
-  // Fetch add-ons when add-ons tab is active
+  // Fetch add-ons when add-ons tab is active (restaurant only, grocery stores don't have addons)
   const fetchAddons = async (showLoading = true) => {
+    if (isGroceryStore) {
+      // Grocery stores don't have addons concept
+      setAddons([])
+      if (showLoading) setLoadingAddons(false)
+      return
+    }
+    
     try {
       if (showLoading) setLoadingAddons(true)
       const response = await restaurantAPI.getAddons()
@@ -779,6 +844,11 @@ export default function Inventory() {
   const handleAddonToggle = async (addonId, isAvailable) => {
     try {
       // Update addon availability via API
+      if (isGroceryStore) {
+        // Grocery stores don't have addons
+        toast.error('Addons are not available for grocery stores')
+        return
+      }
       await restaurantAPI.updateAddon(addonId, {
         isAvailable: isAvailable
       })
@@ -957,6 +1027,29 @@ export default function Inventory() {
   // Update menu API when category/item toggles change
   const updateMenuAPI = async (categoryId, itemId, isEnabled, isAvailable) => {
     try {
+      // For grocery stores, update product stock instead of menu
+      if (isGroceryStore) {
+        if (itemId) {
+          // Update individual product stock
+          await groceryStoreAPI.updateProductStock(itemId, { inStock: isAvailable })
+          console.log('Product stock updated successfully')
+        } else if (categoryId) {
+          // Update all products in category
+          const productsResponse = await groceryStoreAPI.getProducts({ categoryId, activeOnly: 'false' })
+          const products = productsResponse.data?.data?.products || productsResponse.data?.data || []
+          
+          // Update all products in this category
+          await Promise.all(
+            products.map(product => 
+              groceryStoreAPI.updateProductStock(product._id, { inStock: isAvailable })
+            )
+          )
+          console.log('Category products stock updated successfully')
+        }
+        return
+      }
+
+      // For restaurants, update menu
       // Fetch current menu
       const menuResponse = await restaurantAPI.getMenu()
       if (!menuResponse.data || !menuResponse.data.success || !menuResponse.data.data || !menuResponse.data.data.menu) {
@@ -1015,8 +1108,8 @@ export default function Inventory() {
       await restaurantAPI.updateMenu({ sections: updatedSections })
       console.log('Menu updated successfully')
     } catch (error) {
-      console.error('Error updating menu:', error)
-      toast.error('Failed to update menu')
+      console.error('Error updating menu/product:', error)
+      toast.error(isGroceryStore ? 'Failed to update product stock' : 'Failed to update menu')
     }
   }
 
@@ -1158,6 +1251,13 @@ export default function Inventory() {
   // Update menu API when recommendation toggle changes
   const updateRecommendationAPI = async (categoryId, itemId, isRecommended) => {
     try {
+      // Grocery stores don't have recommendations feature
+      if (isGroceryStore) {
+        toast.info('Recommendations are not available for grocery stores')
+        return
+      }
+
+      // For restaurants, update menu
       // Fetch current menu
       const menuResponse = await restaurantAPI.getMenu()
       if (!menuResponse.data || !menuResponse.data.success || !menuResponse.data.data || !menuResponse.data.data.menu) {
@@ -1379,7 +1479,7 @@ export default function Inventory() {
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          onClick={() => navigate("/restaurant/hub-menu")}
+          onClick={() => navigate(isGroceryStore ? "/store/products/all" : "/restaurant/hub-menu")}
           className="bg-blue-200/20 rounded-lg p-4 mt-4 mb-4 flex items-center justify-between"
         >
           <span className="text-sm font-light text-gray-900">Want to edit your menu?</span>

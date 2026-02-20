@@ -110,7 +110,7 @@ export function getCurrentUserRole(module = null) {
   
   // Legacy: check all modules and return the first valid role found
   // This is for backward compatibility but should be avoided
-  const modules = ['user', 'restaurant', 'delivery', 'admin'];
+  const modules = ['user', 'restaurant', 'delivery', 'admin', 'grocery-store'];
   for (const mod of modules) {
     const token = getModuleToken(mod);
     if (token && !isTokenExpired(token)) {
@@ -154,7 +154,7 @@ export function clearModuleAuth(module) {
  * Clear all authentication data for all modules
  */
 export function clearAuthData() {
-  const modules = ['admin', 'restaurant', 'delivery', 'user'];
+  const modules = ['admin', 'restaurant', 'delivery', 'user', 'grocery-store'];
   modules.forEach(module => {
     clearModuleAuth(module);
   });
@@ -170,7 +170,13 @@ export function clearAuthData() {
  * @param {Object} user - User data
  * @throws {Error} If localStorage is not available or quota exceeded
  */
-export function setAuthData(module, token, user) {
+/**
+ * @param {string} module - Module name (admin, restaurant, delivery, user, grocery-store)
+ * @param {string} token - Access token
+ * @param {Object} user - User/store data
+ * @param {string} [refreshToken] - Optional refresh token (used for grocery-store when cookie may not be sent cross-origin)
+ */
+export function setAuthData(module, token, user, refreshToken) {
   try {
     // Check if localStorage is available
     if (typeof Storage === 'undefined' || !localStorage) {
@@ -185,7 +191,8 @@ export function setAuthData(module, token, user) {
     console.log(`[setAuthData] Storing auth for module: ${module}`, {
       hasToken: !!token,
       tokenLength: token?.length,
-      hasUser: !!user
+      hasUser: !!user,
+      hasRefreshToken: !!refreshToken
     });
 
     // Store module-specific token (don't clear other modules)
@@ -218,7 +225,15 @@ export function setAuthData(module, token, user) {
 
     localStorage.setItem(tokenKey, token);
     localStorage.setItem(authKey, 'true');
-    
+
+    if (module === 'grocery-store' && refreshToken) {
+      try {
+        localStorage.setItem('grocery-store_refreshToken', refreshToken);
+      } catch (e) {
+        console.warn('Failed to store refresh token:', e);
+      }
+    }
+
     if (user) {
       try {
         localStorage.setItem(userKey, JSON.stringify(user));

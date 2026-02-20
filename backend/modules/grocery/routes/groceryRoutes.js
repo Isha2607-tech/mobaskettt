@@ -28,6 +28,12 @@ import {
   deletePlanOffer,
   getPlanSubscriptions,
 } from '../controllers/groceryController.js';
+import groceryStoreAuthRoutes from './groceryStoreAuthRoutes.js';
+import groceryStoreOrderRoutes from './groceryStoreOrderRoutes.js';
+import groceryStoreProductRoutes from './groceryStoreProductRoutes.js';
+import groceryStoreCategoryRequestRoutes from './groceryStoreCategoryRequestRoutes.js';
+import { getOnboarding, updateOnboarding } from '../controllers/groceryStoreOnboardingController.js';
+import { authenticate } from '../middleware/groceryStoreAuth.js';
 
 const router = express.Router();
 
@@ -68,6 +74,33 @@ router.delete('/plan-offers/:id', authenticateAdmin, deletePlanOffer);
 
 // Plan Subscriptions (Admin)
 router.get('/plan-subscriptions', authenticateAdmin, getPlanSubscriptions);
+
+// Grocery Store Auth Routes
+router.use('/store/auth', groceryStoreAuthRoutes);
+
+// Grocery Store Order Routes (authenticated)
+router.use('/store', groceryStoreOrderRoutes);
+
+// Grocery Store Product Routes (authenticated)
+router.use('/store', groceryStoreProductRoutes);
+
+// Grocery Store Category Request Routes (authenticated)
+router.use('/store', groceryStoreCategoryRequestRoutes);
+
+// Grocery Store Onboarding Routes (authenticated)
+router.get('/store/onboarding', authenticate, getOnboarding);
+router.put('/store/onboarding', authenticate, updateOnboarding);
+
+// Grocery Store Profile Routes (authenticated)
+router.get('/store/owner/me', authenticate, async (req, res) => {
+  const store = req.store;
+  const storeResponse = store.toObject();
+  delete storeResponse.password;
+  return res.status(200).json({
+    success: true,
+    data: { store: storeResponse }
+  });
+});
 
 export default router;
 

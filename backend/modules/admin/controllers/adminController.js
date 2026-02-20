@@ -1475,6 +1475,227 @@ export const rejectRestaurant = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Get Grocery Store Join Requests
+ * GET /api/admin/grocery-stores/requests
+ * Query params: status (pending, rejected), page, limit, search
+ */
+export const getGroceryStoreJoinRequests = asyncHandler(async (req, res) => {
+  try {
+    const { 
+      status = 'pending', 
+      page = 1, 
+      limit = 50,
+      search
+    } = req.query;
+
+    const query = { platform: 'mogrocery' };
+    
+    if (status === 'pending') {
+      const conditions = [
+        { isActive: false },
+        {
+          $or: [
+            { 'rejectionReason': { $exists: false } },
+            { 'rejectionReason': null }
+          ]
+        }
+      ];
+      
+      const completionCheck = {
+        $or: [
+          { 'onboarding.completedSteps': 1 },
+          {
+            $and: [
+              { 'name': { $exists: true, $ne: null, $ne: '' } },
+              { 'onboarding.storeImage': { $exists: true } }
+            ]
+          }
+        ]
+      };
+      
+      conditions.push(completionCheck);
+      query.$and = conditions;
+    } else if (status === 'rejected') {
+      query['rejectionReason'] = { $exists: true, $ne: null };
+      query.$or = [
+        { 'onboarding.completedSteps': 1 },
+        {
+          $and: [
+            { 'name': { $exists: true, $ne: null, $ne: '' } }
+          ]
+        }
+      ];
+    }
+
+    if (search && search.trim()) {
+      const searchConditions = {
+        $or: [
+          { name: { $regex: search.trim(), $options: 'i' } },
+          { ownerName: { $regex: search.trim(), $options: 'i' } },
+          { ownerPhone: { $regex: search.trim(), $options: 'i' } },
+          { phone: { $regex: search.trim(), $options: 'i' } },
+          { email: { $regex: search.trim(), $options: 'i' } }
+        ]
+      };
+      
+      if (query.$and) {
+        query.$and.push(searchConditions);
+      } else {
+        const baseConditions = { ...query };
+        query = {
+          $and: [
+            baseConditions,
+            searchConditions
+          ]
+        };
+      }
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const stores = await Restaurant.find(query)
+      .select('-password')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const total = await Restaurant.countDocuments(query);
+
+    const formattedRequests = stores.map((store, index) => {
+      let zone = 'All over the World';
+      if (store.location?.area) {
+        zone = store.location.area;
+      } else if (store.location?.city) {
+        zone = store.location.city;
+      }
+
+      return {
+        _id: store._id.toString(),
+        sl: skip + index + 1,
+        storeName: store.name || 'N/A',
+        storeImage: store.profileImage?.url || store.onboarding?.storeImage?.url || 'https://via.placeholder.com/40',
+        ownerName: store.ownerName || 'N/A',
+        ownerPhone: store.ownerPhone || store.phone || 'N/A',
+        zone: zone,
+        status: store.rejectionReason ? 'Rejected' : 'Pending',
+        rejectionReason: store.rejectionReason || null,
+        createdAt: store.createdAt,
+        fullData: {
+          ...store,
+          _id: store._id.toString()
+        }
+      };
+    });
+
+    return successResponse(res, 200, 'Grocery store join requests retrieved successfully', {
+      requests: formattedRequests,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    logger.error(`Error fetching grocery store join requests: ${error.message}`, { error: error.stack });
+    return errorResponse(res, 500, 'Failed to fetch grocery store join requests');
+  }
+});
+
+/**
+ * Approve Grocery Store Join Request
+ * POST /api/admin/grocery-stores/:id/approve
+ */
+export const approveGroceryStore = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+    const adminId = req.user._id;
+
+    const store = await Restaurant.findOne({ _id: id, platform: 'mogrocery' });
+
+    if (!store) {
+      return errorResponse(res, 404, 'Grocery store not found');
+    }
+
+    if (store.isActive) {
+      return errorResponse(res, 400, 'Grocery store is already active');
+    }
+
+    store.isActive = true;
+    store.approvedAt = new Date();
+    store.approvedBy = adminId;
+    store.rejectionReason = null;
+    store.rejectedAt = null;
+    store.rejectedBy = null;
+
+    await store.save();
+
+    logger.info(`Grocery store approved: ${id}`, {
+      approvedBy: adminId,
+      storeName: store.name
+    });
+
+    return successResponse(res, 200, 'Grocery store approved successfully', {
+      store: {
+        id: store._id.toString(),
+        name: store.name,
+        isActive: store.isActive
+      }
+    });
+  } catch (error) {
+    logger.error(`Error approving grocery store: ${error.message}`, { error: error.stack });
+    return errorResponse(res, 500, 'Failed to approve grocery store');
+  }
+});
+
+/**
+ * Reject Grocery Store Join Request
+ * POST /api/admin/grocery-stores/:id/reject
+ */
+export const rejectGroceryStore = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const adminId = req.user._id;
+
+    if (!reason || !reason.trim()) {
+      return errorResponse(res, 400, 'Rejection reason is required');
+    }
+
+    const store = await Restaurant.findOne({ _id: id, platform: 'mogrocery' });
+
+    if (!store) {
+      return errorResponse(res, 404, 'Grocery store not found');
+    }
+
+    store.rejectionReason = reason.trim();
+    store.rejectedAt = new Date();
+    store.rejectedBy = adminId;
+    store.isActive = false;
+
+    await store.save();
+
+    logger.info(`Grocery store rejected: ${id}`, {
+      rejectedBy: adminId,
+      reason: reason,
+      storeName: store.name
+    });
+
+    return successResponse(res, 200, 'Grocery store rejected successfully', {
+      store: {
+        id: store._id.toString(),
+        name: store.name,
+        rejectionReason: store.rejectionReason
+      }
+    });
+  } catch (error) {
+    logger.error(`Error rejecting grocery store: ${error.message}`, { error: error.stack });
+    return errorResponse(res, 500, 'Failed to reject grocery store');
+  }
+});
+
+/**
  * Reverify Restaurant (Resubmit for approval)
  * POST /api/admin/restaurants/:id/reverify
  */

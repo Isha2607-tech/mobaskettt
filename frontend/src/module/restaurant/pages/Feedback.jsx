@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from "react"
-import { useNavigate, useSearchParams } from "react-router-dom"
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import { Bell, HelpCircle, Menu, Search, SlidersHorizontal, Calendar, Reply, ChevronLeft, Send, X, Loader2, ChevronRight } from "lucide-react"
 import { DateRangeCalendar } from "@/components/ui/date-range-calendar"
 import BottomNavOrders from "../components/BottomNavOrders"
-import { restaurantAPI } from "@/lib/api"
+import { restaurantAPI, groceryStoreAPI } from "@/lib/api"
 
 const REVIEWS_STORAGE_KEY = "restaurant_reviews_data"
 
@@ -85,6 +85,9 @@ const dummyReviews = [
 
 export default function Feedback() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
+  const isGroceryStore = location.pathname.startsWith('/store')
+  const baseRoute = isGroceryStore ? '/store' : '/restaurant'
   const tabFromUrl = searchParams.get("tab")
   const [activeTab, setActiveTab] = useState(tabFromUrl === "complaints" ? "complaints" : "reviews")
   const navigate = useNavigate()
@@ -148,23 +151,28 @@ export default function Feedback() {
     totalReviews: 0
   })
 
-  // Fetch restaurant data
+  // Fetch restaurant/store data
   useEffect(() => {
     const fetchRestaurantData = async () => {
       try {
         setIsLoadingRestaurant(true)
-        const response = await restaurantAPI.getCurrentRestaurant()
-        if (response.data?.success && response.data.data?.restaurant) {
-          setRestaurantData(response.data.data.restaurant)
+        const response = isGroceryStore 
+          ? await groceryStoreAPI.getCurrentStore()
+          : await restaurantAPI.getCurrentRestaurant()
+        const data = isGroceryStore
+          ? (response?.data?.data?.store || response?.data?.store || response?.data?.data?.restaurant || response?.data?.restaurant)
+          : (response?.data?.data?.restaurant || response?.data?.restaurant)
+        if (data) {
+          setRestaurantData(data)
         }
       } catch (error) {
-        console.error("Error fetching restaurant data:", error)
+        console.error("Error fetching restaurant/store data:", error)
       } finally {
         setIsLoadingRestaurant(false)
       }
     }
     fetchRestaurantData()
-  }, [])
+  }, [isGroceryStore])
 
   // Fetch complaints
   useEffect(() => {
@@ -701,19 +709,19 @@ export default function Feedback() {
           <div className="flex items-center">
             <button
               className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-              onClick={() => navigate("/restaurant/notifications")}
+              onClick={() => navigate(`${baseRoute}/notifications`)}
             >
               <Bell className="w-5 h-5 text-gray-700" />
             </button>
             <button 
               className="p-2 ml-1 hover:bg-gray-100 rounded-full transition-colors"
-              onClick={() => navigate("/restaurant/help-centre")}
+              onClick={() => navigate(`${baseRoute}/help-centre`)}
             >
               <HelpCircle className="w-5 h-5 text-gray-700" />
             </button>
             <button 
               className="p-2 ml-1 hover:bg-gray-100 rounded-full transition-colors"
-              onClick={() => navigate("/restaurant/explore")}
+              onClick={() => navigate(`${baseRoute}/explore`)}
             >
               <Menu className="w-5 h-5 text-gray-700" />
             </button>

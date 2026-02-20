@@ -11,6 +11,45 @@ const buildPlatformQuery = (platform) => {
     : { platform: 'mogrocery' };
 };
 
+/** Validate and normalize layers (inner, outer, outermost) with coordinates and deliveryCharge */
+const validateLayers = (layers) => {
+  if (!layers || !Array.isArray(layers)) return null;
+  if (layers.length === 0) return [];
+  const types = new Set();
+  const result = [];
+  for (const layer of layers) {
+    if (!layer || !['inner', 'outer', 'outermost'].includes(layer.type)) {
+      return { error: `Each layer must have type: inner, outer, or outermost` };
+    }
+    if (types.has(layer.type)) {
+      return { error: `Duplicate layer type: ${layer.type}` };
+    }
+    types.add(layer.type);
+    const coords = layer.coordinates;
+    if (!Array.isArray(coords) || coords.length < 3) {
+      return { error: `Layer "${layer.type}" must have at least 3 coordinates` };
+    }
+    for (const c of coords) {
+      if (c == null || typeof c !== 'object' || !Number.isFinite(c.latitude ?? c.lat) || !Number.isFinite(c.longitude ?? c.lng)) {
+        return { error: `Layer "${layer.type}" has invalid coordinate` };
+      }
+    }
+    const deliveryCharge = Number(layer.deliveryCharge);
+    if (Number.isNaN(deliveryCharge) || deliveryCharge < 0) {
+      return { error: `Layer "${layer.type}" deliveryCharge must be a non-negative number` };
+    }
+    result.push({
+      type: layer.type,
+      coordinates: coords.map((c) => ({
+        latitude: Number(c.latitude ?? c.lat),
+        longitude: Number(c.longitude ?? c.lng)
+      })),
+      deliveryCharge: Math.round(deliveryCharge * 100) / 100
+    });
+  }
+  return result;
+};
+
 /**
  * Get all zones
  * GET /api/admin/zones
@@ -128,6 +167,7 @@ export const createZone = asyncHandler(async (req, res) => {
       restaurantId,
       unit,
       coordinates,
+      layers,
       peakZoneRideCount,
       peakZoneRadius,
       peakZoneSelectionDuration,
@@ -152,18 +192,41 @@ export const createZone = asyncHandler(async (req, res) => {
       return errorResponse(res, 400, 'Zone must have at least 3 coordinates');
     }
 
-    // Validate coordinates
+    // Validate coordinates (accept lat/lng or latitude/longitude; 0 is valid)
     for (const coord of coordinates) {
-      if (!coord.latitude || !coord.longitude) {
+      const lat = coord.latitude ?? coord.lat;
+      const lng = coord.longitude ?? coord.lng;
+      if (lat === undefined || lat === null || lng === undefined || lng === null) {
         return errorResponse(res, 400, 'Each coordinate must have latitude and longitude');
       }
-      if (coord.latitude < -90 || coord.latitude > 90) {
+      const latNum = Number(lat);
+      const lngNum = Number(lng);
+      if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) {
+        return errorResponse(res, 400, 'Each coordinate must have valid numeric latitude and longitude');
+      }
+      if (latNum < -90 || latNum > 90) {
         return errorResponse(res, 400, 'Invalid latitude value');
       }
-      if (coord.longitude < -180 || coord.longitude > 180) {
+      if (lngNum < -180 || lngNum > 180) {
         return errorResponse(res, 400, 'Invalid longitude value');
       }
     }
+
+    // Validate layers if provided (inner, outer, outermost with deliveryCharge)
+    let normalizedLayers = null;
+    if (layers != null && Array.isArray(layers) && layers.length > 0) {
+      const validated = validateLayers(layers);
+      if (validated && validated.error) {
+        return errorResponse(res, 400, validated.error);
+      }
+      normalizedLayers = validated;
+    }
+
+    // Normalize coordinates to { latitude, longitude } for Zone schema
+    const normalizedCoordinates = coordinates.map((c) => ({
+      latitude: Number(c.latitude ?? c.lat),
+      longitude: Number(c.longitude ?? c.lng)
+    }));
 
     // Check if restaurant exists (only if restaurantId is provided)
     if (restaurantId) {
@@ -182,7 +245,8 @@ export const createZone = asyncHandler(async (req, res) => {
       serviceLocation: serviceLocation || country,
       restaurantId: restaurantId ? new mongoose.Types.ObjectId(restaurantId) : null,
       unit: unit || 'kilometer',
-      coordinates,
+      coordinates: normalizedCoordinates,
+      ...(normalizedLayers && normalizedLayers.length > 0 && { layers: normalizedLayers }),
       peakZoneRideCount: peakZoneRideCount || 0,
       peakZoneRadius: peakZoneRadius || 0,
       peakZoneSelectionDuration: peakZoneSelectionDuration || 0,
@@ -245,6 +309,19 @@ export const updateZone = asyncHandler(async (req, res) => {
         if (!coord.latitude || !coord.longitude) {
           return errorResponse(res, 400, 'Each coordinate must have latitude and longitude');
         }
+      }
+    }
+
+    // If layers are being updated, validate them
+    if (updateData.layers !== undefined) {
+      if (updateData.layers == null || (Array.isArray(updateData.layers) && updateData.layers.length === 0)) {
+        updateData.layers = undefined; // Clear layers
+      } else {
+        const validated = validateLayers(updateData.layers);
+        if (validated && validated.error) {
+          return errorResponse(res, 400, validated.error);
+        }
+        updateData.layers = validated;
       }
     }
 

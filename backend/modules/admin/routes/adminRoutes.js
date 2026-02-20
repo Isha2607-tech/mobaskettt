@@ -21,6 +21,9 @@ import {
   rejectRestaurant,
   reverifyRestaurant,
   deleteRestaurant,
+  getGroceryStoreJoinRequests,
+  approveGroceryStore,
+  rejectGroceryStore,
   getAllOffers,
   getRestaurantAnalytics,
   getCustomerWalletReport
@@ -132,6 +135,20 @@ import {
   rejectGroceryItem,
   updateGroceryAddonCategories
 } from '../controllers/groceryApprovalController.js';
+import {
+  getPendingGroceryProducts,
+  approveGroceryProduct,
+  rejectGroceryProduct,
+  bulkApproveGroceryProducts
+} from '../controllers/groceryProductApprovalController.js';
+import {
+  getPendingCategoryRequests,
+  getPendingSubcategoryRequests,
+  approveCategoryRequest,
+  rejectCategoryRequest,
+  approveSubcategoryRequest,
+  rejectSubcategoryRequest
+} from '../controllers/groceryCategoryRequestApprovalController.js';
 import {
   getRestaurantMenuForAdmin,
   addRestaurantMenuItemByAdmin
@@ -305,6 +322,11 @@ router.post('/restaurants/:id/reverify', reverifyRestaurant);
 router.put('/restaurants/:id/status', updateRestaurantStatus);
 router.delete('/restaurants/:id', deleteRestaurant);
 
+// Grocery Store Management
+router.get('/grocery-stores/requests', getGroceryStoreJoinRequests);
+router.post('/grocery-stores/:id/approve', approveGroceryStore);
+router.post('/grocery-stores/:id/reject', rejectGroceryStore);
+
 // Category Management
 router.get('/categories', getCategories);
 router.get('/categories/:id', getCategoryById);
@@ -400,11 +422,25 @@ router.post('/food-approvals/:id/reject', rejectFoodItem);
 router.get('/restaurants/:restaurantId/menu', getRestaurantMenuForAdmin);
 router.post('/restaurants/:restaurantId/menu/items', addRestaurantMenuItemByAdmin);
 
-// Grocery Approval Management
+// Grocery Approval Management (Order Approvals)
 router.get('/grocery-approvals', getPendingGroceryApprovals);
 router.post('/grocery-approvals/:id/approve', approveGroceryItem);
 router.post('/grocery-approvals/:id/reject', rejectGroceryItem);
 router.patch('/grocery-addons/:restaurantId/:addonId/categories', updateGroceryAddonCategories);
+
+// Grocery Product Approval Management
+router.get('/grocery/products/pending', getPendingGroceryProducts);
+router.patch('/grocery/products/:id/approve', approveGroceryProduct);
+router.patch('/grocery/products/:id/reject', rejectGroceryProduct);
+router.post('/grocery/products/bulk-approve', bulkApproveGroceryProducts);
+
+// Grocery Category/Subcategory Request Approval Management
+router.get('/grocery/category-requests/pending', getPendingCategoryRequests);
+router.patch('/grocery/category-requests/:id/approve', approveCategoryRequest);
+router.patch('/grocery/category-requests/:id/reject', rejectCategoryRequest);
+router.get('/grocery/subcategory-requests/pending', getPendingSubcategoryRequests);
+router.patch('/grocery/subcategory-requests/:id/approve', approveSubcategoryRequest);
+router.patch('/grocery/subcategory-requests/:id/reject', rejectSubcategoryRequest);
 
 // Offers Management
 router.get('/offers', getAllOffers);

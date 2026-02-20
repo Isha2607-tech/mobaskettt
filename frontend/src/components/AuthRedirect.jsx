@@ -21,6 +21,7 @@ export default function AuthRedirect({ children, module, redirectTo = null }) {
     restaurant: "/restaurant",
     delivery: "/delivery",
     admin: "/admin",
+    "grocery-store": "/store",
   }
 
   // If authenticated, redirect to module home page

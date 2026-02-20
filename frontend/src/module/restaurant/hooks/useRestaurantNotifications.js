@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import io from 'socket.io-client';
 import { API_BASE_URL, SOCKET_BASE_URL } from '@/lib/api/config';
-import { restaurantAPI } from '@/lib/api';
+import { restaurantAPI, groceryStoreAPI } from '@/lib/api';
 import alertSound from '@/assets/audio/alert.mp3';
 
 /**
- * Hook for restaurant to receive real-time order notifications with sound
+ * Hook for restaurant/grocery store to receive real-time order notifications with sound
  * @returns {object} - { newOrder, playSound, isConnected }
  */
 export const useRestaurantNotifications = () => {
+  const location = useLocation();
+  const isGroceryStore = location.pathname.startsWith('/store');
   const socketRef = useRef(null);
   const [newOrder, setNewOrder] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -18,22 +21,26 @@ export const useRestaurantNotifications = () => {
   const lastConnectErrorLogRef = useRef(0);
   const CONNECT_ERROR_LOG_THROTTLE_MS = 10000;
 
-  // Get restaurant ID from API
+  // Get restaurant/store ID from API
   useEffect(() => {
     const fetchRestaurantId = async () => {
       try {
-        const response = await restaurantAPI.getCurrentRestaurant();
-        if (response.data?.success && response.data.data?.restaurant) {
-          const restaurant = response.data.data.restaurant;
-          const id = restaurant._id?.toString() || restaurant.restaurantId;
-          setRestaurantId(id);
+        const response = isGroceryStore 
+          ? await groceryStoreAPI.getCurrentStore()
+          : await restaurantAPI.getCurrentRestaurant();
+        if (response.data?.success) {
+          const restaurant = response.data.data?.restaurant || response.data.data?.store;
+          if (restaurant) {
+            const id = restaurant._id?.toString() || restaurant.restaurantId;
+            setRestaurantId(id);
+          }
         }
       } catch (error) {
-        console.error('Error fetching restaurant:', error);
+        console.error('Error fetching restaurant/store:', error);
       }
     };
     fetchRestaurantId();
-  }, []);
+  }, [isGroceryStore]);
 
   useEffect(() => {
     if (!restaurantId) {
@@ -117,8 +124,8 @@ export const useRestaurantNotifications = () => {
       return; // Don't try to connect with invalid URL
     }
     
-    // Construct Socket.IO URL
-    const socketUrl = `${backendUrl}/restaurant`;
+    // Construct Socket.IO URL - use appropriate namespace
+    const socketUrl = `${backendUrl}/${isGroceryStore ? 'grocery-store' : 'restaurant'}`;
     
     // Validate socket URL format
     try {
@@ -161,42 +168,46 @@ export const useRestaurantNotifications = () => {
       forceNew: false,
       autoConnect: true,
       auth: {
-        token: localStorage.getItem('restaurant_accessToken') || localStorage.getItem('accessToken')
+        token: isGroceryStore 
+          ? localStorage.getItem('grocery-store_accessToken') || localStorage.getItem('accessToken')
+          : localStorage.getItem('restaurant_accessToken') || localStorage.getItem('accessToken')
       }
     });
 
     socketRef.current.on('connect', () => {
-      console.log('✅ Restaurant Socket connected, restaurantId:', restaurantId);
+      console.log(`✅ ${isGroceryStore ? 'Grocery Store' : 'Restaurant'} Socket connected, ${isGroceryStore ? 'storeId' : 'restaurantId'}:`, restaurantId);
       console.log('✅ Socket ID:', socketRef.current.id);
       console.log('✅ Socket URL:', socketUrl);
       setIsConnected(true);
       
-      // Join restaurant room immediately after connection with retry
+      // Join restaurant/store room immediately after connection with retry
       if (restaurantId) {
         const joinRoom = () => {
-          console.log('📢 Joining restaurant room with ID:', restaurantId);
-          socketRef.current.emit('join-restaurant', restaurantId);
+          const roomEvent = isGroceryStore ? 'join-grocery-store' : 'join-restaurant';
+          console.log(`📢 Joining ${isGroceryStore ? 'grocery store' : 'restaurant'} room with ID:`, restaurantId);
+          socketRef.current.emit(roomEvent, restaurantId);
           
           // Retry join after 2 seconds if no confirmation received
           setTimeout(() => {
             if (socketRef.current?.connected) {
-              console.log('🔄 Retrying restaurant room join...');
-              socketRef.current.emit('join-restaurant', restaurantId);
+              console.log(`🔄 Retrying ${isGroceryStore ? 'grocery store' : 'restaurant'} room join...`);
+              socketRef.current.emit(roomEvent, restaurantId);
             }
           }, 2000);
         };
         
         joinRoom();
       } else {
-        console.warn('⚠️ Cannot join restaurant room: restaurantId is missing');
+        console.warn(`⚠️ Cannot join ${isGroceryStore ? 'grocery store' : 'restaurant'} room: restaurantId is missing`);
       }
     });
 
     // Listen for room join confirmation
-    socketRef.current.on('restaurant-room-joined', (data) => {
-      console.log('✅ Restaurant room joined successfully:', data);
+    const roomJoinedEvent = isGroceryStore ? 'grocery-store-room-joined' : 'restaurant-room-joined';
+    socketRef.current.on(roomJoinedEvent, (data) => {
+      console.log(`✅ ${isGroceryStore ? 'Grocery store' : 'Restaurant'} room joined successfully:`, data);
       console.log('✅ Room:', data?.room);
-      console.log('✅ Restaurant ID in room:', data?.restaurantId);
+      console.log('✅ Store/Restaurant ID in room:', data?.restaurantId || data?.storeId);
     });
 
     // Listen for connection errors (throttle logs to avoid console spam on reconnect loops)
@@ -243,9 +254,10 @@ export const useRestaurantNotifications = () => {
       console.log(`✅ Reconnected after ${attemptNumber} attempts`);
       setIsConnected(true);
       
-      // Rejoin restaurant room after reconnection
+      // Rejoin restaurant/store room after reconnection
       if (restaurantId) {
-        socketRef.current.emit('join-restaurant', restaurantId);
+        const roomEvent = isGroceryStore ? 'join-grocery-store' : 'join-restaurant';
+        socketRef.current.emit(roomEvent, restaurantId);
       }
     });
 
@@ -284,7 +296,7 @@ export const useRestaurantNotifications = () => {
         audioRef.current = null;
       }
     };
-  }, [restaurantId]);
+  }, [restaurantId, isGroceryStore]);
 
   // Track user interaction for autoplay policy
   useEffect(() => {

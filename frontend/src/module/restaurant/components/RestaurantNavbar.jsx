@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useLocation } from "react-router-dom"
 import { Search, Menu, ChevronRight, MapPin, X, Bell } from "lucide-react"
-import { restaurantAPI } from "@/lib/api"
+import { restaurantAPI, groceryStoreAPI } from "@/lib/api"
 
 export default function RestaurantNavbar({
   restaurantName: propRestaurantName,
@@ -11,19 +11,26 @@ export default function RestaurantNavbar({
   showNotifications = true,
 }) {
   const navigate = useNavigate()
+  const routeLocation = useLocation()
+  const isGroceryStore = routeLocation.pathname.startsWith('/store')
   const [isSearchActive, setIsSearchActive] = useState(false)
   const [searchValue, setSearchValue] = useState("")
   const [status, setStatus] = useState("Offline")
   const [restaurantData, setRestaurantData] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // Fetch restaurant data on mount
+  // Fetch restaurant/store data on mount
   useEffect(() => {
     const fetchRestaurantData = async () => {
       try {
         setLoading(true)
-        const response = await restaurantAPI.getCurrentRestaurant()
-        const data = response?.data?.data?.restaurant || response?.data?.restaurant
+        const response = isGroceryStore 
+          ? await groceryStoreAPI.getCurrentStore()
+          : await restaurantAPI.getCurrentRestaurant()
+        // Handle both restaurant and grocery store response formats
+        const data = isGroceryStore
+          ? (response?.data?.data?.store || response?.data?.store || response?.data?.data?.restaurant || response?.data?.restaurant)
+          : (response?.data?.data?.restaurant || response?.data?.restaurant)
         if (data) {
           setRestaurantData(data)
         }
@@ -39,7 +46,7 @@ export default function RestaurantNavbar({
     }
 
     fetchRestaurantData()
-  }, [])
+  }, [isGroceryStore])
 
   // Format full address from location object - using stored data only, no live fetching
   const formatAddress = (location) => {
@@ -113,8 +120,8 @@ export default function RestaurantNavbar({
     return parts.length > 0 ? parts.join(", ") : ""
   }
 
-  // Get restaurant name (use prop if provided, otherwise use fetched data)
-  const restaurantName = propRestaurantName || restaurantData?.name || "Restaurant"
+  // Get restaurant/store name (use prop if provided, otherwise use fetched data)
+  const restaurantName = propRestaurantName || restaurantData?.name || (isGroceryStore ? "Store" : "Restaurant")
 
   const [location, setLocation] = useState("")
 
@@ -187,7 +194,8 @@ export default function RestaurantNavbar({
   useEffect(() => {
     const updateStatus = () => {
       try {
-        const savedStatus = localStorage.getItem('restaurant_online_status')
+        const statusKey = isGroceryStore ? 'grocery-store_online_status' : 'restaurant_online_status'
+        const savedStatus = localStorage.getItem(statusKey)
         if (savedStatus !== null) {
           const isOnline = JSON.parse(savedStatus)
           setStatus(isOnline ? "Online" : "Offline")
@@ -196,7 +204,7 @@ export default function RestaurantNavbar({
           setStatus("Offline")
         }
       } catch (error) {
-        console.error("Error loading restaurant status:", error)
+        console.error("Error loading restaurant/store status:", error)
         setStatus("Offline")
       }
     }
@@ -204,25 +212,27 @@ export default function RestaurantNavbar({
     // Load initial status
     updateStatus()
 
-    // Listen for status changes from RestaurantStatus page
+    // Listen for status changes from RestaurantStatus/StoreStatus page
     const handleStatusChange = (event) => {
       const isOnline = event.detail?.isOnline ?? false
       setStatus(isOnline ? "Online" : "Offline")
     }
 
-    window.addEventListener('restaurantStatusChanged', handleStatusChange)
+    const statusEventName = isGroceryStore ? 'groceryStoreStatusChanged' : 'restaurantStatusChanged'
+    window.addEventListener(statusEventName, handleStatusChange)
     
     // Also check localStorage periodically to catch direct changes
     const interval = setInterval(updateStatus, 1000)
     
     return () => {
-      window.removeEventListener('restaurantStatusChanged', handleStatusChange)
+      const statusEventName = isGroceryStore ? 'groceryStoreStatusChanged' : 'restaurantStatusChanged'
+      window.removeEventListener(statusEventName, handleStatusChange)
       clearInterval(interval)
     }
-  }, [])
+  }, [isGroceryStore])
 
   const handleStatusClick = () => {
-    navigate("/restaurant/status")
+    navigate(isGroceryStore ? "/store/status" : "/restaurant/status")
   }
 
   const handleSearchClick = () => {
@@ -239,11 +249,11 @@ export default function RestaurantNavbar({
   }
 
   const handleMenuClick = () => {
-    navigate("/restaurant/explore")
+    navigate(isGroceryStore ? "/store/explore" : "/restaurant/explore")
   }
 
   const handleNotificationsClick = () => {
-    navigate("/restaurant/notifications")
+    navigate(isGroceryStore ? "/store/notifications" : "/restaurant/notifications")
   }
 
   // Show search input when search is active

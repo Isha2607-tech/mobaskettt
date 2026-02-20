@@ -112,8 +112,9 @@ export default function UserOrderDetails() {
   const orderIdDisplay = order.orderId || order._id || orderId
   // Use fetched restaurant data if available, otherwise use order.restaurantId or order.restaurant
   const restaurantObj = restaurant || order.restaurantId || order.restaurant || {}
+  const isGroceryOrder = order.restaurantId?.platform === 'mogrocery' || order.platform === 'mogrocery'
   const restaurantName =
-    order.restaurantName || restaurantObj.name || "Restaurant"
+    order.restaurantName || restaurantObj.name || (isGroceryOrder ? "Store" : "Restaurant")
 
   // Build restaurant address (try restaurant fields first, then fall back)
   const restaurantLocation = (() => {
@@ -336,7 +337,7 @@ export default function UserOrderDetails() {
           </div>
         </div>
 
-        {/* Restaurant Info Card */}
+        {/* Store / Restaurant Info Card */}
         <div className="bg-white p-4 rounded-xl shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
@@ -353,6 +354,9 @@ export default function UserOrderDetails() {
                 className="w-10 h-10 rounded-lg object-cover"
               />
               <div>
+                <p className="text-[10px] uppercase tracking-wide text-gray-400 font-medium">
+                  {isGroceryOrder ? "Store" : "Restaurant"}
+                </p>
                 <h3 className="font-semibold text-gray-800">{restaurantName}</h3>
                 <p className="text-xs text-gray-500">{restaurantLocation}</p>
               </div>

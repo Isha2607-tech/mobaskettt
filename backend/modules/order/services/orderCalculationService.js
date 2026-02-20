@@ -1,15 +1,74 @@
 import Restaurant from '../../restaurant/models/Restaurant.js';
 import Offer from '../../restaurant/models/Offer.js';
 import FeeSettings from '../../admin/models/FeeSettings.js';
+import Zone from '../../admin/models/Zone.js';
 import Order from '../models/Order.js';
 import GroceryPlan from '../../grocery/models/GroceryPlan.js';
 import GroceryPlanOffer from '../../grocery/models/GroceryPlanOffer.js';
 import GroceryProduct from '../../grocery/models/GroceryProduct.js';
 import mongoose from 'mongoose';
 
+/** Ray-casting: is (lat, lng) inside polygon coordinates [{ latitude, longitude }, ...] */
+const isPointInPolygon = (lat, lng, coordinates) => {
+  if (!Array.isArray(coordinates) || coordinates.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = coordinates.length - 1; i < coordinates.length; j = i++) {
+    const ci = coordinates[i];
+    const cj = coordinates[j];
+    const xi = typeof ci === 'object' ? (ci.latitude ?? ci.lat) : null;
+    const yi = typeof ci === 'object' ? (ci.longitude ?? ci.lng) : null;
+    const xj = typeof cj === 'object' ? (cj.latitude ?? cj.lat) : null;
+    const yj = typeof cj === 'object' ? (cj.longitude ?? cj.lng) : null;
+    if (xi == null || yi == null || xj == null || yj == null) continue;
+    const intersect = ((yi > lng) !== (yj > lng)) && (lat < ((xj - xi) * (lng - yi)) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+};
+
 /**
- * Get active fee settings from database
- * Returns default values if no settings found
+ * Find zone containing (lat, lng) and return delivery charge + layer type.
+ * Zones and layers are platform-scoped: mofood and mogrocery use separate zone/fee data.
+ * @returns {{ deliveryCharge: number, deliveryLayerType: 'inner'|'outer'|'outermost' } | null}
+ */
+const getZoneLayerDeliveryChargeAndType = async (lat, lng, platform) => {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const platformFilter = platform === 'mogrocery'
+    ? { platform: 'mogrocery' }
+    : { $or: [{ platform: 'mofood' }, { platform: { $exists: false } }] };
+  const zones = await Zone.find({ isActive: true, ...platformFilter }).lean();
+  for (const zone of zones) {
+    const coords = zone?.coordinates;
+    if (!Array.isArray(coords) || coords.length < 3) continue;
+    if (!isPointInPolygon(lat, lng, coords)) continue;
+    const layers = zone?.layers;
+    if (!Array.isArray(layers) || layers.length === 0) return null;
+    const outermostLayer = layers.find((l) => l.type === 'outermost');
+    const order = ['inner', 'outer'];
+    for (const layerType of order) {
+      const layer = layers.find((l) => l.type === layerType);
+      if (!layer || !Array.isArray(layer.coordinates) || layer.coordinates.length < 3) continue;
+      if (isPointInPolygon(lat, lng, layer.coordinates)) {
+        return {
+          deliveryCharge: Number(layer.deliveryCharge) || 0,
+          deliveryLayerType: layerType
+        };
+      }
+    }
+    if (outermostLayer) {
+      return {
+        deliveryCharge: Number(outermostLayer.deliveryCharge) || 0,
+        deliveryLayerType: 'outermost'
+      };
+    }
+    return null;
+  }
+  return null;
+};
+
+/**
+ * Get active fee settings from database.
+ * Platform-scoped: mofood and mogrocery have separate fee settings (same DB, filtered by platform).
  */
 const getFeeSettings = async (platform = 'mofood') => {
   const normalizedPlatform = platform === 'mogrocery' ? 'mogrocery' : 'mofood';
@@ -50,56 +109,55 @@ const getFeeSettings = async (platform = 'mofood') => {
 };
 
 /**
- * Calculate delivery fee based on order value, distance, and restaurant settings
+ * Extract latitude and longitude from delivery address object
+ */
+const getDeliveryCoordinates = (deliveryAddress) => {
+  if (!deliveryAddress || typeof deliveryAddress !== 'object') return { lat: null, lng: null };
+  const lat = Number(deliveryAddress.latitude ?? deliveryAddress.lat ?? deliveryAddress.location?.latitude ?? deliveryAddress.location?.coordinates?.[1]);
+  const lng = Number(deliveryAddress.longitude ?? deliveryAddress.lng ?? deliveryAddress.location?.longitude ?? deliveryAddress.location?.coordinates?.[0]);
+  return { lat: Number.isFinite(lat) ? lat : null, lng: Number.isFinite(lng) ? lng : null };
+};
+
+/**
+ * Calculate delivery fee based on order value, zone layers (inner/outer/outermost), and restaurant settings
  */
 export const calculateDeliveryFee = async (orderValue, restaurant, deliveryAddress = null, platform = 'mofood') => {
-  // Get fee settings from database
-  const feeSettings = await getFeeSettings(restaurant?.platform || platform || 'mofood');
+  const pricingPlatform = restaurant?.platform || platform || 'mofood';
+  const feeSettings = await getFeeSettings(pricingPlatform);
 
-  // If admin range-based delivery fees are configured, they take precedence.
+  // Free delivery by order value (checked first)
+  if (restaurant?.freeDeliveryAbove && orderValue >= restaurant.freeDeliveryAbove) {
+    return 0;
+  }
+  const freeDeliveryThreshold = feeSettings.freeDeliveryThreshold || 149;
+  if (orderValue >= freeDeliveryThreshold) {
+    return 0;
+  }
+
+  // Zone layers: delivery charge by layer (inner/outer/outermost) - platform-scoped (mofood vs mogrocery)
+  const { lat, lng } = getDeliveryCoordinates(deliveryAddress);
+  if (lat != null && lng != null) {
+    const zoneResult = await getZoneLayerDeliveryChargeAndType(lat, lng, pricingPlatform);
+    if (zoneResult !== null) {
+      return zoneResult.deliveryCharge;
+    }
+  }
+
+  // If admin range-based delivery fees are configured, they take precedence over default fee
   if (feeSettings.deliveryFeeRanges && Array.isArray(feeSettings.deliveryFeeRanges) && feeSettings.deliveryFeeRanges.length > 0) {
     const sortedRanges = [...feeSettings.deliveryFeeRanges].sort((a, b) => a.min - b.min);
-
     for (let i = 0; i < sortedRanges.length; i++) {
       const range = sortedRanges[i];
       const isLastRange = i === sortedRanges.length - 1;
-
       if (isLastRange) {
-        if (orderValue >= range.min && orderValue <= range.max) {
-          return range.fee;
-        }
+        if (orderValue >= range.min && orderValue <= range.max) return range.fee;
       } else if (orderValue >= range.min && orderValue < range.max) {
         return range.fee;
       }
     }
   }
-  
-  // Check restaurant settings for free delivery threshold (takes priority)
-  if (restaurant?.freeDeliveryAbove) {
-    if (orderValue >= restaurant.freeDeliveryAbove) {
-      return 0; // Free delivery
-    }
-  } else {
-    // Use admin settings for free delivery threshold
-    const freeDeliveryThreshold = feeSettings.freeDeliveryThreshold || 149;
-    if (orderValue >= freeDeliveryThreshold) {
-      return 0;
-    }
-  }
-  
-  // Fallback to default delivery fee if no range matches
-  const baseDeliveryFee = feeSettings.deliveryFee || 25;
-  
-  // TODO: Add distance-based calculation when address coordinates are available
-  // if (deliveryAddress?.location?.coordinates && restaurant?.location?.coordinates) {
-  //   const distance = calculateDistance(
-  //     restaurant.location.coordinates,
-  //     deliveryAddress.location.coordinates
-  //   );
-  //   deliveryFee = baseFee + (distance * perKmFee);
-  // }
-  
-  return baseDeliveryFee;
+
+  return feeSettings.deliveryFee || 25;
 };
 
 /**
@@ -622,7 +680,15 @@ export const calculateOrderPricing = async ({
 
     const pricingPlatform = restaurant?.platform === 'mogrocery' ? 'mogrocery' : (platform === 'mogrocery' ? 'mogrocery' : 'mofood');
 
-    // Calculate delivery fee
+    // Delivery fee: use zone layer (inner/outer/outermost) when address has coordinates; platform-scoped (mofood vs mogrocery)
+    let deliveryLayerType = null;
+    const { lat: deliveryLat, lng: deliveryLng } = getDeliveryCoordinates(deliveryAddress);
+    if (deliveryLat != null && deliveryLng != null) {
+      const zoneResult = await getZoneLayerDeliveryChargeAndType(deliveryLat, deliveryLng, pricingPlatform);
+      if (zoneResult !== null) {
+        deliveryLayerType = zoneResult.deliveryLayerType;
+      }
+    }
     const deliveryFee = await calculateDeliveryFee(
       subtotal,
       restaurant,
@@ -650,6 +716,7 @@ export const calculateOrderPricing = async ({
       subtotal: Math.round(subtotal),
       discount: Math.round(totalDiscount),
       deliveryFee: Math.round(finalDeliveryFee),
+      ...(deliveryLayerType && { deliveryLayerType }),
       platformFee: Math.round(platformFee),
       tax: gst, // Already rounded in calculateGST
       total: Math.round(total),

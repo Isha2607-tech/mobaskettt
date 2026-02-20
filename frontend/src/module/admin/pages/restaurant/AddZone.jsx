@@ -30,12 +30,30 @@ export default function AddZone() {
   })
   
   const [coordinates, setCoordinates] = useState([])
+  const [innerCoordinates, setInnerCoordinates] = useState([])
+  const [outerCoordinates, setOuterCoordinates] = useState([])
+  const [layerDeliveryCharges, setLayerDeliveryCharges] = useState({
+    inner: 0,
+    outer: 0,
+    outermost: 0
+  })
+  const [drawLayerMode, setDrawLayerMode] = useState(null) // null | 'zone' | 'outer' | 'inner'
   const [isDrawing, setIsDrawing] = useState(false)
   const [locationSearch, setLocationSearch] = useState("")
   const [existingZones, setExistingZones] = useState([])
   const autocompleteInputRef = useRef(null)
   const autocompleteRef = useRef(null)
   const existingZonesPolygonsRef = useRef([])
+  const polygonOuterRef = useRef(null)
+  const polygonInnerRef = useRef(null)
+  const pathMarkersOuterRef = useRef([])
+  const pathMarkersInnerRef = useRef([])
+  const drawLayerModeRef = useRef(null)
+  const layersDrawnForEditRef = useRef(false)
+
+  useEffect(() => {
+    layersDrawnForEditRef.current = false
+  }, [id])
 
   useEffect(() => {
     fetchExistingZones()
@@ -124,9 +142,23 @@ export default function AddZone() {
           zoneName: zoneData.name || zoneData.zoneName || "",
           unit: zoneData.unit || "kilometer",
         })
-        
         if (zoneData.coordinates && zoneData.coordinates.length > 0) {
           setCoordinates(zoneData.coordinates)
+        }
+        if (Array.isArray(zoneData.layers) && zoneData.layers.length > 0) {
+          const charges = { inner: 0, outer: 0, outermost: 0 }
+          zoneData.layers.forEach((ly) => {
+            if (ly.type === 'inner') {
+              setInnerCoordinates(ly.coordinates || [])
+              charges.inner = Number(ly.deliveryCharge) || 0
+            } else if (ly.type === 'outer') {
+              setOuterCoordinates(ly.coordinates || [])
+              charges.outer = Number(ly.deliveryCharge) || 0
+            } else if (ly.type === 'outermost') {
+              charges.outermost = Number(ly.deliveryCharge) || 0
+            }
+          })
+          setLayerDeliveryCharges((prev) => ({ ...prev, ...charges }))
         }
       }
     } catch (error) {
@@ -141,7 +173,7 @@ export default function AddZone() {
   const loadGoogleMaps = async () => {
     try {
       const apiKey = await getGoogleMapsApiKey()
-      setGoogleMapsApiKey(apiKey || "loaded")
+      setGoogleMapsApiKey(apiKey ? "loaded" : "")
       
       // Wait for Google Maps to be loaded from main.jsx if it's loading
       let retries = 0
@@ -152,21 +184,21 @@ export default function AddZone() {
         retries++
       }
 
-      // If Google Maps is already loaded (from main.jsx), use it directly
+      let google = null
       if (window.google && window.google.maps) {
-        initializeMap(window.google)
-        return
-      }
-
-      // If Google Maps is not loaded yet and we have an API key, use Loader as fallback
-      if (apiKey) {
+        google = window.google
+      } else if (apiKey) {
         const loader = new Loader({
           apiKey: apiKey,
           version: "weekly",
           libraries: ["places", "drawing", "geometry"]
         })
+        google = await loader.load()
+      }
 
-        const google = await loader.load()
+      if (google) {
+        // Defer init so mapRef is attached (DOM ready)
+        await new Promise(resolve => setTimeout(resolve, 50))
         initializeMap(google)
       } else {
         setMapLoading(false)
@@ -178,7 +210,10 @@ export default function AddZone() {
   }
 
   const initializeMap = (google) => {
-    if (!mapRef.current) return
+    if (!mapRef.current) {
+      setMapLoading(false)
+      return
+    }
 
     // Initial location (India center)
     const initialLocation = { lat: 20.5937, lng: 78.9629 }
@@ -231,121 +266,168 @@ export default function AddZone() {
     pathMarkersRef.current = pathMarkers
 
     // Handle overlay complete (when user finishes drawing)
-    google.maps.event.addListener(drawingManager, 'overlaycomplete', (event) => {
-      if (event.type === google.maps.drawing.OverlayType.POLYGON) {
-        const polygon = event.overlay
-        
-        // Remove previous polygon if exists
-        if (polygonRef.current) {
-          polygonRef.current.setMap(null)
+    const getCoordsFromPath = (path) => {
+      const out = []
+      const len = path.getLength()
+      for (let i = 0; i < len; i++) {
+        const latLng = path.getAt(i)
+        if (i === len - 1) {
+          const first = path.getAt(0)
+          if (latLng.lat() === first.lat() && latLng.lng() === first.lng()) break
         }
+        out.push({
+          latitude: parseFloat(latLng.lat().toFixed(6)),
+          longitude: parseFloat(latLng.lng().toFixed(6))
+        })
+      }
+      return out
+    }
+    const layerStyles = {
+      zone: { fillColor: '#9333ea', strokeColor: '#9333ea', scale: 8 },
+      outer: { fillColor: '#2563eb', strokeColor: '#2563eb', scale: 7 },
+      inner: { fillColor: '#16a34a', strokeColor: '#16a34a', scale: 6 }
+    }
 
-        // Clear previous markers
-        pathMarkers.forEach(marker => marker.setMap(null))
-        pathMarkers = []
+    google.maps.event.addListener(drawingManager, 'overlaycomplete', (event) => {
+      if (event.type !== google.maps.drawing.OverlayType.POLYGON) return
+      const polygon = event.overlay
+      const mode = drawLayerModeRef.current || 'zone'
 
+      const path = polygon.getPath()
+      const coords = getCoordsFromPath(path)
+      if (coords.length < 3) return
+
+      if (mode === 'zone') {
+        if (polygonRef.current) polygonRef.current.setMap(null)
+        pathMarkers.forEach(m => m.setMap(null))
+        pathMarkers.length = 0
         polygonRef.current = polygon
-        currentPolygonPath = polygon.getPath()
-        
-        // Get coordinates and add markers
-        const coords = []
-        const pathLength = currentPolygonPath.getLength()
-        
-        // Get all points except the last one if it's a duplicate of the first (polygon closing point)
-        for (let i = 0; i < pathLength; i++) {
-          const latLng = currentPolygonPath.getAt(i)
-          
-          // Skip the last point if it's the same as the first (polygon closing point)
-          if (i === pathLength - 1) {
-            const firstPoint = currentPolygonPath.getAt(0)
-            if (latLng.lat() === firstPoint.lat() && latLng.lng() === firstPoint.lng()) {
-              break // Skip duplicate closing point
-            }
-          }
-          
-          coords.push({
-            latitude: parseFloat(latLng.lat().toFixed(6)),
-            longitude: parseFloat(latLng.lng().toFixed(6))
-          })
-          
-          // Add marker for each point
+        currentPolygonPath = path
+        polygon.setOptions({ fillColor: layerStyles.zone.fillColor, strokeColor: layerStyles.zone.strokeColor })
+        coords.forEach((_, i) => {
+          const latLng = path.getAt(i)
           const marker = new google.maps.Marker({
             position: latLng,
-            map: map,
-            icon: {
-              path: google.maps.SymbolPath.CIRCLE,
-              scale: 8,
-              fillColor: "#9333ea",
-              fillOpacity: 1,
-              strokeColor: "#ffffff",
-              strokeWeight: 2
-            },
+            map,
+            icon: { path: google.maps.SymbolPath.CIRCLE, scale: layerStyles.zone.scale, fillColor: layerStyles.zone.fillColor, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 },
             zIndex: 1000,
             title: `Point ${i + 1}`
           })
           pathMarkers.push(marker)
-          pathMarkersRef.current = pathMarkers
-        }
-        
-        console.log("Coordinates set:", coords)
+        })
+        pathMarkersRef.current = pathMarkers
         setCoordinates(coords)
-        
-        // Make polygon editable
-        polygon.setEditable(true)
-        polygon.setDraggable(false)
-        
-        // Update coordinates and markers when polygon is edited
         const updateMarkers = () => {
-          // Clear existing markers
-          pathMarkers.forEach(marker => marker.setMap(null))
-          pathMarkers = []
-          
-          // Update coordinates
-          const newCoords = []
-          const pathLength = currentPolygonPath.getLength()
-          
-          for (let i = 0; i < pathLength; i++) {
-            const latLng = currentPolygonPath.getAt(i)
-            
-            // Skip the last point if it's the same as the first (polygon closing point)
-            if (i === pathLength - 1) {
-              const firstPoint = currentPolygonPath.getAt(0)
-              if (latLng.lat() === firstPoint.lat() && latLng.lng() === firstPoint.lng()) {
-                break // Skip duplicate closing point
-              }
-            }
-            
-            newCoords.push({
-              latitude: parseFloat(latLng.lat().toFixed(6)),
-              longitude: parseFloat(latLng.lng().toFixed(6))
-            })
-            
-            // Add new marker
+          pathMarkers.forEach(m => m.setMap(null))
+          pathMarkers.length = 0
+          const newCoords = getCoordsFromPath(path)
+          newCoords.forEach((_, i) => {
+            const latLng = path.getAt(i)
             const marker = new google.maps.Marker({
               position: latLng,
-              map: map,
-              icon: {
-                path: google.maps.SymbolPath.CIRCLE,
-                scale: 8,
-                fillColor: "#9333ea",
-                fillOpacity: 1,
-                strokeColor: "#ffffff",
-                strokeWeight: 2
-              },
+              map,
+              icon: { path: google.maps.SymbolPath.CIRCLE, scale: layerStyles.zone.scale, fillColor: layerStyles.zone.fillColor, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 },
               zIndex: 1000,
               title: `Point ${i + 1}`
             })
             pathMarkers.push(marker)
-            pathMarkersRef.current = pathMarkers
-          }
-          
+          })
+          pathMarkersRef.current = pathMarkers
           setCoordinates(newCoords)
         }
-        
-        google.maps.event.addListener(currentPolygonPath, 'set_at', updateMarkers)
-        google.maps.event.addListener(currentPolygonPath, 'insert_at', updateMarkers)
-        google.maps.event.addListener(currentPolygonPath, 'remove_at', updateMarkers)
+        google.maps.event.addListener(path, 'set_at', updateMarkers)
+        google.maps.event.addListener(path, 'insert_at', updateMarkers)
+        google.maps.event.addListener(path, 'remove_at', updateMarkers)
+      } else if (mode === 'outer') {
+        if (polygonOuterRef.current) polygonOuterRef.current.setMap(null)
+        pathMarkersOuterRef.current.forEach(m => m.setMap(null))
+        pathMarkersOuterRef.current = []
+        polygonOuterRef.current = polygon
+        polygon.setOptions({ fillColor: layerStyles.outer.fillColor, strokeColor: layerStyles.outer.strokeColor, zIndex: 2 })
+        const outerMarkers = []
+        coords.forEach((_, i) => {
+          const latLng = path.getAt(i)
+          const marker = new google.maps.Marker({
+            position: latLng,
+            map,
+            icon: { path: google.maps.SymbolPath.CIRCLE, scale: layerStyles.outer.scale, fillColor: layerStyles.outer.fillColor, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 },
+            zIndex: 999,
+            title: `Outer ${i + 1}`
+          })
+          outerMarkers.push(marker)
+        })
+        pathMarkersOuterRef.current = outerMarkers
+        setOuterCoordinates(coords)
+        const updateOuter = () => {
+          pathMarkersOuterRef.current.forEach(m => m.setMap(null))
+          const newCoords = getCoordsFromPath(path)
+          const markers = []
+          newCoords.forEach((_, i) => {
+            const latLng = path.getAt(i)
+            const marker = new google.maps.Marker({
+              position: latLng,
+              map,
+              icon: { path: google.maps.SymbolPath.CIRCLE, scale: layerStyles.outer.scale, fillColor: layerStyles.outer.fillColor, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 },
+              zIndex: 999,
+              title: `Outer ${i + 1}`
+            })
+            markers.push(marker)
+          })
+          pathMarkersOuterRef.current = markers
+          setOuterCoordinates(newCoords)
+        }
+        google.maps.event.addListener(path, 'set_at', updateOuter)
+        google.maps.event.addListener(path, 'insert_at', updateOuter)
+        google.maps.event.addListener(path, 'remove_at', updateOuter)
+      } else if (mode === 'inner') {
+        if (polygonInnerRef.current) polygonInnerRef.current.setMap(null)
+        pathMarkersInnerRef.current.forEach(m => m.setMap(null))
+        pathMarkersInnerRef.current = []
+        polygonInnerRef.current = polygon
+        polygon.setOptions({ fillColor: layerStyles.inner.fillColor, strokeColor: layerStyles.inner.strokeColor, zIndex: 3 })
+        const innerMarkers = []
+        coords.forEach((_, i) => {
+          const latLng = path.getAt(i)
+          const marker = new google.maps.Marker({
+            position: latLng,
+            map,
+            icon: { path: google.maps.SymbolPath.CIRCLE, scale: layerStyles.inner.scale, fillColor: layerStyles.inner.fillColor, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 },
+            zIndex: 998,
+            title: `Inner ${i + 1}`
+          })
+          innerMarkers.push(marker)
+        })
+        pathMarkersInnerRef.current = innerMarkers
+        setInnerCoordinates(coords)
+        const updateInner = () => {
+          pathMarkersInnerRef.current.forEach(m => m.setMap(null))
+          const newCoords = getCoordsFromPath(path)
+          const markers = []
+          newCoords.forEach((_, i) => {
+            const latLng = path.getAt(i)
+            const marker = new google.maps.Marker({
+              position: latLng,
+              map,
+              icon: { path: google.maps.SymbolPath.CIRCLE, scale: layerStyles.inner.scale, fillColor: layerStyles.inner.fillColor, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 },
+              zIndex: 998,
+              title: `Inner ${i + 1}`
+            })
+            markers.push(marker)
+          })
+          pathMarkersInnerRef.current = markers
+          setInnerCoordinates(newCoords)
+        }
+        google.maps.event.addListener(path, 'set_at', updateInner)
+        google.maps.event.addListener(path, 'insert_at', updateInner)
+        google.maps.event.addListener(path, 'remove_at', updateInner)
       }
+
+      polygon.setEditable(true)
+      polygon.setDraggable(false)
+      setDrawLayerMode(null)
+      drawLayerModeRef.current = null
+      drawingManager.setDrawingMode(null)
+      setIsDrawing(false)
     })
 
     setMapLoading(false)
@@ -425,6 +507,95 @@ export default function AddZone() {
       drawExistingZonesOnMap(window.google, mapInstanceRef.current)
     }
   }, [existingZones, mapLoading])
+
+  // Draw outer/inner layer polygons in edit mode when coordinates are loaded
+  const drawExistingLayerPolygon = useCallback((google, map, coords, polygonRefVal, markersRefVal, setCoords, fillColor, strokeColor) => {
+    if (!coords || coords.length < 3 || !map) return
+    if (polygonRefVal.current) {
+      polygonRefVal.current.setMap(null)
+      polygonRefVal.current = null
+    }
+    markersRefVal.current.forEach(m => m.setMap(null))
+    markersRefVal.current = []
+    const path = coords.map((c) => {
+      const lat = typeof c === 'object' ? (c.latitude ?? c.lat) : null
+      const lng = typeof c === 'object' ? (c.longitude ?? c.lng) : null
+      return lat != null && lng != null ? new google.maps.LatLng(lat, lng) : null
+    }).filter(Boolean)
+    if (path.length < 3) return
+    const polygon = new google.maps.Polygon({
+      paths: path,
+      strokeColor,
+      strokeOpacity: 0.8,
+      strokeWeight: 2,
+      fillColor,
+      fillOpacity: 0.35,
+      editable: true,
+      draggable: false,
+      zIndex: 2
+    })
+    polygon.setMap(map)
+    polygonRefVal.current = polygon
+    const updateFromPath = () => {
+      const p = polygon.getPath()
+      const newCoords = []
+      for (let i = 0; i < p.getLength(); i++) {
+        const ll = p.getAt(i)
+        if (i === p.getLength() - 1) {
+          const first = p.getAt(0)
+          if (ll.lat() === first.lat() && ll.lng() === first.lng()) break
+        }
+        newCoords.push({ latitude: ll.lat(), longitude: ll.lng() })
+      }
+      setCoords(newCoords)
+    }
+    google.maps.event.addListener(polygon.getPath(), 'set_at', updateFromPath)
+    google.maps.event.addListener(polygon.getPath(), 'insert_at', updateFromPath)
+    google.maps.event.addListener(polygon.getPath(), 'remove_at', updateFromPath)
+    coords.forEach((_, i) => {
+      const latLng = path[i]
+      const marker = new google.maps.Marker({
+        position: latLng,
+        map,
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 },
+        zIndex: 999,
+        title: `Point ${i + 1}`
+      })
+      markersRefVal.current.push(marker)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!isEditMode || mapLoading || !mapInstanceRef.current || !window.google || layersDrawnForEditRef.current) return
+    const hasOuter = outerCoordinates.length >= 3
+    const hasInner = innerCoordinates.length >= 3
+    if (!hasOuter && !hasInner) return
+    if (hasOuter) {
+      drawExistingLayerPolygon(
+        window.google,
+        mapInstanceRef.current,
+        outerCoordinates,
+        polygonOuterRef,
+        pathMarkersOuterRef,
+        setOuterCoordinates,
+        '#2563eb',
+        '#2563eb'
+      )
+    }
+    if (hasInner) {
+      drawExistingLayerPolygon(
+        window.google,
+        mapInstanceRef.current,
+        innerCoordinates,
+        polygonInnerRef,
+        pathMarkersInnerRef,
+        setInnerCoordinates,
+        '#16a34a',
+        '#16a34a'
+      )
+    }
+    layersDrawnForEditRef.current = true
+  }, [isEditMode, mapLoading, outerCoordinates, innerCoordinates, drawExistingLayerPolygon])
 
   const updateCoordinatesFromPolygon = (polygon) => {
     const path = polygon.getPath()
@@ -575,13 +746,24 @@ export default function AddZone() {
     console.log("Event listeners attached for polygon editing")
   }
 
+  const startDrawingForLayer = (mode) => {
+    if (!drawingManagerRef.current) return
+    drawLayerModeRef.current = mode
+    setDrawLayerMode(mode)
+    drawingManagerRef.current.setDrawingMode(window.google?.maps?.drawing?.OverlayType?.POLYGON || "polygon")
+    setIsDrawing(true)
+  }
+
   const toggleDrawingMode = () => {
     if (!drawingManagerRef.current) return
-    
     if (isDrawing) {
       drawingManagerRef.current.setDrawingMode(null)
       setIsDrawing(false)
+      setDrawLayerMode(null)
+      drawLayerModeRef.current = null
     } else {
+      drawLayerModeRef.current = "zone"
+      setDrawLayerMode("zone")
       drawingManagerRef.current.setDrawingMode(window.google?.maps?.drawing?.OverlayType?.POLYGON || "polygon")
       setIsDrawing(true)
     }
@@ -592,12 +774,31 @@ export default function AddZone() {
       polygonRef.current.setMap(null)
       polygonRef.current = null
     }
-    // Clear all markers
     if (pathMarkersRef.current && pathMarkersRef.current.length > 0) {
       pathMarkersRef.current.forEach(marker => marker.setMap(null))
       pathMarkersRef.current = []
     }
     setCoordinates([])
+  }
+
+  const clearOuterLayer = () => {
+    if (polygonOuterRef.current) {
+      polygonOuterRef.current.setMap(null)
+      polygonOuterRef.current = null
+    }
+    pathMarkersOuterRef.current.forEach(m => m.setMap(null))
+    pathMarkersOuterRef.current = []
+    setOuterCoordinates([])
+  }
+
+  const clearInnerLayer = () => {
+    if (polygonInnerRef.current) {
+      polygonInnerRef.current.setMap(null)
+      polygonInnerRef.current = null
+    }
+    pathMarkersInnerRef.current.forEach(m => m.setMap(null))
+    pathMarkersInnerRef.current = []
+    setInnerCoordinates([])
   }
 
   const handleInputChange = (field, value) => {
@@ -635,16 +836,45 @@ export default function AddZone() {
         return
       }
 
-      // Ensure coordinates have correct format
-      const validCoordinates = coordinates.map(coord => {
-        if (typeof coord === 'object' && coord.latitude !== undefined && coord.longitude !== undefined) {
-          return {
-            latitude: parseFloat(coord.latitude),
-            longitude: parseFloat(coord.longitude)
-          }
-        }
-        return coord
-      })
+      // Ensure coordinates have correct format (backend expects latitude/longitude)
+      const validCoordinates = coordinates
+        .map((coord) => {
+          if (typeof coord !== 'object' || coord == null) return null
+          const lat = Number(coord.latitude ?? coord.lat)
+          const lng = Number(coord.longitude ?? coord.lng)
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+          return { latitude: lat, longitude: lng }
+        })
+        .filter(Boolean)
+
+      if (validCoordinates.length < 3) {
+        alert("Please draw at least 3 valid points on the map")
+        setLoading(false)
+        return
+      }
+
+      const layers = []
+      if (validCoordinates.length >= 3) {
+        layers.push({
+          type: "outermost",
+          coordinates: validCoordinates,
+          deliveryCharge: Number(layerDeliveryCharges.outermost) || 0
+        })
+      }
+      if (outerCoordinates.length >= 3) {
+        const outerValid = outerCoordinates.map((c) => ({
+          latitude: parseFloat(c.latitude ?? c.lat),
+          longitude: parseFloat(c.longitude ?? c.lng)
+        }))
+        layers.push({ type: "outer", coordinates: outerValid, deliveryCharge: Number(layerDeliveryCharges.outer) || 0 })
+      }
+      if (innerCoordinates.length >= 3) {
+        const innerValid = innerCoordinates.map((c) => ({
+          latitude: parseFloat(c.latitude ?? c.lat),
+          longitude: parseFloat(c.longitude ?? c.lng)
+        }))
+        layers.push({ type: "inner", coordinates: innerValid, deliveryCharge: Number(layerDeliveryCharges.inner) || 0 })
+      }
 
       const zoneData = {
         name: formData.zoneName,
@@ -652,6 +882,7 @@ export default function AddZone() {
         country: formData.country,
         unit: formData.unit || "kilometer",
         coordinates: validCoordinates,
+        ...(layers.length > 0 && { layers }),
         isActive: true,
         platform
       }
@@ -780,6 +1011,76 @@ export default function AddZone() {
                   </div>
                 </div>
               </div>
+
+              {/* Delivery charges by layer */}
+              <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                <h2 className="text-lg font-semibold text-slate-900 mb-2">Delivery charges by layer</h2>
+                <p className="text-sm text-slate-600 mb-4">
+                  Set delivery charges per layer. The zone boundary is the outermost layer. Draw outer and inner polygons for middle and center areas. Delivery price is calculated from the layer the address falls in.
+                </p>
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-slate-700 w-28">Outermost (entire zone)</span>
+                    <span className="text-slate-500">₹</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={layerDeliveryCharges.outermost}
+                      onChange={(e) => setLayerDeliveryCharges((prev) => ({ ...prev, outermost: Number(e.target.value) || 0 }))}
+                      className="w-24 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-slate-700 w-28">Outer (middle)</span>
+                    <span className="text-slate-500">₹</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={layerDeliveryCharges.outer}
+                      onChange={(e) => setLayerDeliveryCharges((prev) => ({ ...prev, outer: Number(e.target.value) || 0 }))}
+                      className="w-24 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => startDrawingForLayer("outer")}
+                      className="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      Draw
+                    </button>
+                    {outerCoordinates.length >= 3 && (
+                      <button type="button" onClick={clearOuterLayer} className="px-3 py-2 text-sm bg-slate-500 text-white rounded-lg hover:bg-slate-600">
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-slate-700 w-28">Inner (center)</span>
+                    <span className="text-slate-500">₹</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={layerDeliveryCharges.inner}
+                      onChange={(e) => setLayerDeliveryCharges((prev) => ({ ...prev, inner: Number(e.target.value) || 0 }))}
+                      className="w-24 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => startDrawingForLayer("inner")}
+                      className="px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700"
+                    >
+                      Draw
+                    </button>
+                    {innerCoordinates.length >= 3 && (
+                      <button type="button" onClick={clearInnerLayer} className="px-3 py-2 text-sm bg-slate-500 text-white rounded-lg hover:bg-slate-600">
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Right Panel - Map */}
@@ -834,8 +1135,8 @@ export default function AddZone() {
                 )}
               </div>
 
-              <div className="relative" style={{ height: "600px" }}>
-                <div ref={mapRef} className="w-full h-full rounded-lg" />
+              <div className="relative w-full rounded-lg bg-slate-100" style={{ minHeight: "400px", height: "600px" }}>
+                <div ref={mapRef} className="w-full h-full rounded-lg" style={{ minHeight: "400px" }} />
                 
                 {mapLoading && (
                   <div className="absolute inset-0 flex items-center justify-center bg-slate-100 rounded-lg">
@@ -850,7 +1151,14 @@ export default function AddZone() {
                   <div className="absolute inset-0 flex items-center justify-center bg-slate-100 rounded-lg">
                     <div className="text-center p-6">
                       <MapPin className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-                      <p className="text-sm text-slate-600">Google Maps API key not found</p>
+                      <p className="text-sm text-slate-600 mb-4">Google Maps API key not found. Set it in Admin → System → Environment Variables.</p>
+                      <button
+                        type="button"
+                        onClick={() => { setGoogleMapsApiKey(""); loadGoogleMaps(); }}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                      >
+                        Retry
+                      </button>
                     </div>
                   </div>
                 )}
