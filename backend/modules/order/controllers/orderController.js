@@ -331,6 +331,57 @@ const applyEditedCartToOrder = (order, sanitizedItems, totals) => {
   postOrderActions.pendingCartEdit = getDefaultPendingCartEdit();
 };
 
+const isMoGroceryPlanSubscriptionOrder = (order) => {
+  if (!order || typeof order !== 'object') return false;
+
+  if (order?.planSubscription?.planId || order?.planSubscription?.planName) {
+    return true;
+  }
+
+  const note = String(order?.note || '').toLowerCase();
+  if (note.includes('[mogold plan]') || note.includes('plan subscription')) {
+    return true;
+  }
+
+  return false;
+};
+
+const applyPostEditAdminApprovalState = (order, { requiresAdminReapproval = false } = {}) => {
+  if (!requiresAdminReapproval) return;
+
+  order.adminApproval = {
+    status: 'pending',
+    reason: 'Order edited by customer. Requires re-approval.',
+    reviewedAt: null,
+    reviewedBy: null
+  };
+
+  // Re-open MoGrocery edited orders for admin approval flow.
+  order.status = 'pending';
+  if (order.tracking && typeof order.tracking === 'object') {
+    order.tracking.preparing = { status: false, timestamp: null };
+  }
+
+  order.deliveryPartnerId = null;
+
+  if (!order.assignmentInfo || typeof order.assignmentInfo !== 'object') {
+    order.assignmentInfo = {};
+  }
+  order.assignmentInfo.deliveryPartnerId = null;
+  order.assignmentInfo.assignedAt = null;
+
+  if (!order.deliveryState || typeof order.deliveryState !== 'object') {
+    order.deliveryState = {};
+  }
+  order.deliveryState.status = 'pending';
+  order.deliveryState.currentPhase = 'assigned';
+  order.deliveryState.acceptedAt = null;
+  order.deliveryState.reachedPickupAt = null;
+  order.deliveryState.orderIdConfirmedAt = null;
+  order.deliveryState.routeToPickup = {};
+  order.deliveryState.routeToDelivery = {};
+};
+
 const generateUniqueOrderId = async () => {
   // Retry a few times in case of rare ID collisions on unique index.
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -2015,6 +2066,9 @@ export const editOrderCart = async (req, res) => {
 
     const sanitizedItems = sanitizeEditedItems(nextItems);
     const totals = calculateUpdatedTotals(order, sanitizedItems);
+    const orderPlatform = await resolveOrderPlatform(order.restaurantId);
+    const requiresAdminReapproval =
+      orderPlatform === 'mogrocery' && !isMoGroceryPlanSubscriptionOrder(order);
 
     const previousTotal = Number(order.pricing?.total || 0);
     const additionalAmount = Number(Math.max(0, totals.total - previousTotal).toFixed(2));
@@ -2089,6 +2143,7 @@ export const editOrderCart = async (req, res) => {
       applyEditedCartToOrder(order, sanitizedItems, totals);
       order.payment.method = 'wallet';
       order.payment.status = 'completed';
+      applyPostEditAdminApprovalState(order, { requiresAdminReapproval });
       await order.save();
 
       return res.json({
@@ -2157,6 +2212,7 @@ export const editOrderCart = async (req, res) => {
           subtotal: totals.subtotal,
           total: totals.total,
           additionalAmount,
+          requiresAdminReapproval,
           razorpayOrderId: razorpayOrder?.id || '',
           createdAt: new Date()
         }
@@ -2191,6 +2247,7 @@ export const editOrderCart = async (req, res) => {
     }
 
     applyEditedCartToOrder(order, sanitizedItems, totals);
+    applyPostEditAdminApprovalState(order, { requiresAdminReapproval });
     await order.save();
 
     return res.json({
@@ -2321,6 +2378,9 @@ export const verifyEditedOrderCartPayment = async (req, res) => {
       total: Number(pendingCartEdit.total || order.pricing?.total || 0)
     };
     applyEditedCartToOrder(order, sanitizedItems, totals);
+    applyPostEditAdminApprovalState(order, {
+      requiresAdminReapproval: Boolean(pendingCartEdit?.requiresAdminReapproval)
+    });
 
     order.payment.status = 'completed';
     order.payment.method = order.payment?.method || 'razorpay';
