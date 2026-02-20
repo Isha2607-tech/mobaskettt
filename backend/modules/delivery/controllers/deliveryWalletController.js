@@ -39,6 +39,7 @@ export const getWallet = asyncHandler(async (req, res) => {
         deliveryId: delivery._id,
         totalBalance: 0,
         cashInHand: 0,
+        deductions: 0,
         totalWithdrawn: 0,
         totalEarned: 0
       });
@@ -170,17 +171,22 @@ export const getWallet = asyncHandler(async (req, res) => {
     const bonusTransactions = transactions.filter(t => t.type === 'bonus' && t.status === 'Completed');
     const totalBonus = bonusTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
     
+    const pocketBalance = Math.max(0, Number(wallet.totalBalance) || 0);
+    const deductions = Math.max(0, Number(wallet.deductions) || 0);
+    const availableCashLimit = Number(totalCashLimit) - cashInHandForLimit - deductions;
+
     const walletData = {
-      totalBalance: wallet.totalBalance || 0,
+      totalBalance: pocketBalance,
       cashInHand: cashInHandForLimit,
+      deductions,
       totalWithdrawn: wallet.totalWithdrawn || 0,
       totalEarned: wallet.totalEarned || 0,
       totalCashLimit: totalCashLimit,
-      availableCashLimit: Math.max(0, totalCashLimit - cashInHandForLimit),
+      availableCashLimit,
       deliveryWithdrawalLimit: withdrawalLimit,
       deliveryMinimumWalletBalance: minimumWalletBalance,
-      // Pocket balance = total balance (includes bonus, earnings, etc.)
-      pocketBalance: wallet.totalBalance || 0,
+      // Pocket balance = rider earnings (withdrawable).
+      pocketBalance,
       pendingWithdrawals: pendingWithdrawals,
       joiningBonusClaimed: wallet.joiningBonusClaimed || false,
       joiningBonusAmount: wallet.joiningBonusAmount || 0,
@@ -197,6 +203,7 @@ export const getWallet = asyncHandler(async (req, res) => {
       totalBalance: walletData.totalBalance,
       pocketBalance: walletData.pocketBalance,
       cashInHand: walletData.cashInHand,
+      deductions: walletData.deductions,
       availableCashLimit: walletData.availableCashLimit,
       codCollectedTotal,
       totalBonus: totalBonus,
@@ -868,11 +875,13 @@ export const verifyDepositPayment = asyncHandler(async (req, res) => {
     limit = Number(settings?.deliveryCashLimit) || 750;
   } catch (_) {}
   const cashInHandNow = Math.max(0, Number(wallet.cashInHand) || 0);
-  const availableCashLimit = Math.max(0, limit - cashInHandNow);
+  const deductions = Math.max(0, Number(wallet.deductions) || 0);
+  const availableCashLimit = Number(limit) - cashInHandNow - deductions;
 
   return successResponse(res, 200, 'Deposit successful', {
     amount: amt,
     cashInHand: cashInHandNow,
+    deductions,
     availableCashLimit
   });
 });

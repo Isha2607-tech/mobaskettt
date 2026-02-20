@@ -194,6 +194,7 @@ export const getProducts = async (req, res) => {
       .populate('category', 'name slug section')
       .populate('subcategories', 'name slug')
       .populate('subcategory', 'name slug')
+      .populate('storeId', 'name location address platform isActive')
       .sort({ order: 1, createdAt: -1 });
 
     if (Number.isInteger(parsedLimit) && parsedLimit > 0) {

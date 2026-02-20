@@ -7,22 +7,36 @@ import WishlistButton from "@/components/WishlistButton";
 import { useCart } from "../../user/context/CartContext";
 
 import imgStrawberry from "@/assets/grocery&kitchen/strawberry2.jpeg";
-import imgCauliflower from "@/assets/grocery&kitchen/cauliflower-removebg-preview.png";
-import imgTomato from "@/assets/grocery&kitchen/tomato-removebg-preview.png";
-import imgApple from "@/assets/grocery&kitchen/apple-removebg-preview.png";
 
-const FALLBACK_TOP_PRODUCTS = [
-  { id: 301, name: "Cauliflower (Gobi)", weight: "1 pc", price: 33, mrp: 42, image: imgCauliflower },
-  { id: 302, name: "Hybrid Tomato", weight: "500 g", price: 14, mrp: 20, image: imgTomato },
-  { id: 303, name: "Fresh Strawberry", weight: "200 g", price: 99, mrp: 120, image: imgStrawberry },
-  { id: 304, name: "Red Apple", weight: "4 pcs", price: 111, mrp: 140, image: imgApple },
-];
+const extractId = (value) => {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") return value?._id || value?.id || "";
+  return "";
+};
 
 const normalizeProduct = (item = {}, fallbackId = "") => {
   const id = item?.id || item?._id || fallbackId;
   const price = Number(item?.price ?? item?.sellingPrice ?? 0);
   const mrp = Number(item?.mrp ?? price);
   const discountPercent = mrp > price && mrp > 0 ? Math.max(1, Math.round(((mrp - price) / mrp) * 100)) : 0;
+
+  const resolvedStoreId =
+    typeof item?.storeId === "object"
+      ? item?.storeId?._id || item?.storeId?.id || ""
+      : item?.storeId || "";
+  const resolvedStoreName =
+    item?.storeName ||
+    item?.storeId?.name ||
+    item?.restaurant ||
+    "";
+  const resolvedStoreAddress =
+    item?.storeAddress ||
+    item?.restaurantAddress ||
+    item?.storeId?.address ||
+    item?.storeId?.location?.formattedAddress ||
+    item?.storeId?.location?.address ||
+    "";
 
   return {
     ...item,
@@ -35,17 +49,26 @@ const normalizeProduct = (item = {}, fallbackId = "") => {
     time: item?.time || "8 MINS",
     description: item?.description || "",
     image: item?.image || (Array.isArray(item?.images) ? item.images[0] : "") || imgStrawberry,
-    categoryId: item?.categoryId || item?.category?._id || item?.category?.id || item?.category || "",
+    categoryId: extractId(item?.categoryId) || extractId(item?.category) || "",
     subcategoryId:
       item?.subcategoryId ||
       item?.subcategory?._id ||
       item?.subcategory?.id ||
       item?.subcategory ||
-      (Array.isArray(item?.subcategories) ? item.subcategories[0]?._id : "") ||
+      (Array.isArray(item?.subcategories) ? extractId(item.subcategories[0]) : "") ||
       "",
     platform: item?.platform || "mogrocery",
-    storeName: item?.storeId?.name || item?.storeName || "",
-    storeId: item?.storeId,
+    storeName: resolvedStoreName,
+    storeId: resolvedStoreId,
+    storeAddress: resolvedStoreAddress,
+    restaurantId: item?.restaurantId || resolvedStoreId || "",
+    restaurant: item?.restaurant || resolvedStoreName || "MoGrocery",
+    restaurantAddress: item?.restaurantAddress || resolvedStoreAddress || "",
+    storeLocation:
+      item?.storeLocation ||
+      item?.storeId?.location ||
+      item?.restaurantLocation ||
+      null,
   };
 };
 
@@ -53,7 +76,7 @@ export default function FoodDetailPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams();
-  const { addToCart, groceryCart, updateQuantityByPlatform, isInCart } = useCart();
+  const { addToCart, groceryCart, updateQuantityByPlatform } = useCart();
   const [similarProducts, setSimilarProducts] = useState([]);
 
   const [product, setProduct] = useState(
@@ -133,13 +156,13 @@ export default function FoodDetailPage() {
           const filtered = data
             .filter((p) => String(p._id || p.id) !== productId)
             .map((p) => normalizeProduct(p));
-          setSimilarProducts(filtered.length > 0 ? filtered : FALLBACK_TOP_PRODUCTS.map(p => normalizeProduct(p)));
+          setSimilarProducts(filtered);
         } else {
-          setSimilarProducts(FALLBACK_TOP_PRODUCTS.map(p => normalizeProduct(p)));
+          setSimilarProducts([]);
         }
       } catch (error) {
         console.error("Failed to fetch similar products:", error);
-        setSimilarProducts(FALLBACK_TOP_PRODUCTS.map(p => normalizeProduct(p)));
+        setSimilarProducts([]);
       }
     };
     fetchSimilar();
@@ -196,8 +219,12 @@ export default function FoodDetailPage() {
     addToCart({
       ...targetProduct,
       id: targetProduct.id || id,
-      restaurantId: "grocery-store",
-      restaurant: "MoGrocery",
+      restaurantId: targetProduct.restaurantId || targetProduct.storeId || "grocery-store",
+      restaurant: targetProduct.restaurant || targetProduct.storeName || "MoGrocery",
+      restaurantAddress:
+        targetProduct.restaurantAddress || targetProduct.storeAddress || "",
+      restaurantLocation:
+        targetProduct.restaurantLocation || targetProduct.storeLocation || null,
       platform: "mogrocery",
     });
 
@@ -371,8 +398,11 @@ export default function FoodDetailPage() {
 
       <div className="px-5 pt-6 pb-8">
         <h2 className="text-lg font-[900] text-slate-900 mb-4">Similar products</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-6">
-          {similarProducts.map((item) => {
+        {similarProducts.length === 0 ? (
+          <div className="text-sm text-slate-500">No similar products found in this category.</div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-6">
+            {similarProducts.map((item) => {
             const itemCartRef = groceryCart.find((c) => String(c.id) === String(item.id));
             const itemInCart = Boolean(itemCartRef);
             const itemQty = itemCartRef?.quantity || 0;
@@ -467,8 +497,9 @@ export default function FoodDetailPage() {
                 </div>
               </div>
             );
-          })}
-        </div>
+            })}
+          </div>
+        )}
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-4 py-3">

@@ -120,6 +120,11 @@ const deliveryWalletSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
+  deductions: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   totalWithdrawn: {
     type: Number,
     default: 0,
@@ -213,11 +218,10 @@ deliveryWalletSchema.methods.addTransaction = function(transactionData) {
         this.cashInHand = Math.max(0, this.cashInHand - transaction.amount);
       }
     } else if (transaction.type === 'deduction') {
-      this.totalBalance -= transaction.amount;
-      this.cashInHand = Math.max(0, this.cashInHand - transaction.amount);
+      // Keep deductions separate from pocket balance and COD cash.
+      this.deductions = (this.deductions || 0) + transaction.amount;
     } else if (transaction.type === 'deposit') {
-      // Deposit settles COD cash and also credits pocket balance.
-      this.totalBalance += transaction.amount;
+      // Deposit settles COD cash only. Never credit pocket balance from COD.
       this.cashInHand = Math.max(0, (this.cashInHand || 0) - transaction.amount);
     }
   }
@@ -261,10 +265,8 @@ deliveryWalletSchema.methods.updateTransactionStatus = function(transactionId, s
         this.cashInHand = Math.max(0, this.cashInHand - oldAmount);
       }
     } else if (transaction.type === 'deduction') {
-      this.totalBalance -= oldAmount;
-      this.cashInHand = Math.max(0, this.cashInHand - oldAmount);
+      this.deductions = (this.deductions || 0) + oldAmount;
     } else if (transaction.type === 'deposit') {
-      this.totalBalance += oldAmount;
       this.cashInHand = Math.max(0, this.cashInHand - oldAmount);
     }
   }
@@ -281,8 +283,9 @@ deliveryWalletSchema.methods.updateTransactionStatus = function(transactionId, s
     } else if (transaction.type === 'withdrawal') {
       this.totalBalance += oldAmount;
       this.totalWithdrawn = Math.max(0, this.totalWithdrawn - oldAmount);
+    } else if (transaction.type === 'deduction') {
+      this.deductions = Math.max(0, (this.deductions || 0) - oldAmount);
     } else if (transaction.type === 'deposit') {
-      this.totalBalance = Math.max(0, this.totalBalance - oldAmount);
       this.cashInHand = (this.cashInHand || 0) + oldAmount;
     }
   }
@@ -320,6 +323,7 @@ deliveryWalletSchema.statics.findOrCreateByDeliveryId = async function(deliveryI
       deliveryId,
       totalBalance: 0,
       cashInHand: 0,
+      deductions: 0,
       totalWithdrawn: 0,
       totalEarned: 0
     });

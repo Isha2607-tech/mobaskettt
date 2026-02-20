@@ -356,6 +356,37 @@ const resolveTrackingDeliveryAddress = (rawOrder = null, defaultAddress = null) 
   return "Add delivery address"
 }
 
+const resolveTrackingRestaurantAddress = (rawOrder = null) => {
+  if (!rawOrder) return "Store address unavailable";
+
+  const restaurant = rawOrder?.restaurantId;
+  const location = restaurant?.location || rawOrder?.restaurantLocation || {};
+  const directAddress =
+    restaurant?.address ||
+    location?.formattedAddress ||
+    location?.address ||
+    rawOrder?.restaurantAddress ||
+    "";
+
+  if (typeof directAddress === "string" && directAddress.trim()) {
+    return directAddress.trim();
+  }
+
+  const parts = [
+    location?.addressLine1,
+    location?.addressLine2,
+    location?.area,
+    location?.city,
+    location?.state,
+    location?.zipCode || location?.postalCode || location?.pincode,
+  ]
+    .map((part) => (typeof part === "string" ? part.trim() : ""))
+    .filter(Boolean);
+
+  if (parts.length > 0) return parts.join(", ");
+  return "Store address unavailable";
+}
+
 export default function OrderTracking() {
   const { orderId } = useParams()
   const navigate = useNavigate()
@@ -387,6 +418,7 @@ export default function OrderTracking() {
   const defaultAddress = getDefaultAddress()
   const restaurantDisplayName = resolveTrackingRestaurantName(order)
   const restaurantDisplayPhone = resolveTrackingRestaurantPhone(order)
+  const restaurantAddressDisplay = resolveTrackingRestaurantAddress(order)
   const deliveryAddressDisplay = resolveTrackingDeliveryAddress(order, defaultAddress)
   const isMoGroceryOrder = (rawOrder = null) => {
     const restaurantPlatform = String(rawOrder?.restaurantId?.platform || rawOrder?.platform || "").toLowerCase()
@@ -1843,7 +1875,7 @@ export default function OrderTracking() {
               <p className="text-sm text-gray-500">
                 {isPlanSubscriptionOrder
                   ? "Plan purchase receipt"
-                  : (order?.address?.city || defaultAddress?.city || "Local Area")}
+                  : restaurantAddressDisplay}
               </p>
             </div>
             {!isPlanSubscriptionOrder && (

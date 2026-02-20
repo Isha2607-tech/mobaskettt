@@ -88,7 +88,7 @@ const GroceryProfile = () => {
   }, [appearance]);
 
   const displayName = userProfile?.name || "Your account";
-  const displayPhone = userProfile?.phone || "8877901155";
+  const displayPhone = userProfile?.phone || "Add phone number";
   const avatarInitial = userProfile?.name?.charAt(0)?.toUpperCase() || "U";
   const walletBalance = userProfile?.wallet?.balance?.toFixed(0) || "0";
   const hasBirthday = !!userProfile?.dateOfBirth;

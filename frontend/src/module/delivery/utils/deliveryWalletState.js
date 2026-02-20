@@ -9,6 +9,9 @@ import { deliveryAPI } from '@/lib/api'
 const EMPTY_WALLET_STATE = {
   totalBalance: 0,
   cashInHand: 0,
+  deductions: 0,
+  totalCashLimit: 750,
+  availableCashLimit: 750,
   totalWithdrawn: 0,
   totalEarned: 0,
   transactions: [],
@@ -58,15 +61,17 @@ export const fetchDeliveryWallet = async () => {
         ? Number(walletData.totalCashLimit)
         : 750
       const transformedCashInHand = Number(walletData.cashInHand ?? walletData.cash_in_hand) || 0
+      const transformedDeductions = Number(walletData.deductions) || 0
       const transformedAvailableCashLimit =
-        Number.isFinite(Number(walletData.availableCashLimit)) && Number(walletData.availableCashLimit) >= 0
+        Number.isFinite(Number(walletData.availableCashLimit))
           ? Number(walletData.availableCashLimit)
-          : Math.max(0, transformedTotalCashLimit - transformedCashInHand)
+          : (transformedTotalCashLimit - transformedCashInHand - transformedDeductions)
 
       // Transform API response to match expected format (support both camelCase and snake_case)
       const transformedData = {
         totalBalance: Number(walletData.totalBalance) || 0,
         cashInHand: transformedCashInHand,
+        deductions: transformedDeductions,
         totalWithdrawn: Number(walletData.totalWithdrawn) || 0,
         totalEarned: Number(walletData.totalEarned) || 0,
         totalCashLimit: transformedTotalCashLimit,

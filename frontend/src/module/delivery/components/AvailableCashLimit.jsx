@@ -7,9 +7,9 @@ export default function AvailableCashLimit({ onClose, walletData = {} }) {
   const deductions = Number(walletData.deductions) || 0
   const pocketWithdrawals = Number(walletData.pocketWithdrawals) || 0
   const availableFromApi = Number(walletData.availableCashLimit)
-  const availableCashLimit = Number.isFinite(availableFromApi) && availableFromApi >= 0
+  const availableCashLimit = Number.isFinite(availableFromApi)
     ? availableFromApi
-    : Math.max(0, totalCashLimit - cashInHand - deductions)
+    : (totalCashLimit - cashInHand - deductions)
 
   return (
     <div className="min-h-screen bg-white text-black flex flex-col">

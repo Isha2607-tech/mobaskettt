@@ -9,6 +9,7 @@ import { firebaseAuth } from "@/lib/firebase";
 import { clearModuleAuth } from "@/lib/utils/auth";
 
 export default function Logout() {
+  const USER_MANUAL_LOGOUT_KEY = "user_manual_logout_at";
   const navigate = useNavigate();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [error, setError] = useState("");
@@ -16,6 +17,11 @@ export default function Logout() {
   const handleLogout = async () => {
     setIsLoggingOut(true);
     setError("");
+    try {
+      sessionStorage.setItem(USER_MANUAL_LOGOUT_KEY, String(Date.now()));
+    } catch {
+      // ignore storage failures
+    }
 
     const clearUserStorage = () => {
       clearModuleAuth("user");

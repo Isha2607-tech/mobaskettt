@@ -142,15 +142,31 @@ const GroceryCartPage = () => {
     }
 
     const cartRestaurantId = groceryItems[0]?.restaurantId;
-    const cartRestaurantName = groceryItems[0]?.restaurant || "MoGrocery";
+    const cartRestaurantName = groceryItems[0]?.restaurant || groceryItems[0]?.storeName || "MoGrocery";
+    const cartRestaurantAddress =
+      groceryItems[0]?.restaurantAddress ||
+      groceryItems[0]?.storeAddress ||
+      "";
+    const cartRestaurantLocation =
+      groceryItems[0]?.restaurantLocation ||
+      groceryItems[0]?.storeLocation ||
+      null;
 
     if (cartRestaurantId && cartRestaurantId !== "grocery-store") {
-      const resolved = { restaurantId: cartRestaurantId, restaurantName: cartRestaurantName };
+      const resolved = {
+        restaurantId: cartRestaurantId,
+        restaurantName: cartRestaurantName,
+        restaurantAddress: cartRestaurantAddress,
+        restaurantLocation: cartRestaurantLocation,
+      };
       setResolvedRestaurant(resolved);
       return resolved;
     }
 
-    const restaurantsResponse = await restaurantAPI.getRestaurants({ limit: 200 });
+    const restaurantsResponse = await restaurantAPI.getRestaurants({
+      limit: 200,
+      ...(zoneId ? { zoneId } : {}),
+    });
     const restaurants = restaurantsResponse?.data?.data?.restaurants || [];
     const groceryStores = restaurants.filter((r) => r?.platform === "mogrocery" && r?.isActive);
 
@@ -169,6 +185,12 @@ const GroceryCartPage = () => {
     const resolved = {
       restaurantId: resolvedRestaurantId,
       restaurantName: groceryLikeStore?.name || cartRestaurantName,
+      restaurantAddress:
+        groceryLikeStore?.address ||
+        groceryLikeStore?.location?.formattedAddress ||
+        groceryLikeStore?.location?.address ||
+        "",
+      restaurantLocation: groceryLikeStore?.location || null,
     };
     setResolvedRestaurant(resolved);
     return resolved;
@@ -199,7 +221,7 @@ const GroceryCartPage = () => {
     };
 
     resolveRestaurantForPreview();
-  }, [groceryItems]);
+  }, [groceryItems, zoneId]);
 
   useEffect(() => {
     const calculatePricingPreview = async () => {

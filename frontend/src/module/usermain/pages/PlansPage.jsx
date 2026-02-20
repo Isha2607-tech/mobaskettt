@@ -41,7 +41,7 @@ const PlansPage = () => {
   const [boughtPlans, setBoughtPlans] = useState([]);
   const [boughtPlansLoading, setBoughtPlansLoading] = useState(true);
   const [logoUrl, setLogoUrl] = useState(appzetoLogo);
-  const { getDefaultAddress, userProfile } = useProfile();
+  const { getDefaultAddress, userProfile, addresses } = useProfile();
   const { location: liveLocation } = useUserLocation();
   const { zoneId } = useZone(liveLocation, "mogrocery");
 
@@ -287,19 +287,8 @@ const PlansPage = () => {
     const defaultAddress = getDefaultAddress?.();
     if (defaultAddress) return defaultAddress;
 
-    if (liveLocation?.latitude && liveLocation?.longitude) {
-      return {
-        label: "Home",
-        street: liveLocation.street || liveLocation.address || "",
-        additionalDetails: liveLocation.area || "",
-        city: liveLocation.city || "",
-        state: liveLocation.state || "",
-        zipCode: liveLocation.postalCode || liveLocation.zipCode || "",
-        formattedAddress: liveLocation.formattedAddress || liveLocation.address || "",
-        location: {
-          coordinates: [liveLocation.longitude, liveLocation.latitude],
-        },
-      };
+    if (Array.isArray(addresses) && addresses.length > 0) {
+      return addresses[0];
     }
     return null;
   })();
@@ -329,6 +318,17 @@ const PlansPage = () => {
 
   const handleSubscribePlan = async () => {
     if (!selectedPlan || isSubscribing) return;
+    const sanitizedPhone = String(userProfile?.phone || "").replace(/\D/g, "");
+    if (!sanitizedPhone || sanitizedPhone.length < 10) {
+      toast.error("Please add your phone number in profile before ordering.");
+      navigate("/profile/edit");
+      return;
+    }
+    if (!Array.isArray(addresses) || addresses.length === 0) {
+      toast.error("Please add a saved address before ordering.");
+      navigate("/profile/addresses");
+      return;
+    }
     if (!selectedAddress) {
       toast.error("Please add/select a delivery address first.");
       navigate("/profile/addresses");

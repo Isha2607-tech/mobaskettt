@@ -90,6 +90,48 @@ const GroceryPage = () => {
     return null;
   };
 
+  const resolveStoreObjectFromProduct = (product) => {
+    const populatedStore =
+      product?.storeId && typeof product.storeId === "object" ? product.storeId : null;
+    if (populatedStore?._id || populatedStore?.id) {
+      return populatedStore;
+    }
+
+    const storeId = String(product?.storeId || "").trim();
+    if (!storeId) return null;
+
+    return (
+      groceryStores.find((store) => String(store?._id || store?.restaurantId || "") === storeId) ||
+      null
+    );
+  };
+
+  const getStoreAddress = (store) => {
+    if (!store) return "";
+    if (typeof store?.address === "string" && store.address.trim()) return store.address.trim();
+
+    const location = store?.location || {};
+    if (typeof location?.formattedAddress === "string" && location.formattedAddress.trim()) {
+      return location.formattedAddress.trim();
+    }
+    if (typeof location?.address === "string" && location.address.trim()) {
+      return location.address.trim();
+    }
+
+    const parts = [
+      location?.addressLine1,
+      location?.addressLine2,
+      location?.area,
+      location?.city,
+      location?.state,
+      location?.zipCode || location?.postalCode || location?.pincode,
+    ]
+      .map((part) => (typeof part === "string" ? part.trim() : ""))
+      .filter(Boolean);
+
+    return parts.join(", ");
+  };
+
   const calculateDistanceKm = (lat1, lng1, lat2, lng2) => {
     const earthRadiusKm = 6371;
     const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -148,6 +190,24 @@ const GroceryPage = () => {
     }
 
     return false;
+  };
+
+  const isMoGroceryPlanOrder = (order) => {
+    if (!order) return false;
+
+    if (order?.planSubscription?.planId || order?.planSubscription?.planName) {
+      return true;
+    }
+
+    const note = String(order?.note || "").toLowerCase();
+    if (note.includes("plan")) return true;
+
+    const items = Array.isArray(order?.items) ? order.items : [];
+    return items.some((item) => {
+      const type = String(item?.itemType || "").toLowerCase();
+      const name = String(item?.name || "").toLowerCase();
+      return type === "plan" || name.includes("plan");
+    });
   };
 
   const findActiveTrackableOrder = (orders = []) => {
@@ -397,7 +457,9 @@ const GroceryPage = () => {
             ? response.data.orders
             : [];
 
-        const groceryOrders = orders.filter(isGroceryOrder);
+        const groceryOrders = orders.filter(
+          (order) => isGroceryOrder(order) && !isMoGroceryPlanOrder(order),
+        );
         setActiveGroceryOrder(findActiveTrackableOrder(groceryOrders));
 
         const nextSnapshot = buildOrderSnapshot(groceryOrders);
@@ -1076,6 +1138,10 @@ const GroceryPage = () => {
   };
 
   const buildProductDetailState = (product) => {
+    const store = resolveStoreObjectFromProduct(product);
+    const storeId = String(store?._id || store?.id || product?.storeId || "").trim();
+    const storeName = String(store?.name || "").trim();
+    const storeAddress = getStoreAddress(store);
     const sellingPrice = Number(product?.sellingPrice ?? product?.price ?? 0);
     const mrp = Number(product?.mrp ?? sellingPrice ?? 0);
     const discountPercent =
@@ -1101,6 +1167,9 @@ const GroceryPage = () => {
         product?.subcategory?.id ||
         product?.subcategory ||
         "",
+      storeId,
+      storeName,
+      storeAddress,
       platform: "mogrocery",
     };
   };
@@ -1144,6 +1213,10 @@ const GroceryPage = () => {
 
   const handleAddProductToCart = (product, event = null) => {
     const sourcePosition = getSourcePosition(event, product?._id || product?.id);
+    const store = resolveStoreObjectFromProduct(product);
+    const storeId = String(store?._id || store?.id || product?.storeId || "").trim();
+    const storeName = String(store?.name || "").trim();
+    const storeAddress = getStoreAddress(store);
     const categoryId = String(
       product?.category?._id || product?.category?.id || product?.category || ""
     ).trim();
@@ -1159,8 +1232,15 @@ const GroceryPage = () => {
       image: getProductImage(product),
       categoryId,
       subcategoryId,
-      restaurantId: "grocery-store",
-      restaurant: "MoGrocery",
+      storeId,
+      storeName,
+      storeAddress,
+      restaurantId: storeId || "grocery-store",
+      restaurant: storeName || "MoGrocery",
+      restaurantAddress: storeAddress || "",
+      storeLocation: store?.location || null,
+      restaurantLocation: store?.location || null,
+      platform: "mogrocery",
     }, sourcePosition);
   };
 

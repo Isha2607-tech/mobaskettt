@@ -430,6 +430,9 @@ export default function DeliveryHome() {
   const [walletState, setWalletState] = useState({
     totalBalance: 0,
     cashInHand: 0,
+    deductions: 0,
+    totalCashLimit: 0,
+    availableCashLimit: 0,
     totalWithdrawn: 0,
     totalEarned: 0,
     transactions: [],
@@ -1089,19 +1092,19 @@ export default function DeliveryHome() {
     ? Number(walletState.totalCashLimit)
     : 750
   const cashInHand = Math.max(0, Number(walletState?.cashInHand) || 0)
+  const deductions = Math.max(0, Number(walletState?.deductions) || 0)
   const availableCashLimit =
-    Number.isFinite(Number(walletState?.availableCashLimit)) && Number(walletState?.availableCashLimit) >= 0
+    Number.isFinite(Number(walletState?.availableCashLimit))
       ? Number(walletState.availableCashLimit)
-      : Math.max(0, totalCashLimit - cashInHand)
+      : (totalCashLimit - cashInHand - deductions)
   const pocketBalanceForEligibility = Number.isFinite(Number(walletState?.pocketBalance))
     ? Number(walletState.pocketBalance)
     : (Number(walletState?.totalBalance) || 0)
-  // Eligibility rule: pocket balance must be strictly greater than available cash limit.
-  const orderEligibilityMinBalance = Math.max(0, availableCashLimit)
+  // Eligibility rule: pocket balance must be greater than or equal to available cash limit.
+  const orderEligibilityMinBalance = availableCashLimit
   const isPocketBalanceTooLowForOrders =
-    orderEligibilityMinBalance > 0 && pocketBalanceForEligibility <= orderEligibilityMinBalance
-  const isCashLimitReached = totalCashLimit > 0 && availableCashLimit <= 0
-  const isMapLockedForOrderEligibility = isCashLimitReached || isPocketBalanceTooLowForOrders
+    pocketBalanceForEligibility < orderEligibilityMinBalance
+  const isMapLockedForOrderEligibility = isPocketBalanceTooLowForOrders
 
   // State for active earning addon
   const [activeEarningAddon, setActiveEarningAddon] = useState(null)
@@ -4793,6 +4796,9 @@ export default function DeliveryHome() {
         setWalletState({
           totalBalance: 0,
           cashInHand: 0,
+          deductions: 0,
+          totalCashLimit: 0,
+          availableCashLimit: 0,
           totalWithdrawn: 0,
           totalEarned: 0,
           transactions: [],
@@ -4813,6 +4819,9 @@ export default function DeliveryHome() {
         setWalletState({
           totalBalance: 0,
           cashInHand: 0,
+          deductions: 0,
+          totalCashLimit: 0,
+          availableCashLimit: 0,
           totalWithdrawn: 0,
           totalEarned: 0,
           transactions: [],
@@ -9341,18 +9350,11 @@ export default function DeliveryHome() {
               style={{ backdropFilter: 'grayscale(1)' }}
             >
               <div className="rounded-xl bg-white/90 border border-gray-300 px-4 py-3 text-center shadow-sm max-w-xs">
-                {isPocketBalanceTooLowForOrders ? (
+                {isPocketBalanceTooLowForOrders && (
                   <>
                     <p className="text-sm font-semibold text-gray-900">Pocket balance too low</p>
                     <p className="text-xs text-gray-700 mt-1">
-                      Keep pocket balance above available cash limit ₹{orderEligibilityMinBalance.toFixed(2)} to receive orders.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm font-semibold text-gray-900">Cash limit reached</p>
-                    <p className="text-xs text-gray-700 mt-1">
-                      Settle collected cash to continue COD pickups.
+                      Pocket balance must be greater than or equal to available cash limit ₹{orderEligibilityMinBalance.toFixed(2)} to receive orders.
                     </p>
                   </>
                 )}
@@ -9364,11 +9366,7 @@ export default function DeliveryHome() {
           <motion.button
             onClick={() => {
               if (isMapLockedForOrderEligibility) {
-                if (isPocketBalanceTooLowForOrders) {
-                  toast.error(`Keep pocket balance above available cash limit ₹${orderEligibilityMinBalance.toFixed(2)} to receive orders.`)
-                } else {
-                  toast.error('Cash limit reached. Settle cash to continue.')
-                }
+                toast.error(`Pocket balance must be greater than or equal to available cash limit ₹${orderEligibilityMinBalance.toFixed(2)} to receive orders.`)
                 return
               }
               if (navigator.geolocation) {

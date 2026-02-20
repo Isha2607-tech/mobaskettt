@@ -499,78 +499,40 @@ export const acceptOrder = asyncHandler(async (req, res) => {
       return errorResponse(res, 400, `Order cannot be accepted. Current status: ${order.status}. Order must be in 'preparing' or 'ready' status.`);
     }
 
-    // Enforce minimum pocket balance threshold before accepting any order.
-    // Rule: delivery partner must keep pocket balance strictly greater than threshold.
+    // Enforce wallet eligibility before accepting any order.
+    // Rule: pocketBalance >= availableCashLimit
+    // availableCashLimit = totalCashLimit - cashInHand - deductions
     const wallet = await DeliveryWallet.findOrCreateByDeliveryId(delivery._id);
-    let orderAcceptanceMinBalance = 750;
+    let totalCashLimit = 750;
     try {
       const settings = await BusinessSettings.getSettings();
       const configuredLimit = Number(settings?.deliveryCashLimit);
-      if (Number.isFinite(configuredLimit) && configuredLimit > 0) {
-        orderAcceptanceMinBalance = configuredLimit;
+      if (Number.isFinite(configuredLimit) && configuredLimit >= 0) {
+        totalCashLimit = configuredLimit;
       }
     } catch (_) {
-      orderAcceptanceMinBalance = 750;
+      totalCashLimit = 750;
     }
-    const currentPocketBalance = Math.max(0, Number(wallet.totalBalance) || 0);
-    if (currentPocketBalance <= orderAcceptanceMinBalance) {
+
+    const pocketBalance = Math.max(0, Number(wallet.totalBalance) || 0);
+    const cashInHand = Math.max(0, Number(wallet.cashInHand) || 0);
+    const deductions = Math.max(0, Number(wallet.deductions) || 0);
+    const availableCashLimit = Number(totalCashLimit) - cashInHand - deductions;
+
+    if (pocketBalance < availableCashLimit) {
       return errorResponse(
         res,
         400,
-        `Insufficient pocket balance. Keep balance above ₹${orderAcceptanceMinBalance.toFixed(2)} to receive orders.`,
+        'Not eligible to accept orders. Please settle COD cash or improve wallet position.',
         {
-          pocketBalance: currentPocketBalance,
-          requiredAbove: orderAcceptanceMinBalance
+          pocketBalance,
+          cashInHand,
+          deductions,
+          totalCashLimit,
+          availableCashLimit
         }
       );
     }
-
-    // Enforce admin-configured COD cash limit before accepting a COD order.
-    // If current cash in hand + this COD order amount exceeds limit, block acceptance.
-    let paymentMethodForLimit = (order.payment?.method || '').toString().toLowerCase();
-    if (paymentMethodForLimit !== 'cash' && paymentMethodForLimit !== 'cod') {
-      try {
-        const paymentRecord = await Payment.findOne({ orderId: order._id }).select('method').lean();
-        paymentMethodForLimit = (paymentRecord?.method || paymentMethodForLimit || '').toString().toLowerCase();
-      } catch (_) {
-        // Keep fallback method from order payload
-      }
-    }
-
-    const isCashOrder = paymentMethodForLimit === 'cash' || paymentMethodForLimit === 'cod' || paymentMethodForLimit === 'cash on delivery';
-    if (isCashOrder) {
-      let totalCashLimit = 750;
-      try {
-        const settings = await BusinessSettings.getSettings();
-        const configuredLimit = Number(settings?.deliveryCashLimit);
-        if (Number.isFinite(configuredLimit) && configuredLimit >= 0) {
-          totalCashLimit = configuredLimit;
-        }
-      } catch (_) {
-        totalCashLimit = 750;
-      }
-
-      const cashInHand = Math.max(0, Number(wallet.cashInHand) || 0);
-      const orderTotal = Math.max(0, Number(order?.pricing?.total) || 0);
-      const projectedCashInHand = cashInHand + orderTotal;
-
-      if (projectedCashInHand > totalCashLimit) {
-        const availableCashLimit = Math.max(0, totalCashLimit - cashInHand);
-        return errorResponse(
-          res,
-          400,
-          `COD limit exceeded. Available cash limit is ₹${availableCashLimit.toFixed(2)}. Please settle cash before accepting this COD order.`,
-          {
-            cashInHand,
-            totalCashLimit,
-            availableCashLimit,
-            orderTotal,
-            projectedCashInHand
-          }
-        );
-      }
-    }
-
     // Get restaurant location
     let restaurantLat, restaurantLng;
     try {

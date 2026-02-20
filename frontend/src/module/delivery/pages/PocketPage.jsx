@@ -43,6 +43,9 @@ export default function PocketPage() {
   const [walletState, setWalletState] = useState({
     totalBalance: 0,
     cashInHand: 0,
+    deductions: 0,
+    totalCashLimit: 750,
+    availableCashLimit: 750,
     totalWithdrawn: 0,
     totalEarned: 0,
     transactions: [],
@@ -369,13 +372,13 @@ export default function PocketPage() {
     ? Number(walletState.totalCashLimit)
     : 750
   const cashInHand = Math.max(0, Number(walletState?.cashInHand) || Number(balances.cashInHand) || 0)
+  const deductions = Math.max(0, Number(walletState?.deductions) || 0)
   const availableCashLimit =
-    Number.isFinite(Number(walletState?.availableCashLimit)) &&
-    Number(walletState?.availableCashLimit) >= 0
+    Number.isFinite(Number(walletState?.availableCashLimit))
       ? Number(walletState.availableCashLimit)
-      : Math.max(0, totalCashLimit - cashInHand)
+      : (totalCashLimit - cashInHand - deductions)
   const isCashLimitReached = totalCashLimit > 0 && cashInHand >= totalCashLimit
-  const isPocketEligibleForRequests = !isCashLimitReached && pocketBalance > availableCashLimit
+  const isPocketEligibleForRequests = pocketBalance >= availableCashLimit
   const depositAmount = pocketBalance < 0 ? Math.abs(pocketBalance) : 0
 
   // Customer tips balance - calculate from transactions
@@ -444,6 +447,9 @@ export default function PocketPage() {
         setWalletState({
           totalBalance: 0,
           cashInHand: 0,
+          deductions: 0,
+          totalCashLimit: 750,
+          availableCashLimit: 750,
           totalWithdrawn: 0,
           totalEarned: 0,
           transactions: [],
@@ -968,16 +974,14 @@ export default function PocketPage() {
                     : "bg-red-50 text-red-700"
                 }`}
               >
-                {isCashLimitReached
-                  ? `Cash limit reached: You have collected ₹${cashInHand.toFixed(2)} out of ₹${totalCashLimit.toFixed(2)}. Deposit cash to continue receiving orders.`
-                  : isPocketEligibleForRequests
-                    ? "Eligible for order requests: Pocket balance is above available cash limit."
-                    : `Not eligible for order requests: Keep pocket balance above ₹${availableCashLimit.toFixed(2)}.`}
+                {isPocketEligibleForRequests
+                  ? `Eligible for order requests: pocket balance (₹${pocketBalance.toFixed(2)}) is greater than or equal to available cash limit (₹${availableCashLimit.toFixed(2)}).`
+                  : `Not eligible for order requests: pocket balance (₹${pocketBalance.toFixed(2)}) must be greater than or equal to available cash limit (₹${availableCashLimit.toFixed(2)}).`}
               </div>
 
               {isCashLimitReached && (
                 <div className="rounded-lg p-3 text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200">
-                  Action required: deposit collected cash now. New order requests are blocked until settlement.
+                  Cash in hand is at or above your total cash limit. Deposit COD cash to improve available cash limit.
                 </div>
               )}
 
@@ -995,13 +999,9 @@ export default function PocketPage() {
               <div className="flex gap-3 pt-2">
                 <Button
                   onClick={() => setShowDepositPopup(true)}
-                  className={`flex-1 font-semibold py-3 rounded-lg ${
-                    isCashLimitReached
-                      ? "bg-red-600 hover:bg-red-700 text-white border border-red-600"
-                      : "bg-white hover:bg-gray-300 text-black border border-black"
-                  }`}
+                  className="flex-1 font-semibold py-3 rounded-lg bg-white hover:bg-gray-300 text-black border border-black"
                 >
-                  {isCashLimitReached ? "Deposit Now (Required)" : "Deposit"}
+                  Deposit
                 </Button>
               </div>
             </CardContent>
@@ -1088,8 +1088,8 @@ export default function PocketPage() {
           walletData={{
             totalCashLimit: totalCashLimit,
             availableCashLimit: availableCashLimit,
-            cashInHand: balances.cashInHand ?? 0,
-            deductions: 0,
+            cashInHand: cashInHand,
+            deductions: deductions,
             pocketWithdrawals: balances.totalWithdrawn ?? 0,
             settlementAdjustment: 0
           }}
@@ -1105,7 +1105,7 @@ export default function PocketPage() {
         maxHeight="50vh"
       >
         <DepositPopup
-          cashInHand={balances.cashInHand ?? walletState?.cashInHand ?? 0}
+          cashInHand={cashInHand}
           onSuccess={async () => {
             setShowDepositPopup(false)
             try {

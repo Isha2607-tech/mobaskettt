@@ -29,7 +29,7 @@ import { toast } from "sonner";
 export default function GroceryCheckoutPage() {
   const navigate = useNavigate();
   const { cart, clearCart, isGroceryItem } = useCart();
-  const { getDefaultAddress, userProfile } = useProfile();
+  const { getDefaultAddress, userProfile, addresses } = useProfile();
   const { location: liveLocation } = useUserLocation();
   const { zoneId } = useZone(liveLocation, "mogrocery");
 
@@ -52,6 +52,38 @@ export default function GroceryCheckoutPage() {
   const [resolvedRestaurant, setResolvedRestaurant] = useState(null);
   const [hasActivePlanSubscription, setHasActivePlanSubscription] = useState(false);
 
+  const formatStoreAddress = useCallback((store = {}) => {
+    const addressFromPayload =
+      store?.restaurantAddress ||
+      store?.storeAddress ||
+      store?.address ||
+      "";
+    if (typeof addressFromPayload === "string" && addressFromPayload.trim()) {
+      return addressFromPayload.trim();
+    }
+
+    const location = store?.restaurantLocation || store?.storeLocation || store?.location || {};
+    if (typeof location?.formattedAddress === "string" && location.formattedAddress.trim()) {
+      return location.formattedAddress.trim();
+    }
+    if (typeof location?.address === "string" && location.address.trim()) {
+      return location.address.trim();
+    }
+
+    const parts = [
+      location?.addressLine1,
+      location?.addressLine2,
+      location?.area,
+      location?.city,
+      location?.state,
+      location?.zipCode || location?.postalCode || location?.pincode,
+    ]
+      .map((part) => (typeof part === "string" ? part.trim() : ""))
+      .filter(Boolean);
+
+    return parts.join(", ");
+  }, []);
+
   // Filter grocery items
   const groceryItems = cart.filter((item) => isGroceryItem(item));
   const groceryItemsKey = useMemo(
@@ -71,23 +103,12 @@ export default function GroceryCheckoutPage() {
       return defaultAddress;
     }
 
-    if (liveLocation?.latitude && liveLocation?.longitude) {
-      return {
-        label: "Home",
-        street: liveLocation.street || liveLocation.address || "",
-        additionalDetails: liveLocation.area || "",
-        city: liveLocation.city || "",
-        state: liveLocation.state || "",
-        zipCode: liveLocation.postalCode || liveLocation.zipCode || "",
-        formattedAddress: liveLocation.formattedAddress || liveLocation.address || "",
-        location: {
-          coordinates: [liveLocation.longitude, liveLocation.latitude],
-        },
-      };
+    if (Array.isArray(addresses) && addresses.length > 0) {
+      return addresses[0];
     }
 
     return null;
-  }, [getDefaultAddress, liveLocation]);
+  }, [addresses, getDefaultAddress]);
 
   const formattedDeliveryAddress = useMemo(() => {
     if (!selectedAddress) return deliveryAddress;
@@ -127,7 +148,15 @@ export default function GroceryCheckoutPage() {
   );
   const totalSavings = itemsTotal - subtotal;
   const cartRestaurantId = groceryItems[0]?.restaurantId;
-  const cartRestaurantName = groceryItems[0]?.restaurant || "MoGrocery";
+  const cartRestaurantName = groceryItems[0]?.restaurant || groceryItems[0]?.storeName || "MoGrocery";
+  const cartRestaurantAddress =
+    groceryItems[0]?.restaurantAddress ||
+    groceryItems[0]?.storeAddress ||
+    "";
+  const cartRestaurantLocation =
+    groceryItems[0]?.restaurantLocation ||
+    groceryItems[0]?.storeLocation ||
+    null;
 
   useEffect(() => {
     const fetchFeeSettings = async () => {
@@ -158,16 +187,26 @@ export default function GroceryCheckoutPage() {
     }
 
     if (cartRestaurantId && cartRestaurantId !== "grocery-store") {
-      const resolved = { restaurantId: cartRestaurantId, restaurantName: cartRestaurantName };
+      const resolved = {
+        restaurantId: cartRestaurantId,
+        restaurantName: cartRestaurantName,
+        restaurantAddress: cartRestaurantAddress,
+        restaurantLocation: cartRestaurantLocation,
+      };
       setResolvedRestaurant((prev) =>
-        prev?.restaurantId === resolved.restaurantId && prev?.restaurantName === resolved.restaurantName
+        prev?.restaurantId === resolved.restaurantId &&
+        prev?.restaurantName === resolved.restaurantName &&
+        prev?.restaurantAddress === resolved.restaurantAddress
           ? prev
           : resolved,
       );
       return resolved;
     }
 
-    const restaurantsResponse = await restaurantAPI.getRestaurants({ limit: 200 });
+    const restaurantsResponse = await restaurantAPI.getRestaurants({
+      limit: 200,
+      ...(zoneId ? { zoneId } : {}),
+    });
     const restaurants = restaurantsResponse?.data?.data?.restaurants || [];
     const groceryStores = restaurants.filter((r) => r?.platform === "mogrocery" && r?.isActive);
 
@@ -186,14 +225,31 @@ export default function GroceryCheckoutPage() {
     const resolved = {
       restaurantId: resolvedRestaurantId,
       restaurantName: groceryLikeStore?.name || cartRestaurantName,
+      restaurantAddress: formatStoreAddress(groceryLikeStore),
+      restaurantLocation: groceryLikeStore?.location || null,
     };
     setResolvedRestaurant((prev) =>
-      prev?.restaurantId === resolved.restaurantId && prev?.restaurantName === resolved.restaurantName
+      prev?.restaurantId === resolved.restaurantId &&
+      prev?.restaurantName === resolved.restaurantName &&
+      prev?.restaurantAddress === resolved.restaurantAddress
         ? prev
         : resolved,
     );
     return resolved;
-  }, [cartRestaurantId, cartRestaurantName, resolvedRestaurant]);
+  }, [
+    cartRestaurantAddress,
+    cartRestaurantId,
+    cartRestaurantLocation,
+    cartRestaurantName,
+    formatStoreAddress,
+    resolvedRestaurant,
+    zoneId,
+  ]);
+
+  const formattedStoreAddress = useMemo(() => {
+    if (!resolvedRestaurant) return "";
+    return formatStoreAddress(resolvedRestaurant);
+  }, [formatStoreAddress, resolvedRestaurant]);
 
   const buildOrderItems = () =>
     groceryItems.map((item) => ({
@@ -397,8 +453,20 @@ export default function GroceryCheckoutPage() {
       toast.error("Your grocery cart is empty.");
       return;
     }
+    const sanitizedPhone = String(userProfile?.phone || "").replace(/\D/g, "");
+    if (!sanitizedPhone || sanitizedPhone.length < 10) {
+      toast.error("Please add your phone number in profile before ordering.");
+      navigate("/profile/edit");
+      return;
+    }
+    if (!Array.isArray(addresses) || addresses.length === 0) {
+      toast.error("Please add a saved address before ordering.");
+      navigate("/profile/addresses");
+      return;
+    }
     if (!selectedAddress) {
       toast.error("Please add/select a delivery address first.");
+      navigate("/profile/addresses");
       return;
     }
     if (deliveryOption === "schedule" && !scheduledTime) {
@@ -431,6 +499,7 @@ export default function GroceryCheckoutPage() {
         deliveryAddress: selectedAddress,
         deliveryFleet: "standard",
         platform: "mogrocery",
+        zoneId: zoneId || undefined,
       });
       const calculatedPricing = pricingResponse?.data?.data?.pricing;
       if (!calculatedPricing?.total) {
@@ -625,6 +694,29 @@ export default function GroceryCheckoutPage() {
           </div>
         </div>
       </div>
+
+      {resolvedRestaurant?.restaurantName && (
+        <div className="px-4 pb-4">
+          <div className="bg-white dark:bg-[#1a1a1a] rounded-xl p-4 shadow-sm border border-yellow-50 dark:border-gray-800">
+            <div className="flex items-start gap-3">
+              <div className="bg-emerald-100 rounded-lg p-2">
+                <Truck className="w-5 h-5 text-emerald-700" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-1">
+                  Store Address
+                </h3>
+                <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">
+                  {resolvedRestaurant.restaurantName}
+                </p>
+                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                  {formattedStoreAddress || "Store address not available"}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Order Summary */}
       <div className="px-4 mb-4">
