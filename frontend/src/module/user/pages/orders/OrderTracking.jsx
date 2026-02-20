@@ -1039,12 +1039,13 @@ export default function OrderTracking() {
       return
     }
 
+    const isGroceryOrder = isMoGroceryOrder(order)
     const restaurantId = resolveOrderRestaurantId(order)
     const restaurantSlug =
       String(order?.restaurantId?.slug || order?.restaurantSlug || "").trim() ||
       toSlug(order?.restaurant)
 
-    if (!restaurantSlug) {
+    if (!isGroceryOrder && !restaurantSlug) {
       toast.error("Restaurant menu is unavailable for this order.")
       return
     }
@@ -1082,7 +1083,9 @@ export default function OrderTracking() {
       })),
     })
 
-    navigate(`/restaurants/${restaurantSlug}`, {
+    const editTargetPath = isGroceryOrder ? "/grocery" : `/restaurants/${restaurantSlug}`
+
+    navigate(editTargetPath, {
       state: {
         fromOrderEdit: true,
         orderEditSession: session,
