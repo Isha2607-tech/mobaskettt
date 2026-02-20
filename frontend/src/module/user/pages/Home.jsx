@@ -355,7 +355,7 @@ export default function Home() {
   const [loadingLandingConfig, setLoadingLandingConfig] = useState(true);
   const [restaurantsData, setRestaurantsData] = useState([]);
   const [loadingRestaurants, setLoadingRestaurants] = useState(true);
-  const [realCategories, setRealCategories] = useState([]);
+  const [fallbackCategories, setFallbackCategories] = useState([]);
   const [loadingRealCategories, setLoadingRealCategories] = useState(true);
   const [showAllCategoriesModal, setShowAllCategoriesModal] = useState(false);
   const isHandlingSwitchOff = useRef(false);
@@ -454,7 +454,7 @@ export default function Home() {
     fetchHeroBanners();
   }, []);
 
-  // Fetch real categories from backend API
+  // Fetch fallback categories from backend API (used only when restaurant-derived categories are unavailable)
   useEffect(() => {
     const fetchRealCategories = async () => {
       try {
@@ -478,13 +478,13 @@ export default function Home() {
             slug: cat.slug || cat.name.toLowerCase().replace(/\s+/g, "-"),
             label: cat.name, // For compatibility with existing code
           }));
-          setRealCategories(adminCategories);
+          setFallbackCategories(adminCategories);
         } else {
-          setRealCategories([]);
+          setFallbackCategories([]);
         }
       } catch (error) {
         console.error("Error fetching real categories:", error);
-        setRealCategories([]);
+        setFallbackCategories([]);
       } finally {
         setLoadingRealCategories(false);
       }
@@ -990,6 +990,7 @@ export default function Home() {
                 id: restaurant.restaurantId || restaurant._id,
                 name: restaurant.name,
                 cuisine: cuisine,
+                cuisines: Array.isArray(restaurant.cuisines) ? restaurant.cuisines : [],
                 rating: restaurant.rating || 4.5,
                 deliveryTime: deliveryTime,
                 distance: distance,
@@ -1272,6 +1273,45 @@ export default function Home() {
 
     return filtered;
   }, [restaurantsData, heroSearch, activeFilters, selectedCuisine, sortBy]);
+
+  const topCategories = useMemo(() => {
+    const seen = new Set();
+    const derived = [];
+
+    restaurantsData.forEach((restaurant, index) => {
+      const cuisineList = [
+        ...(Array.isArray(restaurant?.cuisines) ? restaurant.cuisines : []),
+        ...(String(restaurant?.cuisine || "")
+          .split(",")
+          .map((c) => c.trim())
+          .filter(Boolean)),
+      ];
+
+      cuisineList.forEach((rawCuisine) => {
+        const cuisine = String(rawCuisine || "").trim();
+        if (!cuisine) return;
+
+        const slug = cuisine
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+
+        if (!slug || slug === "all" || seen.has(slug)) return;
+
+        seen.add(slug);
+        derived.push({
+          id: `rest-cat-${slug}-${index}`,
+          name: cuisine,
+          image: restaurant?.image || foodImages[0],
+          slug,
+          label: cuisine,
+        });
+      });
+    });
+
+    if (derived.length > 0) return derived;
+    return fallbackCategories;
+  }, [restaurantsData, fallbackCategories]);
 
   // Featured foods removed - will be handled by restaurants data from API
   const filteredFeaturedFoods = useMemo(() => {
@@ -1664,10 +1704,10 @@ export default function Home() {
               <div className="flex items-center justify-center py-4">
                 <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
               </div>
-            ) : realCategories.length > 0 ? (
+            ) : topCategories.length > 0 ? (
               <>
                 {/* Show only first 10 categories, filtered by search */}
-                {realCategories
+                {topCategories
                   .filter(cat => heroSearch ? cat.label?.toLowerCase().includes(heroSearch.toLowerCase()) : true)
                   .slice(0, 10)
                   .map((category, index) => (
@@ -1711,7 +1751,7 @@ export default function Home() {
                     </motion.div>
                   ))}
                 {/* See All button - show if there are more than 10 categories */}
-                {realCategories.length > 10 && (
+                {topCategories.length > 10 && (
                   <motion.div
                     className="flex-shrink-0 cursor-pointer"
                     initial={{ opacity: 0, scale: 0.8 }}
@@ -2182,6 +2222,11 @@ export default function Home() {
                 </motion.div>
               )}
             </AnimatePresence>
+            {isOutOfService && (
+              <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                <p className="text-sm font-semibold text-red-700">You are out of zone</p>
+              </div>
+            )}
             <div
               className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3  gap-3 sm:gap-4 lg:gap-5 xl:gap-6 pt-1 sm:pt-1.5 lg:pt-2 items-stretch ${isLoadingFilterResults || loadingRestaurants ? "opacity-50" : "opacity-100"} transition-opacity duration-300`}
             >
@@ -3145,26 +3190,19 @@ export default function Home() {
               {/* Categories Grid - Scrollable */}
               <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 sm:py-5">
                 <div className="grid grid-cols-3 gap-4 sm:gap-5 md:gap-6">
-                  {(realCategories.length > 0
-                    ? realCategories
-                    : landingCategories
-                  ).map((category, index) => {
-                    const categoryData =
-                      realCategories.length > 0
-                        ? {
-                          name: category.name,
-                          image: category.image,
-                          slug: category.slug,
-                        }
-                        : {
-                          name: category.label,
-                          image: category.imageUrl,
-                          slug: category.slug,
-                        };
-                    const prefix =
-                      realCategories.length > 0
-                        ? "modal-real-cat"
-                        : "modal-landing-cat";
+                  {(topCategories.length > 0 ? topCategories : landingCategories).map((category, index) => {
+                    const categoryData = topCategories.length > 0
+                      ? {
+                        name: category.name,
+                        image: category.image,
+                        slug: category.slug,
+                      }
+                      : {
+                        name: category.label,
+                        image: category.imageUrl,
+                        slug: category.slug,
+                      };
+                    const prefix = topCategories.length > 0 ? "modal-real-cat" : "modal-landing-cat";
 
                     return (
                       <motion.div

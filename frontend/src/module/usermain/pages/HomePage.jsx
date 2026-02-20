@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { useLocation } from "@/module/user/hooks/useLocation";
+import { useZone } from "@/module/user/hooks/useZone";
 import {
   MapPin,
   Bell,
@@ -114,6 +115,7 @@ export default function HomePage() {
 
   // Use location from hook, fallback to stored location
   const currentLocation = location || storedLocation;
+  const { isOutOfService } = useZone(currentLocation, "mofood");
 
   // Get display location parts
   // Priority: formattedAddress > address > area/city
@@ -657,6 +659,13 @@ export default function HomePage() {
           </button>
         </div>
       </div>
+      {isOutOfService && (
+        <div className="px-4 mb-4">
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+            <p className="text-sm font-semibold text-red-700">You are out of zone</p>
+          </div>
+        </div>
+      )}
 
       {/* Promotional Banner Carousel - Full Image Background */}
       <div className="px-4 mb-6">
