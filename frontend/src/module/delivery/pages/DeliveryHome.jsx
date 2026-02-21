@@ -27,6 +27,7 @@ import {
   IndianRupee,
   Loader2,
   Camera,
+  AlertCircle,
 } from "lucide-react"
 import BottomPopup from "../components/BottomPopup"
 import FeedNavbar from "../components/FeedNavbar"
@@ -265,6 +266,28 @@ function smoothLocation(locationHistory) {
   const avgLng = pointsToUse.reduce((sum, point) => sum + point[1], 0) / pointsToUse.length
   
   return [avgLat, avgLng]
+}
+
+function isPointInsideZoneBoundary(lat, lng, zoneCoordinates = []) {
+  if (!Array.isArray(zoneCoordinates) || zoneCoordinates.length < 3) return false
+  let inside = false
+
+  for (let i = 0, j = zoneCoordinates.length - 1; i < zoneCoordinates.length; j = i++) {
+    const xi = Number(zoneCoordinates[i]?.longitude ?? zoneCoordinates[i]?.lng)
+    const yi = Number(zoneCoordinates[i]?.latitude ?? zoneCoordinates[i]?.lat)
+    const xj = Number(zoneCoordinates[j]?.longitude ?? zoneCoordinates[j]?.lng)
+    const yj = Number(zoneCoordinates[j]?.latitude ?? zoneCoordinates[j]?.lat)
+
+    if (![xi, yi, xj, yj].every(Number.isFinite)) continue
+
+    const intersect =
+      ((yi > lat) !== (yj > lat)) &&
+      (lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi)
+
+    if (intersect) inside = !inside
+  }
+
+  return inside
 }
 
 function extractCustomerCoordsFromOrder(order) {
@@ -508,6 +531,8 @@ export default function DeliveryHome() {
   const directionsResponseRef = useRef(null) // Store directions response for use in callbacks
   const fetchedOrderDetailsForDropRef = useRef(null) // Prevent re-fetching order details for Reached Drop customer coords
   const [zones, setZones] = useState([]) // Store nearby zones
+  const [isOutOfZone, setIsOutOfZone] = useState(false)
+  const [zoneCheckReady, setZoneCheckReady] = useState(false)
   const [mapLoading, setMapLoading] = useState(false)
   const [directionsMapLoading, setDirectionsMapLoading] = useState(false)
   const isInitializingMapRef = useRef(false)
@@ -9078,6 +9103,11 @@ export default function DeliveryHome() {
         const nearbyZones = response.data.data.zones
         setZones(nearbyZones)
         drawZonesOnMap(nearbyZones)
+        const insideAnyZone = nearbyZones.some((zone) =>
+          isPointInsideZoneBoundary(riderLat, riderLng, zone?.coordinates || [])
+        )
+        setIsOutOfZone(!insideAnyZone)
+        setZoneCheckReady(true)
       }
     } catch (error) {
       // Suppress network errors - backend might be down or endpoint not available
@@ -9091,6 +9121,13 @@ export default function DeliveryHome() {
       }
     }
   }
+
+  useEffect(() => {
+    if (!isOnline) {
+      setIsOutOfZone(false)
+      setZoneCheckReady(false)
+    }
+  }, [isOnline])
 
   // Draw zones on map
   const drawZonesOnMap = (zonesToDraw) => {
@@ -9160,6 +9197,14 @@ export default function DeliveryHome() {
         onEmergencyClick={() => setShowEmergencyPopup(true)}
         onHelpClick={() => setShowHelpPopup(true)}
       />
+      {isOnline && zoneCheckReady && isOutOfZone && (
+        <div className="mx-3 mt-3 rounded-xl border border-red-300 bg-red-50 px-3 py-2 flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 text-red-600 mt-0.5" />
+          <p className="text-xs font-semibold text-red-700">
+            You are out of delivery zone. You will not receive orders until you return to an active zone.
+          </p>
+        </div>
+      )}
 
       {/* Carousel - Only show if there are slides */}
       {carouselSlides.length > 0 && (
@@ -9262,10 +9307,19 @@ export default function DeliveryHome() {
               left: 0,
               right: 0,
               bottom: 0,
+              filter: isOnline ? 'none' : 'grayscale(1)',
+              opacity: isOnline ? 1 : 0.8,
+              transition: 'filter 200ms ease, opacity 200ms ease',
               pointerEvents: 'auto',
               zIndex: 0
             }}
           />
+
+          {!isOnline && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 rounded-full border border-gray-400 bg-gray-100/95 px-3 py-1">
+              <p className="text-[11px] font-semibold text-gray-700">You are offline</p>
+            </div>
+          )}
           
           {/* Loading indicator */}
           {mapLoading && (

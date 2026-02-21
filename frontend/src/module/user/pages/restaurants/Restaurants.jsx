@@ -12,6 +12,7 @@ import { useProfile } from "../../context/ProfileContext";
 import { restaurantAPI } from "@/lib/api";
 import { useLocation } from "../../hooks/useLocation";
 import { useZone } from "../../hooks/useZone";
+import { evaluateStoreAvailability } from "@/lib/utils/storeAvailability";
 
 export default function Restaurants() {
   const { addFavorite, removeFavorite, isFavorite } = useProfile();
@@ -86,6 +87,10 @@ export default function Restaurants() {
               Number.isFinite(numericRating) && numericRating > 0
                 ? numericRating.toFixed(1)
                 : "N/A";
+            const availability = evaluateStoreAvailability({
+              store: restaurant,
+              label: "Restaurant",
+            });
 
             return {
               id: restaurant?.restaurantId || restaurant?._id || slug,
@@ -100,6 +105,7 @@ export default function Restaurants() {
               priceForOne,
               image,
               offer: restaurant?.offer || "",
+              isAvailable: availability.isAvailable,
             };
           });
 
@@ -226,6 +232,9 @@ export default function Restaurants() {
                             <h3 className="text-[17px] font-bold text-neutral-900 dark:text-gray-100 line-clamp-1 leading-tight mb-0.5">
                               {restaurant.name}
                             </h3>
+                            {!restaurant.isAvailable && (
+                              <p className="text-[11px] font-semibold text-red-600">Offline</p>
+                            )}
                             <p className="text-[12px] text-neutral-500 dark:text-gray-500 font-medium truncate">
                               {restaurant.cuisine}
                             </p>

@@ -43,6 +43,7 @@ import { useCart } from "../../context/CartContext";
 import { useProfile } from "../../context/ProfileContext";
 import AddToCartAnimation from "../../components/AddToCartAnimation";
 import { getCompanyNameAsync } from "@/lib/utils/businessSettings";
+import { evaluateStoreAvailability } from "@/lib/utils/storeAvailability";
 import {
   clearOrderEditSession,
   getOrderEditRemainingSeconds,
@@ -105,6 +106,10 @@ export default function RestaurantDetails() {
   const [restaurant, setRestaurant] = useState(null);
   const [loadingRestaurant, setLoadingRestaurant] = useState(true);
   const [restaurantError, setRestaurantError] = useState(null);
+  const [restaurantAvailability, setRestaurantAvailability] = useState({
+    isAvailable: true,
+    reason: "",
+  });
   const fetchedRestaurantRef = useRef(false); // Track if restaurant has been fetched for current slug
   const [orderEditSession, setOrderEditSession] = useState(() => getOrderEditSession());
   const [editSecondsLeft, setEditSecondsLeft] = useState(() =>
@@ -1103,6 +1108,52 @@ export default function RestaurantDetails() {
     fetchRestaurant();
   }, [slug, zoneId, loadingZone, restaurant?.slug]);
 
+  useEffect(() => {
+    const fetchRestaurantAvailability = async () => {
+      if (!restaurant) {
+        setRestaurantAvailability({ isAvailable: true, reason: "" });
+        return;
+      }
+
+      const restaurantIdForTiming = restaurant?.id || restaurant?.restaurantId || restaurant?._id;
+      if (!restaurantIdForTiming) {
+        setRestaurantAvailability(
+          evaluateStoreAvailability({
+            store: restaurant,
+            label: "Restaurant",
+          }),
+        );
+        return;
+      }
+
+      try {
+        const outletTimingsResponse = await fetch(
+          `${API_BASE_URL}/restaurant/${String(restaurantIdForTiming)}/outlet-timings`,
+        );
+        const timingsJson = await outletTimingsResponse.json();
+        const outletTimings =
+          timingsJson?.data?.outletTimings?.timings || timingsJson?.outletTimings?.timings || [];
+
+        setRestaurantAvailability(
+          evaluateStoreAvailability({
+            store: restaurant,
+            outletTimings,
+            label: "Restaurant",
+          }),
+        );
+      } catch {
+        setRestaurantAvailability(
+          evaluateStoreAvailability({
+            store: restaurant,
+            label: "Restaurant",
+          }),
+        );
+      }
+    };
+
+    fetchRestaurantAvailability();
+  }, [restaurant]);
+
   // Track previous values to prevent unnecessary recalculations
   const prevCoordsRef = useRef({
     userLat: null,
@@ -1290,8 +1341,12 @@ export default function RestaurantDetails() {
       return;
     }
 
-    // Note: We don't block cart operations based on restaurant availability
-    // Only block if user is out of service zone
+    if (!restaurantAvailability.isAvailable) {
+      toast.error(
+        restaurantAvailability.reason || "Restaurant is offline. You cannot order right now.",
+      );
+      return;
+    }
 
     // Use stable item id (API may return id or _id)
     const stableItemId = String(item.id || item._id || `item-${Date.now()}-${Math.random()}`);
@@ -1971,6 +2026,16 @@ export default function RestaurantDetails() {
         shouldShowGrayscale ? "grayscale opacity-75" : ""
       }`}
     >
+      {!restaurantAvailability.isAvailable && (
+        <div className="sticky top-0 z-[55] px-4 pt-2">
+          <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+            <p className="text-xs font-semibold text-red-700">
+              {restaurantAvailability.reason || "Restaurant is offline. You cannot order right now."}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Hero Image Section */}
       <div className="relative w-full h-[220px] sm:h-[280px] md:h-[320px] overflow-hidden">
         <img

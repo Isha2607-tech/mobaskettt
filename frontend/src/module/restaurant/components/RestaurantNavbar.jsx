@@ -194,6 +194,14 @@ export default function RestaurantNavbar({
   useEffect(() => {
     const updateStatus = () => {
       try {
+        if (typeof restaurantData?.isAcceptingOrders === "boolean") {
+          const backendOnline = restaurantData.isAcceptingOrders;
+          setStatus(backendOnline ? "Online" : "Offline");
+          const statusKey = isGroceryStore ? 'grocery-store_online_status' : 'restaurant_online_status';
+          localStorage.setItem(statusKey, JSON.stringify(backendOnline));
+          return;
+        }
+
         const statusKey = isGroceryStore ? 'grocery-store_online_status' : 'restaurant_online_status'
         const savedStatus = localStorage.getItem(statusKey)
         if (savedStatus !== null) {
@@ -229,7 +237,7 @@ export default function RestaurantNavbar({
       window.removeEventListener(statusEventName, handleStatusChange)
       clearInterval(interval)
     }
-  }, [isGroceryStore])
+  }, [isGroceryStore, restaurantData?.isAcceptingOrders])
 
   const handleStatusClick = () => {
     navigate(isGroceryStore ? "/store/status" : "/restaurant/status")

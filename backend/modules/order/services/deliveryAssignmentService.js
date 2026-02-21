@@ -4,6 +4,89 @@ import Zone from '../../admin/models/Zone.js';
 import Restaurant from '../../restaurant/models/Restaurant.js';
 import mongoose from 'mongoose';
 
+function getPlatformZoneFilter(platform = 'mofood') {
+  return platform === 'mogrocery'
+    ? { platform: 'mogrocery' }
+    : { $or: [{ platform: 'mofood' }, { platform: { $exists: false } }] };
+}
+
+function isPointInZoneBoundary(lat, lng, zoneCoordinates = []) {
+  if (!Array.isArray(zoneCoordinates) || zoneCoordinates.length < 3) return false;
+  let inside = false;
+
+  for (let i = 0, j = zoneCoordinates.length - 1; i < zoneCoordinates.length; j = i++) {
+    const xi = zoneCoordinates[i]?.longitude;
+    const yi = zoneCoordinates[i]?.latitude;
+    const xj = zoneCoordinates[j]?.longitude;
+    const yj = zoneCoordinates[j]?.latitude;
+
+    if (
+      !Number.isFinite(xi) ||
+      !Number.isFinite(yi) ||
+      !Number.isFinite(xj) ||
+      !Number.isFinite(yj)
+    ) {
+      continue;
+    }
+
+    const intersect =
+      ((yi > lat) !== (yj > lat)) &&
+      (lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi);
+
+    if (intersect) inside = !inside;
+  }
+
+  return inside;
+}
+
+async function resolveRestaurantPlatformAndZone(restaurantId) {
+  let platform = 'mofood';
+  let zone = null;
+
+  if (!restaurantId) {
+    return { platform, zone, activeZones: [] };
+  }
+
+  let restaurant = null;
+  const restaurantIdString = restaurantId?.toString ? restaurantId.toString() : String(restaurantId);
+
+  try {
+    if (mongoose.Types.ObjectId.isValid(restaurantIdString)) {
+      restaurant = await Restaurant.findById(restaurantIdString)
+        .select('_id restaurantId platform slug')
+        .lean();
+    }
+
+    if (!restaurant) {
+      restaurant = await Restaurant.findOne({
+        $or: [{ restaurantId: restaurantIdString }, { slug: restaurantIdString }]
+      })
+        .select('_id restaurantId platform slug')
+        .lean();
+    }
+  } catch {
+    restaurant = null;
+  }
+
+  if (restaurant?.platform === 'mogrocery') {
+    platform = 'mogrocery';
+  }
+
+  const platformFilter = getPlatformZoneFilter(platform);
+  const activeZones = await Zone.find({ isActive: true, ...platformFilter })
+    .select('_id name coordinates restaurantId')
+    .lean();
+
+  const restaurantIdCandidates = new Set([restaurantIdString]);
+  if (restaurant?._id) restaurantIdCandidates.add(String(restaurant._id));
+  if (restaurant?.restaurantId) restaurantIdCandidates.add(String(restaurant.restaurantId));
+
+  zone =
+    activeZones.find((z) => restaurantIdCandidates.has(String(z.restaurantId || ''))) || null;
+
+  return { platform, zone, activeZones };
+}
+
 /**
  * Calculate distance between two coordinates using Haversine formula
  * @param {number} lat1 - Latitude of first point
@@ -48,21 +131,10 @@ export async function findNearestDeliveryBoys(restaurantLat, restaurantLng, rest
       }
     };
 
-    if (restaurantId) {
-      try {
-        const restaurantIdObj = restaurantId.toString ? restaurantId.toString() : restaurantId;
-        zone = await Zone.findOne({
-          restaurantId: restaurantIdObj,
-          isActive: true,
-          $or: [{ platform: 'mofood' }, { platform: { $exists: false } }]
-        }).lean();
-
-        if (zone) {
-          console.log(`✅ Found zone: ${zone.name} for restaurant ${restaurantId}`);
-        }
-      } catch (zoneError) {
-        console.warn(`⚠️ Error finding zone:`, zoneError.message);
-      }
+    const { zone: resolvedZone, activeZones } = await resolveRestaurantPlatformAndZone(restaurantId);
+    zone = resolvedZone;
+    if (zone) {
+      console.log(`✅ Found zone: ${zone.name} for restaurant ${restaurantId}`);
     }
 
     const deliveryPartners = await Delivery.find(deliveryQuery)
@@ -94,19 +166,14 @@ export async function findNearestDeliveryBoys(restaurantLat, restaurantLng, rest
             return null;
           }
           if (!partner.zoneId && zone.coordinates && zone.coordinates.length >= 3) {
-            const zoneCoords = zone.coordinates;
-            let inside = false;
-            for (let i = 0, j = zoneCoords.length - 1; i < zoneCoords.length; j = i++) {
-              const xi = zoneCoords[i].longitude;
-              const yi = zoneCoords[i].latitude;
-              const xj = zoneCoords[j].longitude;
-              const yj = zoneCoords[j].latitude;
-              const intersect = ((yi > lat) !== (yj > lat)) &&
-                (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi);
-              if (intersect) inside = !inside;
-            }
-            if (!inside) return null;
+            if (!isPointInZoneBoundary(lat, lng, zone.coordinates)) return null;
           }
+        } else if (activeZones.length > 0) {
+          // Hard block: out-of-zone riders should not receive orders.
+          const insideAnyActiveZone = activeZones.some((activeZone) =>
+            isPointInZoneBoundary(lat, lng, activeZone.coordinates)
+          );
+          if (!insideAnyActiveZone) return null;
         }
 
         const distance = calculateDistance(restaurantLat, restaurantLng, lat, lng);
@@ -163,37 +230,12 @@ export async function findNearestDeliveryBoy(restaurantLat, restaurantLng, resta
       }
     };
 
-    if (restaurantId) {
-      try {
-        // Try to find zone by restaurantId
-        const restaurantIdObj = restaurantId.toString ? restaurantId.toString() : restaurantId;
-        zone = await Zone.findOne({
-          restaurantId: restaurantIdObj,
-          isActive: true,
-          $or: [{ platform: 'mofood' }, { platform: { $exists: false } }]
-        }).lean();
-
-        if (zone) {
-          console.log(`✅ Found zone: ${zone.name} for restaurant ${restaurantId}`);
-          
-          // Option A: Filter by zoneId if Delivery model has zoneId field
-          // Uncomment when zoneId is added to Delivery model
-          // deliveryQuery.zoneId = zone._id;
-
-          // Option B: Filter by geo-spatial query (if zone has boundary)
-          // This is more complex and slower, but works without modifying Delivery model
-          if (zone.boundary && zone.boundary.coordinates) {
-            // For now, we'll use distance-based with zone coordinate check
-            // In production, you can use $geoWithin for better accuracy
-            console.log(`📍 Zone boundary found, will filter by location after distance calculation`);
-          }
-        } else {
-          console.log(`⚠️ No zone found for restaurant ${restaurantId}, using distance-based assignment`);
-        }
-      } catch (zoneError) {
-        console.warn(`⚠️ Error finding zone for restaurant ${restaurantId}:`, zoneError.message);
-        // Continue with distance-based assignment
-      }
+    const { zone: resolvedZone, activeZones } = await resolveRestaurantPlatformAndZone(restaurantId);
+    zone = resolvedZone;
+    if (zone) {
+      console.log(`✅ Found zone: ${zone.name} for restaurant ${restaurantId}`);
+    } else {
+      console.log(`⚠️ No specific restaurant zone found for ${restaurantId}, using active-zone boundary filtering`);
     }
 
     // Exclude already notified delivery partners
@@ -257,26 +299,19 @@ export async function findNearestDeliveryBoy(restaurantLat, restaurantLng, resta
           // Option B: Geo-spatial check (point-in-polygon) if zoneId not available
           // Simple point-in-polygon using ray casting algorithm
           if (!partner.zoneId && zone.coordinates && zone.coordinates.length >= 3) {
-            // Zone coordinates: [{ latitude, longitude }, ...]
-            const zoneCoords = zone.coordinates;
-            let inside = false;
-            
-            for (let i = 0, j = zoneCoords.length - 1; i < zoneCoords.length; j = i++) {
-              const xi = zoneCoords[i].longitude;
-              const yi = zoneCoords[i].latitude;
-              const xj = zoneCoords[j].longitude;
-              const yj = zoneCoords[j].latitude;
-              
-              const intersect = ((yi > lat) !== (yj > lat)) &&
-                (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi);
-              
-              if (intersect) inside = !inside;
-            }
-            
-            if (!inside) {
+            if (!isPointInZoneBoundary(lat, lng, zone.coordinates)) {
               console.log(`⚠️ Delivery partner ${partner._id} location (${lat}, ${lng}) not within zone ${zone.name} boundary`);
               return null;
             }
+          }
+        } else if (activeZones.length > 0) {
+          // Hard block: out-of-zone riders should not receive orders.
+          const insideAnyActiveZone = activeZones.some((activeZone) =>
+            isPointInZoneBoundary(lat, lng, activeZone.coordinates)
+          );
+          if (!insideAnyActiveZone) {
+            console.log(`⚠️ Delivery partner ${partner._id} is out of active delivery zones, skipping assignment`);
+            return null;
           }
         }
 

@@ -22,9 +22,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useProfile } from "../../user/context/ProfileContext";
 import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
 import { useZone } from "../../user/hooks/useZone";
-import { adminAPI, orderAPI, restaurantAPI, userAPI } from "@/lib/api";
+import api, { adminAPI, orderAPI, restaurantAPI, userAPI } from "@/lib/api";
 import { initRazorpayPayment } from "@/lib/utils/razorpay";
 import { toast } from "sonner";
+import { evaluateStoreAvailability } from "@/lib/utils/storeAvailability";
 
 export default function GroceryCheckoutPage() {
   const navigate = useNavigate();
@@ -57,6 +58,10 @@ export default function GroceryCheckoutPage() {
   const [loadingPricing, setLoadingPricing] = useState(false);
   const [resolvedRestaurant, setResolvedRestaurant] = useState(null);
   const [hasActivePlanSubscription, setHasActivePlanSubscription] = useState(false);
+  const [storeAvailability, setStoreAvailability] = useState({
+    isAvailable: true,
+    reason: "",
+  });
 
   const formatStoreAddress = useCallback((store = {}) => {
     const addressFromPayload =
@@ -284,6 +289,47 @@ export default function GroceryCheckoutPage() {
 
     resolveRestaurantForPreview();
   }, [groceryItemsKey, resolveGroceryRestaurant]);
+
+  useEffect(() => {
+    const fetchStoreAvailability = async () => {
+      if (!resolvedRestaurant?.restaurantId) {
+        setStoreAvailability({ isAvailable: true, reason: "" });
+        return;
+      }
+
+      try {
+        const [storeResponse, outletTimingsResponse] = await Promise.all([
+          restaurantAPI.getRestaurantById(String(resolvedRestaurant.restaurantId)),
+          api.get(`/restaurant/${String(resolvedRestaurant.restaurantId)}/outlet-timings`),
+        ]);
+
+        const store =
+          storeResponse?.data?.data?.restaurant ||
+          storeResponse?.data?.restaurant ||
+          storeResponse?.data?.data ||
+          {};
+        const outletTimings =
+          outletTimingsResponse?.data?.data?.outletTimings?.timings ||
+          outletTimingsResponse?.data?.outletTimings?.timings ||
+          [];
+
+        setStoreAvailability(
+          evaluateStoreAvailability({
+            store,
+            outletTimings,
+            label: "Store",
+          }),
+        );
+      } catch {
+        setStoreAvailability({
+          isAvailable: false,
+          reason: "Unable to verify store availability right now.",
+        });
+      }
+    };
+
+    fetchStoreAvailability();
+  }, [resolvedRestaurant?.restaurantId]);
 
   useEffect(() => {
     const calculatePricingPreview = async () => {
@@ -611,6 +657,11 @@ export default function GroceryCheckoutPage() {
         toast.error("Insufficient wallet balance. Add money or choose another payment method.");
         return;
       }
+    }
+
+    if (!storeAvailability.isAvailable) {
+      toast.error(storeAvailability.reason || "Store is offline. You cannot order right now.");
+      return;
     }
 
     setIsPlacingOrder(true);
@@ -1306,10 +1357,22 @@ export default function GroceryCheckoutPage() {
 
       {/* Proceed Button */}
       <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-[#111111] border-t border-gray-100 dark:border-gray-800 p-4 pb-6 z-50 md:max-w-md md:mx-auto">
+        {!storeAvailability.isAvailable && (
+          <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+            <p className="text-xs font-semibold text-red-700">
+              {storeAvailability.reason || "Store is offline. You cannot order right now."}
+            </p>
+          </div>
+        )}
         <button
           className="w-full bg-[#facd01] hover:bg-[#e6bc01] text-gray-900 font-black py-4 rounded-2xl text-base shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"
           onClick={handlePlaceOrder}
-          disabled={isPlacingOrder || groceryItems.length === 0 || (paymentMethod === "wallet" && !walletLoading && !hasSufficientWalletBalance)}
+          disabled={
+            isPlacingOrder ||
+            groceryItems.length === 0 ||
+            !storeAvailability.isAvailable ||
+            (paymentMethod === "wallet" && !walletLoading && !hasSufficientWalletBalance)
+          }
         >
           {isPlacingOrder
             ? "Processing..."

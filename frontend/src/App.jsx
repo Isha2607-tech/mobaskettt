@@ -381,6 +381,39 @@ export default function App() {
           }
         />
         <Route
+          path="/store/status"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <RestaurantStatus />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/store/outlet-timings"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <OutletTimings />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/store/outlet-timings/:day"
+          element={
+            <ProtectedRoute
+              module="grocery-store"
+              loginPath="/store/login"
+            >
+              <DaySlots />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/store/conversation"
           element={
             <ProtectedRoute

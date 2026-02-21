@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import DeliveryScheduler from "@/components/DeliveryScheduler";
 import { useCart } from "../../user/context/CartContext";
 import api, { restaurantAPI } from "@/lib/api";
+import { evaluateStoreAvailability } from "@/lib/utils/storeAvailability";
 import {
   clearOrderEditSession,
   getOrderEditRemainingSeconds,
@@ -30,6 +31,10 @@ export default function CartPage() {
   const [addons, setAddons] = useState([]);
   const [loadingAddons, setLoadingAddons] = useState(false);
   const [restaurantSchedule, setRestaurantSchedule] = useState(null);
+  const [restaurantAvailability, setRestaurantAvailability] = useState({
+    isAvailable: true,
+    reason: "",
+  });
   const [orderEditSession, setOrderEditSession] = useState(() => getOrderEditSession());
   const [editSecondsLeft, setEditSecondsLeft] = useState(() =>
     getOrderEditRemainingSeconds(getOrderEditSession()),
@@ -128,13 +133,24 @@ export default function CartPage() {
           outletTimingsResponse?.data?.outletTimings?.timings ||
           [];
 
+        const availability = evaluateStoreAvailability({
+          store: restaurant || {},
+          outletTimings,
+          label: "Restaurant",
+        });
+
         setRestaurantSchedule({
           deliveryTimings: restaurant?.deliveryTimings || null,
           openDays: Array.isArray(restaurant?.openDays) ? restaurant.openDays : [],
           outletTimings: Array.isArray(outletTimings) ? outletTimings : [],
         });
+        setRestaurantAvailability(availability);
       } catch {
         setRestaurantSchedule(null);
+        setRestaurantAvailability({
+          isAvailable: false,
+          reason: "Unable to verify restaurant availability right now.",
+        });
       }
     };
 
@@ -152,6 +168,11 @@ export default function CartPage() {
         toast.error("Please select a delivery date and time slot.");
         return;
       }
+    }
+
+    if (!restaurantAvailability.isAvailable) {
+      toast.error(restaurantAvailability.reason || "Restaurant is offline. You cannot order right now.");
+      return;
     }
 
     navigate("/checkout", {
@@ -404,11 +425,22 @@ export default function CartPage() {
             </div>
           </div>
 
+          {!restaurantAvailability.isAvailable && (
+            <div className="px-4 mb-4">
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                <p className="text-sm font-semibold text-red-700">
+                  {restaurantAvailability.reason || "Restaurant is offline. You cannot order right now."}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Checkout Button */}
           <div className="px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-6">
             <Button
               className="w-full bg-[#ff8100] hover:bg-[#e67300] text-white font-bold py-4 rounded-xl text-base"
               onClick={handleCheckout}
+              disabled={!restaurantAvailability.isAvailable}
             >
               Checkout
             </Button>

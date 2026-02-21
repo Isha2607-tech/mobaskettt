@@ -23,7 +23,7 @@ import { useCart } from "../../user/context/CartContext";
 import { useProfile } from "../../user/context/ProfileContext";
 import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
 import { useZone } from "../../user/hooks/useZone";
-import { adminAPI, locationAPI, orderAPI, restaurantAPI, userAPI } from "@/lib/api";
+import api, { adminAPI, locationAPI, orderAPI, restaurantAPI, userAPI } from "@/lib/api";
 import { initRazorpayPayment } from "@/lib/utils/razorpay";
 import { Loader } from "@googlemaps/js-api-loader";
 import { getGoogleMapsApiKey } from "@/lib/utils/googleMapsApiKey";
@@ -33,6 +33,7 @@ import {
   getOrderEditSession,
   saveOrderEditSession,
 } from "@/module/user/utils/orderEditSession";
+import { evaluateStoreAvailability } from "@/lib/utils/storeAvailability";
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
@@ -62,6 +63,10 @@ export default function CheckoutPage() {
     gstRate: 5,
   });
   const [pendingOnlineOrder, setPendingOnlineOrder] = useState(null);
+  const [restaurantAvailability, setRestaurantAvailability] = useState({
+    isAvailable: true,
+    reason: "",
+  });
   const [selectedAddress, setSelectedAddress] = useState(null);
   const [showAddAddressForm, setShowAddAddressForm] = useState(false);
   const [isDetectingAddress, setIsDetectingAddress] = useState(false);
@@ -593,6 +598,48 @@ export default function CheckoutPage() {
   }, []);
 
   useEffect(() => {
+    const fetchRestaurantAvailability = async () => {
+      if (!restaurantId || foodItems.length === 0) {
+        setRestaurantAvailability({ isAvailable: true, reason: "" });
+        return;
+      }
+
+      try {
+        const [restaurantResponse, outletTimingsResponse] = await Promise.all([
+          restaurantAPI.getRestaurantById(String(restaurantId)),
+          api.get(`/restaurant/${String(restaurantId)}/outlet-timings`),
+        ]);
+
+        const restaurant =
+          restaurantResponse?.data?.data?.restaurant ||
+          restaurantResponse?.data?.restaurant ||
+          restaurantResponse?.data?.data ||
+          {};
+
+        const outletTimings =
+          outletTimingsResponse?.data?.data?.outletTimings?.timings ||
+          outletTimingsResponse?.data?.outletTimings?.timings ||
+          [];
+
+        setRestaurantAvailability(
+          evaluateStoreAvailability({
+            store: restaurant,
+            outletTimings,
+            label: "Restaurant",
+          }),
+        );
+      } catch {
+        setRestaurantAvailability({
+          isAvailable: false,
+          reason: "Unable to verify restaurant availability right now.",
+        });
+      }
+    };
+
+    fetchRestaurantAvailability();
+  }, [foodItems.length, restaurantId]);
+
+  useEffect(() => {
     const fetchPricingPreview = async () => {
       if (!restaurantId || foodItems.length === 0) {
         setCalculatedPricing(null);
@@ -924,6 +971,13 @@ export default function CheckoutPage() {
       return;
     }
 
+    if (!restaurantAvailability.isAvailable) {
+      toast.error(
+        restaurantAvailability.reason || "Restaurant is offline. You cannot order right now.",
+      );
+      return;
+    }
+
     if (paymentMethod === "wallet") {
       if (walletLoading) {
         toast.info("Checking wallet balance. Please wait.");
@@ -1121,6 +1175,14 @@ export default function CheckoutPage() {
       )}
 
       <div className="px-4 py-4">
+        {!restaurantAvailability.isAvailable && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+            <p className="text-sm font-semibold text-red-700">
+              {restaurantAvailability.reason || "Restaurant is offline. You cannot order right now."}
+            </p>
+          </div>
+        )}
+
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-orange-100">
           <div className="flex items-start gap-3">
             <div className="bg-[#ff8100] rounded-xl p-2">
@@ -1652,6 +1714,7 @@ export default function CheckoutPage() {
           onClick={handleProceedToPayment}
           disabled={
             isPlacingOrder ||
+            !restaurantAvailability.isAvailable ||
             (paymentMethod === "wallet" && !walletLoading && !hasSufficientWalletBalance)
           }
         >

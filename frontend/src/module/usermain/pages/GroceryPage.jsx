@@ -28,6 +28,7 @@ import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
 import { CategoryFoodsContent } from "./CategoryFoodsPage";
 import AddToCartAnimation from "../../user/components/AddToCartAnimation";
 import api, { restaurantAPI, userAPI } from "@/lib/api";
+import { evaluateStoreAvailability } from "@/lib/utils/storeAvailability";
 
 // Icons
 import imgBag3D from "@/assets/icons/shopping-bag_18008822.png";
@@ -431,9 +432,11 @@ const GroceryPage = () => {
           ? response.data.data.restaurants
           : [];
         const moGroceryStores = restaurants.filter((restaurant) => restaurant?.platform === "mogrocery");
-        const activeStores = moGroceryStores.filter((restaurant) => restaurant?.isActive !== false);
-        setGroceryStores(activeStores);
-        setHasActiveGroceryStore(activeStores.length > 0);
+        const availableStores = moGroceryStores.filter((store) =>
+          evaluateStoreAvailability({ store, label: "Store" }).isAvailable,
+        );
+        setGroceryStores(availableStores);
+        setHasActiveGroceryStore(availableStores.length > 0);
       } catch {
         setGroceryStores([]);
         setHasActiveGroceryStore(false);
@@ -1212,6 +1215,11 @@ const GroceryPage = () => {
   };
 
   const handleAddProductToCart = (product, event = null) => {
+    if (isGroceryUnavailable) {
+      toast.error("Store is offline or closed. You cannot order right now.");
+      return;
+    }
+
     const sourcePosition = getSourcePosition(event, product?._id || product?.id);
     const store = resolveStoreObjectFromProduct(product);
     const storeId = String(store?._id || store?.id || product?.storeId || "").trim();
@@ -1281,7 +1289,7 @@ const GroceryPage = () => {
         <div className="fixed top-[88px] left-1/2 -translate-x-1/2 z-[95] px-4">
           <div className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white/95 dark:bg-[#1a1a1a]/95 backdrop-blur px-4 py-2 shadow-sm">
             <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 text-center">
-              MoGrocery is currently unavailable. Store is offline.
+              MoGrocery is currently unavailable. Store is offline or closed.
             </p>
           </div>
         </div>

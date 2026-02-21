@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useLocation } from "react-router-dom"
 import Lenis from "lenis"
 import { ArrowLeft, Settings, ChevronRight } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
 import { Card, CardContent } from "@/components/ui/card"
-import { restaurantAPI } from "@/lib/api"
+import { groceryStoreAPI, restaurantAPI } from "@/lib/api"
 import {
   Dialog,
   DialogContent,
@@ -17,6 +17,10 @@ import { Button } from "@/components/ui/button"
 
 export default function RestaurantStatus() {
   const navigate = useNavigate()
+  const routeLocation = useLocation()
+  const isGroceryStore = routeLocation.pathname.startsWith("/store")
+  const statusStorageKey = isGroceryStore ? "grocery-store_online_status" : "restaurant_online_status"
+  const statusEventName = isGroceryStore ? "groceryStoreStatusChanged" : "restaurantStatusChanged"
   const [deliveryStatus, setDeliveryStatus] = useState(false)
   const [restaurantData, setRestaurantData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -41,8 +45,12 @@ export default function RestaurantStatus() {
     const fetchRestaurantData = async () => {
       try {
         setLoading(true)
-        const response = await restaurantAPI.getCurrentRestaurant()
-        const data = response?.data?.data?.restaurant || response?.data?.restaurant
+        const response = isGroceryStore
+          ? await groceryStoreAPI.getCurrentStore()
+          : await restaurantAPI.getCurrentRestaurant()
+        const data = isGroceryStore
+          ? (response?.data?.data?.store || response?.data?.store || response?.data?.data?.restaurant || response?.data?.restaurant)
+          : (response?.data?.data?.restaurant || response?.data?.restaurant)
         if (data) {
           setRestaurantData(data)
         }
@@ -58,7 +66,7 @@ export default function RestaurantStatus() {
     }
 
     fetchRestaurantData()
-  }, [])
+  }, [isGroceryStore])
 
   // Load outlet timings from localStorage
   useEffect(() => {
@@ -211,31 +219,35 @@ export default function RestaurantStatus() {
     const loadDeliveryStatus = async () => {
       try {
         // First try to get from backend
-        const response = await restaurantAPI.getCurrentRestaurant()
-        const restaurant = response?.data?.data?.restaurant || response?.data?.restaurant
+        const response = isGroceryStore
+          ? await groceryStoreAPI.getCurrentStore()
+          : await restaurantAPI.getCurrentRestaurant()
+        const restaurant = isGroceryStore
+          ? (response?.data?.data?.store || response?.data?.store || response?.data?.data?.restaurant || response?.data?.restaurant)
+          : (response?.data?.data?.restaurant || response?.data?.restaurant)
         if (restaurant?.isAcceptingOrders !== undefined) {
           setDeliveryStatus(restaurant.isAcceptingOrders)
           // Sync localStorage with backend
-          localStorage.setItem('restaurant_online_status', JSON.stringify(restaurant.isAcceptingOrders))
+          localStorage.setItem(statusStorageKey, JSON.stringify(restaurant.isAcceptingOrders))
           // Dispatch event to update navbar
-          window.dispatchEvent(new CustomEvent('restaurantStatusChanged', { 
+          window.dispatchEvent(new CustomEvent(statusEventName, {
             detail: { isOnline: restaurant.isAcceptingOrders } 
           }))
         } else {
           // Fallback to localStorage
-          const savedStatus = localStorage.getItem('restaurant_online_status')
+          const savedStatus = localStorage.getItem(statusStorageKey)
           if (savedStatus !== null) {
             const status = JSON.parse(savedStatus)
             setDeliveryStatus(status)
             // Dispatch event to update navbar
-            window.dispatchEvent(new CustomEvent('restaurantStatusChanged', { 
+            window.dispatchEvent(new CustomEvent(statusEventName, {
               detail: { isOnline: status } 
             }))
           } else {
             // Default to false if not set
             setDeliveryStatus(false)
             // Dispatch event to update navbar
-            window.dispatchEvent(new CustomEvent('restaurantStatusChanged', { 
+            window.dispatchEvent(new CustomEvent(statusEventName, {
               detail: { isOnline: false } 
             }))
           }
@@ -247,22 +259,22 @@ export default function RestaurantStatus() {
         }
         // Fallback to localStorage
         try {
-          const savedStatus = localStorage.getItem('restaurant_online_status')
+          const savedStatus = localStorage.getItem(statusStorageKey)
           if (savedStatus !== null) {
             const status = JSON.parse(savedStatus)
             setDeliveryStatus(status)
-            window.dispatchEvent(new CustomEvent('restaurantStatusChanged', { 
+            window.dispatchEvent(new CustomEvent(statusEventName, {
               detail: { isOnline: status } 
             }))
           } else {
             setDeliveryStatus(false)
-            window.dispatchEvent(new CustomEvent('restaurantStatusChanged', { 
+            window.dispatchEvent(new CustomEvent(statusEventName, {
               detail: { isOnline: false } 
             }))
           }
         } catch (localError) {
           setDeliveryStatus(false)
-          window.dispatchEvent(new CustomEvent('restaurantStatusChanged', { 
+          window.dispatchEvent(new CustomEvent(statusEventName, {
             detail: { isOnline: false } 
           }))
         }
@@ -270,7 +282,7 @@ export default function RestaurantStatus() {
     }
 
     loadDeliveryStatus()
-  }, [])
+  }, [isGroceryStore, statusEventName, statusStorageKey])
 
   // Handle delivery status change
   const handleDeliveryStatusChange = async (checked) => {
@@ -289,7 +301,7 @@ export default function RestaurantStatus() {
     setDeliveryStatus(checked)
     try {
       // Save to localStorage
-      localStorage.setItem('restaurant_online_status', JSON.stringify(checked))
+      localStorage.setItem(statusStorageKey, JSON.stringify(checked))
       
       // Update backend
       try {
@@ -301,7 +313,7 @@ export default function RestaurantStatus() {
       }
       
       // Dispatch custom event for navbar to listen
-      window.dispatchEvent(new CustomEvent('restaurantStatusChanged', { 
+      window.dispatchEvent(new CustomEvent(statusEventName, {
         detail: { isOnline: checked } 
       }))
     } catch (error) {
@@ -312,7 +324,7 @@ export default function RestaurantStatus() {
   // Handle dialog close and navigate to outlet timings
   const handleGoToOutletTimings = () => {
     setShowOutletClosedDialog(false)
-    navigate("/restaurant/outlet-timings")
+    navigate(isGroceryStore ? "/store/outlet-timings" : "/restaurant/outlet-timings")
   }
 
   // Format time from 24-hour to 12-hour format
@@ -405,8 +417,12 @@ export default function RestaurantStatus() {
             <ArrowLeft className="w-6 h-6 text-gray-900" />
           </button>
           <div className="flex-1">
-            <h1 className="text-lg font-bold text-gray-900">Restaurant status</h1>
-            <p className="text-sm text-gray-500 mt-0.5">You are mapped to 1 restaurant</p>
+            <h1 className="text-lg font-bold text-gray-900">
+              {isGroceryStore ? "Store status" : "Restaurant status"}
+            </h1>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {isGroceryStore ? "You are mapped to 1 store" : "You are mapped to 1 restaurant"}
+            </p>
           </div>
         </div>
       </div>
@@ -481,7 +497,7 @@ export default function RestaurantStatus() {
             </p>
             {!isDayClosed && (
               <button
-                onClick={() => navigate("/restaurant/outlet-timings")}
+                onClick={() => navigate(isGroceryStore ? "/store/outlet-timings" : "/restaurant/outlet-timings")}
                 className="flex items-center gap-1 text-blue-600 hover:text-blue-700 text-sm font-medium"
               >
                 Details
@@ -561,7 +577,7 @@ export default function RestaurantStatus() {
             <Button
               onClick={() => {
                 setShowOutsideTimingsDialog(false)
-                navigate("/restaurant/outlet-timings")
+                navigate(isGroceryStore ? "/store/outlet-timings" : "/restaurant/outlet-timings")
               }}
               className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white"
             >

@@ -18,6 +18,7 @@ import OrderEvent from '../models/OrderEvent.js';
 import UserWallet from '../../user/models/UserWallet.js';
 import Menu from '../../restaurant/models/Menu.js';
 import User from '../../auth/models/User.js';
+import OutletTimings from '../../restaurant/models/OutletTimings.js';
 import { reduceGroceryStockForOrder, restoreGroceryStockForOrder } from '../services/groceryStockService.js';
 
 const logger = winston.createLogger({
@@ -196,6 +197,115 @@ const isPointInsideZone = (zone, latitude, longitude) => {
 const findContainingZone = (zones, latitude, longitude) => {
   if (!Array.isArray(zones)) return null;
   return zones.find((zone) => isPointInsideZone(zone, latitude, longitude)) || null;
+};
+
+const parseTimeToMinutes = (timeValue) => {
+  if (!timeValue || typeof timeValue !== 'string') return null;
+  const normalized = timeValue.trim().toUpperCase();
+  const match = normalized.match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/);
+  if (!match) return null;
+
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const meridiem = match[3] || null;
+
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
+  if (minutes < 0 || minutes > 59) return null;
+
+  if (meridiem) {
+    if (hours < 1 || hours > 12) return null;
+    if (meridiem === 'PM' && hours !== 12) hours += 12;
+    if (meridiem === 'AM' && hours === 12) hours = 0;
+  } else if (hours < 0 || hours > 23) {
+    return null;
+  }
+
+  return hours * 60 + minutes;
+};
+
+const isWithinTimeWindow = (currentMinutes, openingMinutes, closingMinutes) => {
+  if (
+    !Number.isFinite(currentMinutes) ||
+    !Number.isFinite(openingMinutes) ||
+    !Number.isFinite(closingMinutes)
+  ) {
+    return false;
+  }
+
+  if (openingMinutes === closingMinutes) return true;
+  if (closingMinutes > openingMinutes) {
+    return currentMinutes >= openingMinutes && currentMinutes <= closingMinutes;
+  }
+  return currentMinutes >= openingMinutes || currentMinutes <= closingMinutes;
+};
+
+const evaluateRestaurantAvailabilityAt = async (restaurant, atDate = new Date()) => {
+  if (!restaurant || typeof restaurant !== 'object') {
+    return { isAvailable: false, reason: 'Restaurant not found' };
+  }
+
+  if (restaurant.isActive === false) {
+    return { isAvailable: false, reason: 'Restaurant is currently inactive' };
+  }
+
+  if (restaurant.isAcceptingOrders === false) {
+    return { isAvailable: false, reason: 'Restaurant is currently offline and not accepting orders' };
+  }
+
+  const dayName = atDate.toLocaleDateString('en-US', { weekday: 'long' });
+  const currentMinutes = atDate.getHours() * 60 + atDate.getMinutes();
+
+  const outletTimings = await OutletTimings.findOne({
+    restaurantId: restaurant._id,
+    isActive: true
+  })
+    .select('timings')
+    .lean();
+
+  const timings = Array.isArray(outletTimings?.timings) ? outletTimings.timings : [];
+  const dayTiming = timings.find(
+    (entry) => String(entry?.day || '').toLowerCase() === String(dayName).toLowerCase()
+  );
+
+  if (dayTiming) {
+    if (dayTiming.isOpen === false) {
+      return { isAvailable: false, reason: 'Restaurant is closed today' };
+    }
+
+    const openingMinutes = parseTimeToMinutes(dayTiming.openingTime);
+    const closingMinutes = parseTimeToMinutes(dayTiming.closingTime);
+    if (
+      Number.isFinite(openingMinutes) &&
+      Number.isFinite(closingMinutes) &&
+      !isWithinTimeWindow(currentMinutes, openingMinutes, closingMinutes)
+    ) {
+      return { isAvailable: false, reason: 'Restaurant is currently closed' };
+    }
+
+    return { isAvailable: true, reason: '' };
+  }
+
+  const openDays = Array.isArray(restaurant.openDays) ? restaurant.openDays : [];
+  if (openDays.length > 0) {
+    const openToday = openDays.some((day) =>
+      String(day || '').slice(0, 3).toLowerCase() === String(dayName).slice(0, 3).toLowerCase()
+    );
+    if (!openToday) {
+      return { isAvailable: false, reason: 'Restaurant is closed today' };
+    }
+  }
+
+  const openingMinutes = parseTimeToMinutes(restaurant?.deliveryTimings?.openingTime);
+  const closingMinutes = parseTimeToMinutes(restaurant?.deliveryTimings?.closingTime);
+  if (
+    Number.isFinite(openingMinutes) &&
+    Number.isFinite(closingMinutes) &&
+    !isWithinTimeWindow(currentMinutes, openingMinutes, closingMinutes)
+  ) {
+    return { isAvailable: false, reason: 'Restaurant is currently closed' };
+  }
+
+  return { isAvailable: true, reason: '' };
 };
 
 const getMenuItemFinalPrice = (menuItem = {}) => {
@@ -640,32 +750,31 @@ export const createOrder = async (req, res) => {
       // Still proceed but log the mismatch
     }
 
-    // Note: Removed isAcceptingOrders check - orders can come even when restaurant is offline
-    // Restaurant can accept/reject orders manually, or orders will auto-reject after accept time expires
-    // if (!restaurant.isAcceptingOrders) {
-    //   logger.warn('⚠️ Restaurant not accepting orders:', {
-    //     restaurantId: restaurant._id?.toString() || restaurant.restaurantId,
-    //     restaurantName: restaurant.name
-    //   });
-    //   return res.status(403).json({
-    //     success: false,
-    //     message: 'Restaurant is currently not accepting orders'
-    //   });
-    // }
-
-    if (!restaurant.isActive) {
-      logger.warn('⚠️ Restaurant is inactive:', {
+    const immediateAvailability = await evaluateRestaurantAvailabilityAt(restaurant, new Date());
+    if (!immediateAvailability.isAvailable) {
+      logger.warn('⚠️ Restaurant unavailable for order placement:', {
         restaurantId: restaurant._id?.toString() || restaurant.restaurantId,
-        restaurantName: restaurant.name
+        restaurantName: restaurant.name,
+        reason: immediateAvailability.reason
       });
       return res.status(403).json({
         success: false,
-        message: 'Restaurant is currently inactive'
+        message: immediateAvailability.reason || 'Restaurant is currently unavailable'
       });
     }
 
     const restaurantPlatform = restaurant.platform === 'mogrocery' ? 'mogrocery' : 'mofood';
     requiresAdminApproval = restaurantPlatform === 'mogrocery' && !isPlanSubscriptionOrder;
+
+    if (isFutureScheduledOrder && scheduledForDate) {
+      const scheduledAvailability = await evaluateRestaurantAvailabilityAt(restaurant, scheduledForDate);
+      if (!scheduledAvailability.isAvailable) {
+        return res.status(400).json({
+          success: false,
+          message: `Selected delivery slot is unavailable. ${scheduledAvailability.reason || 'Please choose another time.'}`
+        });
+      }
+    }
 
     // CRITICAL: Validate that restaurant/store location (pin) is within an active zone for its platform
     const restaurantLat = restaurant.location?.latitude || restaurant.location?.coordinates?.[1];
