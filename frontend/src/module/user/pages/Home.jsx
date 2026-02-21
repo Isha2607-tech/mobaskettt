@@ -376,6 +376,12 @@ export default function Home() {
   const sanitizeImageSrc = (src, seed = "") =>
     isLikelyImageUrl(src) ? src : fallbackImageBySeed(seed);
 
+  const isStorefrontLikeImage = (value) => {
+    const src = String(value || "").toLowerCase();
+    if (!src) return false;
+    return /(cover|banner|store|restaurant|profile|logo|outlet|shop)/.test(src);
+  };
+
   // Swipe functionality for hero banner carousel
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
@@ -984,7 +990,9 @@ export default function Home() {
               // Fallback to menuImages only if coverImages don't exist (for backward compatibility)
               const fallbackImages =
                 restaurant.menuImages && restaurant.menuImages.length > 0
-                  ? restaurant.menuImages.map((img) => img.url)
+                  ? restaurant.menuImages
+                    .map((img) => img?.url || img)
+                    .filter((img) => isLikelyImageUrl(img))
                   : [];
 
               // Use cover images first, then fallback to menu images, then profile image
@@ -1399,9 +1407,11 @@ export default function Home() {
           name: cuisine,
           // Prefer product/menu image for category icon; never fall back to storefront image.
           image: sanitizeImageSrc(
-            (Array.isArray(restaurant?.menuImages) && restaurant.menuImages.length > 0
-              ? restaurant.menuImages[0]
-              : fallbackImageBySeed(slug)),
+            (Array.isArray(restaurant?.menuImages)
+              ? restaurant.menuImages.find(
+                (img) => isLikelyImageUrl(img) && !isStorefrontLikeImage(img),
+              )
+              : null) || fallbackImageBySeed(slug),
             slug,
           ),
           slug,
@@ -3344,7 +3354,7 @@ export default function Home() {
                           <div className="flex flex-col items-center gap-2 sm:gap-2.5 cursor-pointer w-full">
                             <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 rounded-full overflow-hidden shadow-md transition-all hover:shadow-lg flex-shrink-0">
                               <OptimizedImage
-                                src={categoryData.image}
+                                src={sanitizeImageSrc(categoryData.image, categoryData.slug || categoryData.name)}
                                 alt={categoryData.name}
                                 className="w-full h-full bg-white rounded-full"
                                 sizes="(max-width: 640px) 80px, (max-width: 768px) 96px, 112px"

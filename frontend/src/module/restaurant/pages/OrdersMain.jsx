@@ -521,7 +521,7 @@ export default function OrdersMain() {
   }, [activeFilter])
 
   // Restaurant notifications hook for real-time orders
-  const { newOrder, clearNewOrder, isConnected } = useRestaurantNotifications()
+  const { newOrder, clearNewOrder, isConnected } = useRestaurantNotifications({ enableSound: false })
 
   const rejectReasons = [
     "Restaurant is too busy",

@@ -7,9 +7,12 @@ import alertSound from '@/assets/audio/alert.mp3';
 
 /**
  * Hook for restaurant/grocery store to receive real-time order notifications with sound
+ * @param {object} options
+ * @param {boolean} options.enableSound - Whether to play incoming order ringtone
  * @returns {object} - { newOrder, playSound, isConnected }
  */
-export const useRestaurantNotifications = () => {
+export const useRestaurantNotifications = (options = {}) => {
+  const { enableSound = true, enabled = true } = options;
   const location = useLocation();
   const isGroceryStore = location.pathname.startsWith('/store');
   const socketRef = useRef(null);
@@ -19,10 +22,29 @@ export const useRestaurantNotifications = () => {
   const userInteractedRef = useRef(false); // Track user interaction for autoplay policy
   const [restaurantId, setRestaurantId] = useState(null);
   const lastConnectErrorLogRef = useRef(0);
+  const enableSoundRef = useRef(enableSound);
+  const lastSoundAtRef = useRef(0);
   const CONNECT_ERROR_LOG_THROTTLE_MS = 10000;
+
+  useEffect(() => {
+    enableSoundRef.current = enableSound;
+  }, [enableSound]);
+
+  useEffect(() => {
+    if (!enabled && socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+      setIsConnected(false);
+    }
+  }, [enabled]);
 
   // Get restaurant/store ID from API
   useEffect(() => {
+    if (!enabled) {
+      setRestaurantId(null);
+      return;
+    }
+
     const fetchRestaurantId = async () => {
       try {
         const response = isGroceryStore 
@@ -40,9 +62,11 @@ export const useRestaurantNotifications = () => {
       }
     };
     fetchRestaurantId();
-  }, [isGroceryStore]);
+  }, [enabled, isGroceryStore]);
 
   useEffect(() => {
+    if (!enabled) return;
+
     if (!restaurantId) {
       console.log('⏳ Waiting for restaurantId...');
       return;
@@ -267,13 +291,17 @@ export const useRestaurantNotifications = () => {
       setNewOrder(orderData);
       
       // Play notification sound
-      playNotificationSound();
+      if (enableSoundRef.current) {
+        playNotificationSound();
+      }
     });
 
     // Listen for sound notification event
     socketRef.current.on('play_notification_sound', (data) => {
       console.log('🔔 Sound notification:', data);
-      playNotificationSound();
+      if (enableSoundRef.current) {
+        playNotificationSound();
+      }
     });
 
     // Listen for order status updates
@@ -296,7 +324,7 @@ export const useRestaurantNotifications = () => {
         audioRef.current = null;
       }
     };
-  }, [restaurantId, isGroceryStore]);
+  }, [enabled, restaurantId, isGroceryStore]);
 
   // Track user interaction for autoplay policy
   useEffect(() => {
@@ -323,6 +351,10 @@ export const useRestaurantNotifications = () => {
   const playNotificationSound = () => {
     try {
       if (audioRef.current) {
+        const now = Date.now();
+        if (now - lastSoundAtRef.current < 900) return;
+        lastSoundAtRef.current = now;
+
         // Only play if user has interacted with the page (browser autoplay policy)
         if (!userInteractedRef.current) {
           console.log('🔇 Audio playback skipped - user has not interacted with page yet');

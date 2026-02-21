@@ -63,6 +63,7 @@ import BusinessPlanPage from "@/module/restaurant/pages/BusinessPlanPage";
 import ConversationListPage from "@/module/restaurant/pages/ConversationListPage";
 import ChatDetailPage from "@/module/restaurant/pages/ChatDetailPage";
 import RestaurantStatus from "@/module/restaurant/pages/RestaurantStatus";
+import RestaurantOrderSoundListener from "@/module/restaurant/components/RestaurantOrderSoundListener";
 import ExploreMore from "@/module/restaurant/pages/ExploreMore";
 import DeliverySettings from "@/module/restaurant/pages/DeliverySettings";
 import RushHour from "@/module/restaurant/pages/RushHour";
@@ -158,6 +159,7 @@ export default function App() {
   return (
     <>
       <Toaster position="top-center" richColors />
+      <RestaurantOrderSoundListener />
       <Routes>
         <Route path="/user" element={<Navigate to="/" replace />} />
         <Route path="/user/*" element={<UserPathRedirect />} />

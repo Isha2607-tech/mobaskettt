@@ -31,7 +31,7 @@ export default function OrdersPage() {
   const [error, setError] = useState(null)
 
   // Restaurant notifications hook
-  const { newOrder, clearNewOrder, isConnected } = useRestaurantNotifications()
+  const { newOrder, clearNewOrder, isConnected } = useRestaurantNotifications({ enableSound: false })
 
   // Lenis smooth scrolling
   useEffect(() => {
