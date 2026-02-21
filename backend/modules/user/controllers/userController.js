@@ -516,3 +516,39 @@ export const deleteUserAddress = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Mark app as shared for the authenticated user.
+ * POST /api/user/profile/share-app
+ */
+export const markAppShared = asyncHandler(async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return errorResponse(res, 404, 'User not found');
+    }
+
+    const wasAlreadyShared = Boolean(user.hasSharedApp);
+    if (!wasAlreadyShared) {
+      user.hasSharedApp = true;
+      user.appSharedAt = new Date();
+      await user.save();
+    }
+
+    return successResponse(
+      res,
+      200,
+      wasAlreadyShared
+        ? 'App sharing already recorded'
+        : 'App share recorded successfully',
+      {
+        hasSharedApp: true,
+        appSharedAt: user.appSharedAt
+      }
+    );
+  } catch (error) {
+    logger.error(`Error marking app share: ${error.message}`, { error: error.stack });
+    return errorResponse(res, 500, 'Failed to record app sharing');
+  }
+});
+

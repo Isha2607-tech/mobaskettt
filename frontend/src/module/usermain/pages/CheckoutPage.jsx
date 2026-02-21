@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   MapPin,
   CreditCard,
+  Smartphone,
   Clock,
   ShoppingBag,
   Home,
@@ -45,6 +46,12 @@ export default function CheckoutPage() {
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [addons, setAddons] = useState([]);
   const [loadingAddons, setLoadingAddons] = useState(false);
+  const [availableCoupons, setAvailableCoupons] = useState([]);
+  const [loadingCoupons, setLoadingCoupons] = useState(false);
+  const [couponCodeInput, setCouponCodeInput] = useState("");
+  const [appliedCouponCode, setAppliedCouponCode] = useState("");
+  const [couponApplying, setCouponApplying] = useState(false);
+  const [showAllCoupons, setShowAllCoupons] = useState(false);
   const [loadingPricing, setLoadingPricing] = useState(false);
   const [calculatedPricing, setCalculatedPricing] = useState(null);
   const [feeSettings, setFeeSettings] = useState({
@@ -102,6 +109,7 @@ export default function CheckoutPage() {
     Boolean(orderEditSession?.orderRouteId) &&
     (!orderEditSession?.restaurantId ||
       String(orderEditSession.restaurantId) === String(restaurantId || ""));
+  const hasSharedApp = Boolean(userProfile?.hasSharedApp || userProfile?.appSharedAt);
 
   useEffect(() => {
     const incomingSession = location.state?.orderEditSession;
@@ -480,6 +488,64 @@ export default function CheckoutPage() {
   }, [restaurantId]);
 
   useEffect(() => {
+    const fetchAvailableCoupons = async () => {
+      if (!restaurantId || foodItems.length === 0) {
+        setAvailableCoupons([]);
+        return;
+      }
+
+      try {
+        setLoadingCoupons(true);
+        const uniqueItemIds = Array.from(
+          new Set(
+            foodItems
+              .map((item) => String(item.id || item._id || item.itemId || "").trim())
+              .filter(Boolean),
+          ),
+        );
+
+        const responses = await Promise.all(
+          uniqueItemIds.map((itemId) =>
+            restaurantAPI.getCouponsByItemIdPublic(String(restaurantId), itemId).catch(() => null),
+          ),
+        );
+
+        const couponMap = new Map();
+        responses.forEach((response) => {
+          const coupons = response?.data?.data?.coupons || [];
+          coupons.forEach((coupon) => {
+            const customerGroup = String(coupon?.customerGroup || "all").toLowerCase();
+            const isEligibleCustomerGroup =
+              customerGroup === "all" || (customerGroup === "shared" && hasSharedApp);
+            if (!isEligibleCustomerGroup) return;
+            const code = String(coupon?.couponCode || "").trim().toUpperCase();
+            if (!code || couponMap.has(code)) return;
+            couponMap.set(code, {
+              code,
+              discountPercentage: Number(coupon?.discountPercentage || 0),
+            });
+          });
+        });
+
+        setAvailableCoupons(Array.from(couponMap.values()));
+      } catch (error) {
+        console.error("Failed to fetch available coupons:", error);
+        setAvailableCoupons([]);
+      } finally {
+        setLoadingCoupons(false);
+      }
+    };
+
+    fetchAvailableCoupons();
+  }, [foodItems, hasSharedApp, restaurantId]);
+
+  useEffect(() => {
+    if (availableCoupons.length <= 4 && showAllCoupons) {
+      setShowAllCoupons(false);
+    }
+  }, [availableCoupons, showAllCoupons]);
+
+  useEffect(() => {
     const fetchPublicFeeSettings = async () => {
       try {
         const response = await adminAPI.getPublicFeeSettings("mofood");
@@ -528,7 +594,7 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     const fetchPricingPreview = async () => {
-      if (!restaurantId || !selectedAddress || foodItems.length === 0) {
+      if (!restaurantId || foodItems.length === 0) {
         setCalculatedPricing(null);
         return;
       }
@@ -548,7 +614,8 @@ export default function CheckoutPage() {
         const response = await orderAPI.calculateOrder({
           items: previewItems,
           restaurantId,
-          deliveryAddress: selectedAddress,
+          deliveryAddress: selectedAddress || undefined,
+          couponCode: appliedCouponCode || undefined,
           deliveryFleet: "standard",
           platform: "mofood",
         });
@@ -564,7 +631,7 @@ export default function CheckoutPage() {
     };
 
     fetchPricingPreview();
-  }, [foodItems, restaurantId, selectedAddress]);
+  }, [appliedCouponCode, foodItems, restaurantId, selectedAddress]);
 
   const getRangeBasedDeliveryFee = (subtotal, ranges = [], fallback = 25) => {
     if (!Array.isArray(ranges) || ranges.length === 0) return Number(fallback || 0);
@@ -631,6 +698,7 @@ export default function CheckoutPage() {
   }, [calculatedPricing, feeSettings, foodItems, selectedAddress]);
 
   const hasSufficientWalletBalance = walletBalance >= orderSummary.total;
+  const visibleCoupons = showAllCoupons ? availableCoupons : availableCoupons.slice(0, 4);
 
   const buildOrderItems = () =>
     foodItems.map((item) => ({
@@ -668,6 +736,60 @@ export default function CheckoutPage() {
 
     scheduledAt.setHours(hours, minutes, 0, 0);
     return scheduledAt;
+  };
+
+  const handleApplyCoupon = async (couponCodeValue = null) => {
+    const normalizedCode = String(couponCodeValue ?? couponCodeInput)
+      .trim()
+      .toUpperCase();
+
+    if (!normalizedCode) {
+      toast.error("Enter a coupon code.");
+      return;
+    }
+
+    if (!restaurantId || foodItems.length === 0) {
+      toast.error("No eligible items for coupon.");
+      return;
+    }
+
+    try {
+      setCouponApplying(true);
+      const items = buildOrderItems();
+      const response = await orderAPI.calculateOrder({
+        items,
+        restaurantId,
+        deliveryAddress: selectedAddress || undefined,
+        couponCode: normalizedCode,
+        deliveryFleet: "standard",
+        platform: "mofood",
+      });
+
+      const pricing = response?.data?.data?.pricing || null;
+      const appliedCode = String(pricing?.appliedCoupon?.code || "")
+        .trim()
+        .toUpperCase();
+
+      if (appliedCode && appliedCode === normalizedCode) {
+        setAppliedCouponCode(appliedCode);
+        setCouponCodeInput(appliedCode);
+        setCalculatedPricing(pricing);
+        toast.success(`Coupon ${appliedCode} applied.`);
+      } else {
+        toast.error("Coupon is invalid or not eligible for this order.");
+      }
+    } catch (error) {
+      console.error("Failed to apply coupon:", error);
+      toast.error(error?.response?.data?.message || "Failed to apply coupon.");
+    } finally {
+      setCouponApplying(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCouponCode("");
+    setCouponCodeInput("");
+    toast.success("Coupon removed.");
   };
 
   const handleProceedToPayment = async () => {
@@ -845,6 +967,7 @@ export default function CheckoutPage() {
         items,
         restaurantId,
         deliveryAddress: selectedAddress,
+        couponCode: appliedCouponCode || undefined,
         deliveryFleet: "standard",
         platform: "mofood",
       });
@@ -858,6 +981,8 @@ export default function CheckoutPage() {
           ? "cash"
           : paymentMethod === "wallet"
             ? "wallet"
+            : paymentMethod === "upi"
+              ? "razorpay"
             : "razorpay";
 
       const orderPayload = {
@@ -870,6 +995,7 @@ export default function CheckoutPage() {
         note: "[MoFood] Order from user checkout",
         sendCutlery: false,
         paymentMethod: backendPaymentMethod,
+        couponCode: appliedCouponCode || undefined,
         zoneId: zoneId || undefined,
         deliveryOption: deliveryType === "scheduled" ? "scheduled" : "now",
         scheduledFor:
@@ -1191,6 +1317,83 @@ export default function CheckoutPage() {
         </div>
       </div>
 
+      <div className="px-4 mb-4">
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-orange-100">
+          <h3 className="text-sm font-bold text-gray-900 mb-3">Apply Coupon</h3>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={couponCodeInput}
+              onChange={(event) => setCouponCodeInput(String(event.target.value || "").toUpperCase())}
+              placeholder="Enter coupon code"
+              className="h-10 flex-1 rounded-lg border border-gray-200 px-3 text-sm"
+            />
+            {appliedCouponCode ? (
+              <Button
+                type="button"
+                onClick={handleRemoveCoupon}
+                className="h-10 bg-gray-200 hover:bg-gray-300 text-gray-900 px-4"
+              >
+                Remove
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                onClick={() => handleApplyCoupon()}
+                disabled={couponApplying}
+                className="h-10 bg-[#ff8100] hover:bg-[#e67300] text-white px-4"
+              >
+                {couponApplying ? "Applying..." : "Apply"}
+              </Button>
+            )}
+          </div>
+
+          {appliedCouponCode ? (
+            <p className="mt-2 text-xs font-medium text-green-600">
+              Applied: {appliedCouponCode}
+            </p>
+          ) : null}
+
+          <div className="mt-3">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              Available coupons
+            </p>
+            {loadingCoupons ? (
+              <p className="text-xs text-gray-500">Loading coupons...</p>
+            ) : availableCoupons.length > 0 ? (
+              <>
+                <div className="flex flex-wrap gap-2">
+                  {visibleCoupons.map((coupon) => (
+                    <button
+                      key={coupon.code}
+                      type="button"
+                      onClick={() => handleApplyCoupon(coupon.code)}
+                      className="px-3 py-1.5 rounded-full border border-orange-200 bg-orange-50 text-xs font-semibold text-orange-700 hover:bg-orange-100"
+                    >
+                      {coupon.code}
+                      {coupon.discountPercentage > 0 ? ` (${coupon.discountPercentage}% OFF)` : ""}
+                    </button>
+                  ))}
+                </div>
+                {availableCoupons.length > 4 ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllCoupons((prev) => !prev)}
+                    className="mt-2 text-xs font-semibold text-[#ff8100] hover:text-[#e67300]"
+                  >
+                    {showAllCoupons
+                      ? "Show less"
+                      : `Show all (${availableCoupons.length})`}
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <p className="text-xs text-gray-500">No coupons available for current cart items.</p>
+            )}
+          </div>
+        </div>
+      </div>
+
       {addons.length > 0 && (
         <div className="px-4 mb-4">
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-orange-100">
@@ -1405,6 +1608,23 @@ export default function CheckoutPage() {
                 )}
               </button>
               <button
+                onClick={() => setPaymentMethod("upi")}
+                className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${
+                  paymentMethod === "upi"
+                    ? "border-[#ff8100] bg-[#ff8100]/10"
+                    : "border-gray-200 bg-white"
+                }`}
+              >
+                <Smartphone
+                  className={`w-5 h-5 ${paymentMethod === "upi" ? "text-[#ff8100]" : "text-gray-400"}`}
+                />
+                <span
+                  className={`text-sm font-medium ${paymentMethod === "upi" ? "text-[#ff8100]" : "text-gray-700"}`}
+                >
+                  UPI (Razorpay)
+                </span>
+              </button>
+              <button
                 onClick={() => setPaymentMethod("cash")}
                 className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${
                   paymentMethod === "cash"
@@ -1443,6 +1663,8 @@ export default function CheckoutPage() {
               ? "Place Order"
               : paymentMethod === "wallet"
                 ? "Pay via Wallet"
+                : paymentMethod === "upi"
+                  ? "Pay via UPI"
               : "Proceed to Payment"}
         </Button>
       </div>

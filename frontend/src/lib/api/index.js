@@ -140,6 +140,11 @@ export const userAPI = {
     return apiClient.put(API_ENDPOINTS.USER.PROFILE, data);
   },
 
+  // Mark app shared by user (used for shared-user coupons)
+  markAppShared: () => {
+    return apiClient.post('/user/profile/share-app');
+  },
+
   // Upload profile image
   uploadProfileImage: (file) => {
     const formData = new FormData();
@@ -1152,7 +1157,24 @@ export const adminAPI = {
 
   // Get all offers (with restaurant and dish details)
   getAllOffers: (params = {}) => {
-    return apiClient.get(API_ENDPOINTS.ADMIN.OFFERS, { params });
+    return apiClient.get(API_ENDPOINTS.ADMIN.OFFERS, {
+      params: {
+        ...params,
+        platform: params.platform || getAdminPlatform(),
+      },
+    });
+  },
+  createOffer: (payload) => {
+    return apiClient.post(API_ENDPOINTS.ADMIN.OFFERS, {
+      ...payload,
+      platform: payload?.platform || getAdminPlatform(),
+    });
+  },
+  updateOffer: (id, payload) => {
+    return apiClient.put(`${API_ENDPOINTS.ADMIN.OFFERS}/${id}`, {
+      ...payload,
+      platform: payload?.platform || getAdminPlatform(),
+    });
   },
 
   // Restaurant Commission Management

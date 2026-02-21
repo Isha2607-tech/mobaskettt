@@ -147,6 +147,14 @@ const userSchema = new mongoose.Schema({
     startDate: Date,
     endDate: Date
   },
+  hasSharedApp: {
+    type: Boolean,
+    default: false
+  },
+  appSharedAt: {
+    type: Date,
+    default: null
+  },
   currentLocation: {
     latitude: {
       type: Number

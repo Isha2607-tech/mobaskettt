@@ -2110,18 +2110,30 @@ export const getAllOffers = asyncHandler(async (req, res) => {
       limit = 50,
       search,
       status,
-      restaurantId
+      restaurantId,
+      platform
     } = req.query;
+    const requestedPlatform = platform === 'mogrocery' ? 'mogrocery' : 'mofood';
+    const platformRestaurantQuery =
+      requestedPlatform === 'mogrocery'
+        ? { platform: 'mogrocery' }
+        : { $or: [{ platform: 'mofood' }, { platform: { $exists: false } }] };
+    const eligibleRestaurants = await Restaurant.find(platformRestaurantQuery).select('_id').lean();
+    const eligibleRestaurantIds = eligibleRestaurants.map((restaurant) => restaurant._id);
 
     // Build query
-    const query = {};
+    const query = {
+      restaurant: { $in: eligibleRestaurantIds }
+    };
     
     if (status) {
       query.status = status;
     }
     
     if (restaurantId) {
-      query.restaurant = restaurantId;
+      query.restaurant = {
+        $in: eligibleRestaurantIds.filter((id) => String(id) === String(restaurantId))
+      };
     }
 
     // Calculate pagination
@@ -2168,6 +2180,10 @@ export const getAllOffers = asyncHandler(async (req, res) => {
             discountPercentage: item.discountPercentage || 0,
             originalPrice: item.originalPrice || 0,
             discountedPrice: item.discountedPrice || 0,
+            customerGroup: offer.customerGroup || 'all',
+            minOrderValue: offer.minOrderValue || 0,
+            maxLimit: offer.maxLimit ?? null,
+            showAtCheckout: offer.showAtCheckout !== false,
             status: offer.status || 'active',
             startDate: offer.startDate || null,
             endDate: offer.endDate || null,
@@ -2197,6 +2213,342 @@ export const getAllOffers = asyncHandler(async (req, res) => {
   } catch (error) {
     logger.error(`Error fetching offers: ${error.message}`, { error: error.stack });
     return errorResponse(res, 500, 'Failed to fetch offers');
+  }
+});
+
+/**
+ * Create coupon offer(s) for selected restaurants or all restaurants
+ * POST /api/admin/offers
+ */
+export const createOffer = asyncHandler(async (req, res) => {
+  try {
+    const {
+      couponCode,
+      discountPercentage,
+      platform = 'mofood',
+      customerGroup = 'all',
+      restaurantScope = 'selected',
+      restaurantIds = [],
+      minOrderValue = 0,
+      maxLimit = null,
+      showAtCheckout = true,
+      startDate = null,
+      endDate = null
+    } = req.body || {};
+
+    const normalizedCode = String(couponCode || '').trim().toUpperCase();
+    const parsedDiscountPercentage = Number(discountPercentage);
+    const parsedMinOrderValue = Math.max(0, Number(minOrderValue) || 0);
+    const parsedMaxLimit = maxLimit === null || maxLimit === undefined || maxLimit === ''
+      ? null
+      : Math.max(0, Number(maxLimit) || 0);
+
+    if (!normalizedCode) {
+      return errorResponse(res, 400, 'Coupon code is required');
+    }
+
+    if (!Number.isFinite(parsedDiscountPercentage) || parsedDiscountPercentage <= 0 || parsedDiscountPercentage > 100) {
+      return errorResponse(res, 400, 'Discount percentage must be between 1 and 100');
+    }
+
+    if (!['mofood', 'mogrocery'].includes(String(platform))) {
+      return errorResponse(res, 400, 'platform must be "mofood" or "mogrocery"');
+    }
+
+    if (!['all', 'new', 'shared'].includes(customerGroup)) {
+      return errorResponse(res, 400, 'customerGroup must be "all", "new", or "shared"');
+    }
+
+    if (!['all', 'selected'].includes(restaurantScope)) {
+      return errorResponse(res, 400, 'restaurantScope must be "all" or "selected"');
+    }
+
+    const parsedStartDate = startDate ? new Date(startDate) : new Date();
+    const parsedEndDate = endDate ? new Date(endDate) : null;
+    if (Number.isNaN(parsedStartDate.getTime())) {
+      return errorResponse(res, 400, 'Invalid startDate');
+    }
+    if (parsedEndDate && Number.isNaN(parsedEndDate.getTime())) {
+      return errorResponse(res, 400, 'Invalid endDate');
+    }
+    if (parsedEndDate && parsedEndDate < parsedStartDate) {
+      return errorResponse(res, 400, 'endDate must be after startDate');
+    }
+
+    const shouldCreateForBothPlatforms =
+      String(customerGroup) === 'shared' &&
+      String(platform) === 'mofood' &&
+      String(restaurantScope) === 'all';
+
+    const platformRestaurantQuery =
+      shouldCreateForBothPlatforms
+        ? {}
+        : String(platform) === 'mogrocery'
+        ? { platform: 'mogrocery' }
+        : { $or: [{ platform: 'mofood' }, { platform: { $exists: false } }] };
+
+    let targetRestaurants = [];
+    if (restaurantScope === 'all') {
+      targetRestaurants = await Restaurant.find({
+        isActive: true,
+        ...platformRestaurantQuery
+      })
+        .select('_id name restaurantId')
+        .lean();
+    } else {
+      const validIds = (Array.isArray(restaurantIds) ? restaurantIds : [])
+        .filter((id) => mongoose.Types.ObjectId.isValid(String(id)))
+        .map((id) => new mongoose.Types.ObjectId(String(id)));
+
+      if (validIds.length === 0) {
+        return errorResponse(res, 400, 'At least one valid restaurant is required for selected scope');
+      }
+
+      targetRestaurants = await Restaurant.find({
+        _id: { $in: validIds },
+        ...platformRestaurantQuery
+      })
+        .select('_id name restaurantId')
+        .lean();
+    }
+
+    if (targetRestaurants.length === 0) {
+      return errorResponse(res, 400, 'No eligible restaurants/stores found');
+    }
+
+    const created = [];
+    const skipped = [];
+
+    for (const restaurant of targetRestaurants) {
+      const existingCoupon = await Offer.findOne({
+        restaurant: restaurant._id,
+        status: { $in: ['active', 'paused', 'draft', 'expired'] },
+        'items.couponCode': normalizedCode
+      })
+        .select('_id status')
+        .lean();
+
+      if (existingCoupon) {
+        skipped.push({
+          restaurantId: restaurant._id.toString(),
+          restaurantName: restaurant.name || 'Unknown Restaurant',
+          reason: 'Coupon code already exists for this restaurant'
+        });
+        continue;
+      }
+
+      const offer = await Offer.create({
+        restaurant: restaurant._id,
+        goalId: 'increase-value',
+        discountType: 'percentage',
+        items: [
+          {
+            itemId: '__ALL_ITEMS__',
+            itemName: 'All Items',
+            originalPrice: 100,
+            discountPercentage: parsedDiscountPercentage,
+            discountedPrice: Math.max(0, 100 - parsedDiscountPercentage),
+            couponCode: normalizedCode
+          }
+        ],
+        customerGroup,
+        offerPreference: 'all',
+        offerDays: 'all',
+        targetMealtime: 'all',
+        minOrderValue: parsedMinOrderValue,
+        maxLimit: parsedMaxLimit,
+        showAtCheckout: showAtCheckout !== false,
+        status: 'active',
+        startDate: parsedStartDate,
+        endDate: parsedEndDate
+      });
+
+      created.push({
+        offerId: offer._id.toString(),
+        restaurantId: restaurant._id.toString(),
+        restaurantName: restaurant.name || 'Unknown Restaurant',
+        couponCode: normalizedCode
+      });
+    }
+
+    return successResponse(res, 201, 'Coupon offers created successfully', {
+      createdCount: created.length,
+      skippedCount: skipped.length,
+      created,
+      skipped
+    });
+  } catch (error) {
+    logger.error(`Error creating coupon offers: ${error.message}`, { error: error.stack });
+    return errorResponse(res, 500, 'Failed to create coupon offers');
+  }
+});
+
+/**
+ * Update a coupon offer item and offer-level settings
+ * PUT /api/admin/offers/:id
+ */
+export const updateOffer = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      dishId = null,
+      platform,
+      couponCode,
+      discountPercentage,
+      customerGroup,
+      minOrderValue,
+      maxLimit,
+      showAtCheckout,
+      startDate,
+      endDate,
+      status
+    } = req.body || {};
+
+    const offer = await Offer.findById(id);
+    if (!offer) {
+      return errorResponse(res, 404, 'Offer not found');
+    }
+
+    if (platform !== undefined) {
+      if (!['mofood', 'mogrocery'].includes(String(platform))) {
+        return errorResponse(res, 400, 'platform must be "mofood" or "mogrocery"');
+      }
+
+      const linkedRestaurant = await Restaurant.findById(offer.restaurant).select('platform').lean();
+      const offerPlatform = linkedRestaurant?.platform === 'mogrocery' ? 'mogrocery' : 'mofood';
+      if (offerPlatform !== String(platform)) {
+        return errorResponse(res, 404, 'Offer not found for requested platform');
+      }
+    }
+
+    const targetItemIndex = dishId
+      ? offer.items.findIndex((item) => String(item.itemId) === String(dishId))
+      : 0;
+    if (targetItemIndex < 0) {
+      return errorResponse(res, 400, 'Offer item not found for provided dishId');
+    }
+
+    if (customerGroup !== undefined) {
+      if (!['all', 'new', 'shared'].includes(String(customerGroup))) {
+        return errorResponse(res, 400, 'customerGroup must be "all", "new", or "shared"');
+      }
+      offer.customerGroup = String(customerGroup);
+    }
+
+    if (status !== undefined) {
+      const normalizedStatus = String(status);
+      if (!['draft', 'active', 'paused', 'expired', 'cancelled'].includes(normalizedStatus)) {
+        return errorResponse(res, 400, 'Invalid status');
+      }
+      offer.status = normalizedStatus;
+    }
+
+    if (minOrderValue !== undefined) {
+      offer.minOrderValue = Math.max(0, Number(minOrderValue) || 0);
+    }
+
+    if (maxLimit !== undefined) {
+      offer.maxLimit =
+        maxLimit === null || maxLimit === ''
+          ? null
+          : Math.max(0, Number(maxLimit) || 0);
+    }
+
+    if (showAtCheckout !== undefined) {
+      offer.showAtCheckout = Boolean(showAtCheckout);
+    }
+
+    if (startDate !== undefined) {
+      if (!startDate) {
+        offer.startDate = new Date();
+      } else {
+        const parsedStartDate = new Date(startDate);
+        if (Number.isNaN(parsedStartDate.getTime())) {
+          return errorResponse(res, 400, 'Invalid startDate');
+        }
+        offer.startDate = parsedStartDate;
+      }
+    }
+
+    if (endDate !== undefined) {
+      if (!endDate) {
+        offer.endDate = null;
+      } else {
+        const parsedEndDate = new Date(endDate);
+        if (Number.isNaN(parsedEndDate.getTime())) {
+          return errorResponse(res, 400, 'Invalid endDate');
+        }
+        offer.endDate = parsedEndDate;
+      }
+    }
+
+    if (offer.endDate && offer.startDate && offer.endDate < offer.startDate) {
+      return errorResponse(res, 400, 'endDate must be after startDate');
+    }
+
+    const targetItem = offer.items[targetItemIndex];
+
+    if (couponCode !== undefined) {
+      const normalizedCode = String(couponCode || '').trim().toUpperCase();
+      if (!normalizedCode) {
+        return errorResponse(res, 400, 'Coupon code is required');
+      }
+
+      const duplicateCoupon = await Offer.findOne({
+        _id: { $ne: offer._id },
+        restaurant: offer.restaurant,
+        status: { $in: ['active', 'paused', 'draft', 'expired'] },
+        'items.couponCode': normalizedCode
+      })
+        .select('_id')
+        .lean();
+
+      if (duplicateCoupon) {
+        return errorResponse(res, 400, 'Coupon code already exists for this restaurant');
+      }
+
+      targetItem.couponCode = normalizedCode;
+    }
+
+    if (discountPercentage !== undefined) {
+      const parsedDiscount = Number(discountPercentage);
+      if (!Number.isFinite(parsedDiscount) || parsedDiscount <= 0 || parsedDiscount > 100) {
+        return errorResponse(res, 400, 'Discount percentage must be between 1 and 100');
+      }
+
+      const originalPrice = Number(targetItem.originalPrice || 100);
+      targetItem.discountPercentage = parsedDiscount;
+      targetItem.discountedPrice = Math.max(
+        0,
+        Math.round((originalPrice - (originalPrice * parsedDiscount) / 100) * 100) / 100
+      );
+    }
+
+    offer.markModified('items');
+    await offer.save();
+
+    if (showAtCheckout !== undefined && offer.customerGroup === 'shared') {
+      const referenceCouponCode = String(targetItem?.couponCode || '').trim().toUpperCase();
+      if (referenceCouponCode) {
+        await Offer.updateMany(
+          {
+            _id: { $ne: offer._id },
+            customerGroup: 'shared',
+            'items.couponCode': referenceCouponCode
+          },
+          {
+            $set: { showAtCheckout: Boolean(showAtCheckout) }
+          }
+        );
+      }
+    }
+
+    return successResponse(res, 200, 'Offer updated successfully', {
+      offer
+    });
+  } catch (error) {
+    logger.error(`Error updating coupon offer: ${error.message}`, { error: error.stack });
+    return errorResponse(res, 500, 'Failed to update coupon offer');
   }
 });
 
@@ -2885,4 +3237,3 @@ export const getCustomerWalletReport = asyncHandler(async (req, res) => {
     return errorResponse(res, 500, error.message || 'Failed to fetch customer wallet report');
   }
 });
-

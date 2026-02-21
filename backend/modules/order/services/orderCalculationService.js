@@ -6,6 +6,7 @@ import Order from '../models/Order.js';
 import GroceryPlan from '../../grocery/models/GroceryPlan.js';
 import GroceryPlanOffer from '../../grocery/models/GroceryPlanOffer.js';
 import GroceryProduct from '../../grocery/models/GroceryProduct.js';
+import User from '../../auth/models/User.js';
 import mongoose from 'mongoose';
 
 /** Ray-casting: is (lat, lng) inside polygon coordinates [{ latitude, longitude }, ...] */
@@ -609,6 +610,7 @@ export const calculateOrderPricing = async ({
           const offer = await Offer.findOne({
             restaurant: restaurantObjectId,
             status: 'active',
+            $or: [{ showAtCheckout: true }, { showAtCheckout: { $exists: false } }],
             'items.couponCode': couponCode,
             startDate: { $lte: now },
             $or: [
@@ -622,29 +624,71 @@ export const calculateOrderPricing = async ({
             const couponItem = offer.items.find(item => item.couponCode === couponCode);
             
             if (couponItem) {
+              // "new" coupons are only valid for first-time customers (no delivered orders yet).
+              let customerGroupEligible = true;
+              if (offer.customerGroup === 'new') {
+                if (!userId) {
+                  customerGroupEligible = false;
+                } else {
+                  const deliveredOrders = await Order.countDocuments({
+                    status: 'delivered',
+                    $or: [
+                      { userId: userId },
+                      ...(mongoose.Types.ObjectId.isValid(String(userId))
+                        ? [{ userId: new mongoose.Types.ObjectId(String(userId)) }]
+                        : [])
+                    ]
+                  });
+                  customerGroupEligible = deliveredOrders === 0;
+                }
+              } else if (offer.customerGroup === 'shared') {
+                if (!userId) {
+                  customerGroupEligible = false;
+                } else {
+                  const sharedUser = await User.findOne({
+                    _id: mongoose.Types.ObjectId.isValid(String(userId))
+                      ? new mongoose.Types.ObjectId(String(userId))
+                      : userId,
+                    hasSharedApp: true
+                  })
+                    .select('_id')
+                    .lean();
+                  customerGroupEligible = Boolean(sharedUser);
+                }
+              }
+
               // Check if coupon is valid for items in cart
               const cartItemIds = items.map(item => item.itemId);
-              const isValidForCart = couponItem.itemId && cartItemIds.includes(couponItem.itemId);
+              const isAllItemsCoupon = couponItem.itemId === '__ALL_ITEMS__';
+              const isValidForCart = isAllItemsCoupon || (couponItem.itemId && cartItemIds.includes(couponItem.itemId));
               
               // Check minimum order value
               const minOrderMet = !offer.minOrderValue || subtotal >= offer.minOrderValue;
               
-              if (isValidForCart && minOrderMet) {
+              if (isValidForCart && minOrderMet && customerGroupEligible) {
                 // Calculate discount based on offer type
-                const itemInCart = items.find(item => item.itemId === couponItem.itemId);
-                if (itemInCart) {
-                  const itemQuantity = itemInCart.quantity || 1;
-                  
-                  // Calculate discount per item
-                  const discountPerItem = couponItem.originalPrice - couponItem.discountedPrice;
-                  
-                  // Apply discount to all quantities of this item
-                  discount = Math.round(discountPerItem * itemQuantity);
-                  
-                  // Ensure discount doesn't exceed item subtotal
-                  const itemSubtotal = (itemInCart.price || 0) * itemQuantity;
-                  discount = Math.min(discount, itemSubtotal);
+                const maxDiscountLimit = offer.maxLimit == null ? Infinity : Math.max(0, Number(offer.maxLimit) || 0);
+
+                if (isAllItemsCoupon) {
+                  discount = Math.round((subtotal * (Number(couponItem.discountPercentage) || 0)) / 100);
+                  discount = Math.min(discount, subtotal);
+                } else {
+                  const itemInCart = items.find(item => item.itemId === couponItem.itemId);
+                  if (itemInCart) {
+                    const itemQuantity = itemInCart.quantity || 1;
+                    
+                    // Calculate discount per item
+                    const discountPerItem = couponItem.originalPrice - couponItem.discountedPrice;
+                    
+                    // Apply discount to all quantities of this item
+                    discount = Math.round(discountPerItem * itemQuantity);
+                    
+                    // Ensure discount doesn't exceed item subtotal
+                    const itemSubtotal = (itemInCart.price || 0) * itemQuantity;
+                    discount = Math.min(discount, itemSubtotal);
+                  }
                 }
+                discount = Math.min(discount, maxDiscountLimit);
                 
                 appliedCoupon = {
                   code: couponCode,
@@ -752,4 +796,3 @@ export const calculateOrderPricing = async ({
     throw new Error(`Failed to calculate order pricing: ${error.message}`);
   }
 };
-

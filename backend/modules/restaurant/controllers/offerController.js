@@ -201,9 +201,10 @@ export const getCouponsByItemId = asyncHandler(async (req, res) => {
   const allOffers = await Offer.find({
     restaurant: restaurantId,
     status: 'active',
-    'items.itemId': itemId,
+    $or: [{ showAtCheckout: true }, { showAtCheckout: { $exists: false } }],
+    'items.itemId': { $in: [itemId, '__ALL_ITEMS__'] },
   })
-    .select('items discountType minOrderValue startDate endDate status')
+    .select('items discountType customerGroup minOrderValue startDate endDate status showAtCheckout')
     .lean();
 
   console.log(`[COUPONS] Found ${allOffers.length} active offers with itemId ${itemId}`);
@@ -237,12 +238,13 @@ export const getCouponsByItemId = asyncHandler(async (req, res) => {
     console.log(`[COUPONS] Processing offer ${offer._id} with ${offer.items?.length || 0} items`);
     offer.items.forEach((item, idx) => {
       console.log(`[COUPONS]   Item ${idx}: itemId="${item.itemId}", searching for="${itemId}", match=${item.itemId === itemId}`);
-      if (item.itemId === itemId) {
+      if (item.itemId === itemId || item.itemId === '__ALL_ITEMS__') {
         const coupon = {
           couponCode: item.couponCode,
           discountPercentage: item.discountPercentage,
           originalPrice: item.originalPrice,
           discountedPrice: item.discountedPrice,
+          customerGroup: offer.customerGroup || 'all',
           minOrderValue: offer.minOrderValue || 0,
           discountType: offer.discountType,
           startDate: offer.startDate,
@@ -315,9 +317,10 @@ export const getCouponsByItemIdPublic = asyncHandler(async (req, res) => {
   const allOffers = await Offer.find({
     restaurant: restaurantObjectId,
     status: 'active',
-    'items.itemId': itemId,
+    $or: [{ showAtCheckout: true }, { showAtCheckout: { $exists: false } }],
+    'items.itemId': { $in: [itemId, '__ALL_ITEMS__'] },
   })
-    .select('items discountType minOrderValue startDate endDate status')
+    .select('items discountType customerGroup minOrderValue startDate endDate status showAtCheckout')
     .lean();
 
   console.log(`[COUPONS-PUBLIC] Found ${allOffers.length} active offers with itemId ${itemId} for restaurant ${restaurantId}`);
@@ -341,12 +344,13 @@ export const getCouponsByItemIdPublic = asyncHandler(async (req, res) => {
   const coupons = [];
   validOffers.forEach(offer => {
     offer.items.forEach(item => {
-      if (item.itemId === itemId) {
+      if (item.itemId === itemId || item.itemId === '__ALL_ITEMS__') {
         coupons.push({
           couponCode: item.couponCode,
           discountPercentage: item.discountPercentage,
           originalPrice: item.originalPrice,
           discountedPrice: item.discountedPrice,
+          customerGroup: offer.customerGroup || 'all',
           minOrderValue: offer.minOrderValue || 0,
           discountType: offer.discountType,
           startDate: offer.startDate,

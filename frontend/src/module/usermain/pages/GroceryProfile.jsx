@@ -28,12 +28,12 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useProfile } from "@/module/user/context/ProfileContext";
 import { clearModuleAuth } from "@/lib/utils/auth";
-import { authAPI } from "@/lib/api";
+import { authAPI, userAPI } from "@/lib/api";
 import { toast } from "sonner";
 
 const GroceryProfile = () => {
   const navigate = useNavigate();
-  const { userProfile, vegMode, setVegMode } = useProfile();
+  const { userProfile, vegMode, setVegMode, updateUserProfile } = useProfile();
 
   const handleLogout = async () => {
     try {
@@ -58,12 +58,27 @@ const GroceryProfile = () => {
     try {
       if (navigator.share) {
         await navigator.share(payload);
+        try {
+          await userAPI.markAppShared();
+          updateUserProfile({ hasSharedApp: true, appSharedAt: new Date().toISOString() });
+          toast.success("Thanks for sharing! Shared-user coupons are now unlocked.");
+        } catch (rewardError) {
+          console.error("Share reward recording failed:", rewardError);
+          toast.success("Thanks for sharing the app.");
+        }
         return;
       }
 
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(shareUrl);
-        toast.success("App link copied");
+        try {
+          await userAPI.markAppShared();
+          updateUserProfile({ hasSharedApp: true, appSharedAt: new Date().toISOString() });
+          toast.success("App link copied. Shared-user coupons are now unlocked.");
+        } catch (rewardError) {
+          console.error("Share reward recording failed:", rewardError);
+          toast.success("App link copied");
+        }
         return;
       }
     } catch (error) {

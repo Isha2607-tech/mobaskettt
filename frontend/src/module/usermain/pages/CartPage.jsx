@@ -5,11 +5,9 @@ import {
   ShoppingBag,
   Minus,
   Plus,
-  ChevronRight,
   Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 
 import { toast } from "sonner";
 import DeliveryScheduler from "@/components/DeliveryScheduler";
@@ -47,7 +45,6 @@ export default function CartPage() {
     (!orderEditSession?.restaurantId ||
       String(orderEditSession.restaurantId) === String(restaurantId || ""));
 
-  const [discountCode, setDiscountCode] = useState("");
 
   useEffect(() => {
     const tick = () => {
@@ -280,29 +277,6 @@ export default function CartPage() {
                 </div>
               </div>
             ))}
-          </div>
-
-          {/* Discount Code Section */}
-          <div className="px-4 mb-4">
-            <div className="bg-white rounded-xl p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-900">
-                  Discount Code
-                </span>
-                <div className="flex-1 max-w-[200px] ml-4">
-                  <div className="relative">
-                    <Input
-                      type="text"
-                      placeholder="Enter or choose a code"
-                      value={discountCode}
-                      onChange={(e) => setDiscountCode(e.target.value)}
-                      className="pr-8 h-9 bg-gray-50 border-gray-200 rounded-lg text-sm"
-                    />
-                    <ChevronRight className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* Complete your meal with add-ons */}

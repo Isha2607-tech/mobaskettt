@@ -234,6 +234,7 @@ export default function AdminRouter() {
         <Route path="campaigns/basic" element={<BasicCampaign />} />
         <Route path="campaigns/food" element={<FoodCampaign />} />
         <Route path="coupons" element={<Coupons />} />
+        <Route path="grocery-coupons" element={<Coupons platformOverride="mogrocery" />} />
         <Route path="cashback" element={<Cashback />} />
         <Route path="banners" element={<Banners />} />
         <Route path="promotional-banner" element={<PromotionalBanner />} />

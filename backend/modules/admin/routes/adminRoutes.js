@@ -25,6 +25,8 @@ import {
   approveGroceryStore,
   rejectGroceryStore,
   getAllOffers,
+  createOffer,
+  updateOffer,
   getRestaurantAnalytics,
   getCustomerWalletReport
 } from '../controllers/adminController.js';
@@ -444,6 +446,8 @@ router.patch('/grocery/subcategory-requests/:id/reject', rejectSubcategoryReques
 
 // Offers Management
 router.get('/offers', getAllOffers);
+router.post('/offers', createOffer);
+router.put('/offers/:id', updateOffer);
 
 // Zone Management
 router.use('/zones', zoneRoutes);

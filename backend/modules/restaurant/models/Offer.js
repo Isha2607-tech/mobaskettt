@@ -37,7 +37,7 @@ const offerSchema = new mongoose.Schema(
     // Offer settings
     customerGroup: {
       type: String,
-      enum: ['all', 'new'],
+      enum: ['all', 'new', 'shared'],
       default: 'all',
     },
     offerPreference: {
@@ -69,6 +69,10 @@ const offerSchema = new mongoose.Schema(
     maxLimit: {
       type: Number,
       default: null,
+    },
+    showAtCheckout: {
+      type: Boolean,
+      default: true,
     },
     // Status
     status: {
