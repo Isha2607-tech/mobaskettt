@@ -38,8 +38,6 @@ const isStepComplete = (stepData, stepNumber) => {
   if (stepNumber === 3) {
     const hasPanImage = stepData.pan?.image && 
       (stepData.pan.image.url || typeof stepData.pan.image === 'string')
-    const hasFssaiImage = stepData.fssai?.image && 
-      (stepData.fssai.image.url || typeof stepData.fssai.image === 'string')
     // GST image is required only if GST is registered
     const hasGstImage = !stepData.gst?.isRegistered || 
       (stepData.gst?.image && (stepData.gst.image.url || typeof stepData.gst.image === 'string'))
@@ -49,7 +47,6 @@ const isStepComplete = (stepData, stepNumber) => {
       stepData.pan?.nameOnPan &&
       hasPanImage &&
       stepData.fssai?.registrationNumber &&
-      hasFssaiImage &&
       hasGstImage &&
       stepData.bank?.accountNumber &&
       stepData.bank?.ifscCode &&

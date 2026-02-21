@@ -534,10 +534,8 @@ export default function RestaurantOnboarding() {
     if (!step3.fssaiExpiry?.trim()) {
       errors.push("FSSAI expiry date is required")
     }
-    // Validate FSSAI image - must be a File or existing URL
-    if (!step3.fssaiImage) {
-      errors.push("FSSAI image is required")
-    } else {
+    // Validate FSSAI image only when provided (optional field)
+    if (step3.fssaiImage) {
       const isValidFssaiImage = 
         step3.fssaiImage instanceof File ||
         (step3.fssaiImage?.url && typeof step3.fssaiImage.url === 'string') ||
@@ -872,11 +870,6 @@ export default function RestaurantOnboarding() {
           fssaiImageUpload = { url: step3.fssaiImage }
         }
         
-        // Verify FSSAI image is present
-        if (!fssaiImageUpload || !fssaiImageUpload.url) {
-          throw new Error('FSSAI image must be uploaded')
-        }
-
         const payload = {
           step3: {
             pan: {
@@ -894,7 +887,7 @@ export default function RestaurantOnboarding() {
             fssai: {
               registrationNumber: step3.fssaiNumber || "",
               expiryDate: step3.fssaiExpiry || null,
-              image: fssaiImageUpload,
+              image: fssaiImageUpload || null,
             },
             bank: {
               accountNumber: step3.accountNumber || "",
@@ -1681,5 +1674,4 @@ export default function RestaurantOnboarding() {
     </LocalizationProvider>
   )
 }
-
 
