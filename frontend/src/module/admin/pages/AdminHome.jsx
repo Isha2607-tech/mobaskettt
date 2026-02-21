@@ -184,7 +184,7 @@ export default function AdminHome() {
         </div>
 
         <div className="space-y-6 px-6 py-6">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid items-start gap-3 md:grid-cols-2 lg:grid-cols-4">
             <MetricCard
               title="Gross revenue"
               value={`₹${revenueTotal.toLocaleString("en-IN")}`}
@@ -500,15 +500,15 @@ export default function AdminHome() {
 function MetricCard({ title, value, helper, icon, accent }) {
   return (
     <Card className="overflow-hidden border-neutral-200 bg-white p-0">
-      <CardContent className="relative flex flex-col gap-2 px-4 pb-4 pt-4">
+      <CardContent className="relative flex flex-col gap-1 px-3 py-2.5">
         <div className={`absolute inset-0 ${accent} `} />
         <div className="relative flex items-center justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">{title}</p>
-            <p className="text-2xl font-semibold text-neutral-900">{value}</p>
-            <p className="text-xs text-neutral-500">{helper}</p>
+            <p className="truncate text-[10px] uppercase tracking-[0.12em] leading-tight text-neutral-500">{title}</p>
+            <p className="text-lg font-semibold text-neutral-900">{value}</p>
+            <p className="truncate text-[10px] leading-tight text-neutral-500">{helper}</p>
           </div>
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-neutral-100 ring-1 ring-neutral-200">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-neutral-100 ring-1 ring-neutral-200 [&>svg]:h-4 [&>svg]:w-4">
             {icon}
           </div>
         </div>

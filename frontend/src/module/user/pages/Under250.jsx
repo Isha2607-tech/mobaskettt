@@ -36,8 +36,6 @@ export default function Under250() {
   const lastScrollY = useRef(0)
   const [categories, setCategories] = useState([])
   const [loadingCategories, setLoadingCategories] = useState(true)
-  const [bannerImage, setBannerImage] = useState(null)
-  const [loadingBanner, setLoadingBanner] = useState(true)
   const [under250Restaurants, setUnder250Restaurants] = useState([])
   const [loadingRestaurants, setLoadingRestaurants] = useState(true)
 
@@ -132,41 +130,27 @@ export default function Under250() {
     return filtered
   }, [under250Restaurants, selectedSort, under30MinsFilter])
 
-  // Fetch under 250 banners from API
-  useEffect(() => {
-    const fetchBanners = async () => {
-      try {
-        setLoadingBanner(true)
-        const response = await api.get('/hero-banners/under-250/public')
-        if (response.data.success && response.data.data.banners && response.data.data.banners.length > 0) {
-          // Use the first banner
-          setBannerImage(response.data.data.banners[0])
-        } else {
-          setBannerImage(null)
-        }
-      } catch (error) {
-        console.error('Error fetching under 250 banners:', error)
-        setBannerImage(null)
-      } finally {
-        setLoadingBanner(false)
-      }
-    }
-
-    fetchBanners()
-  }, [])
-
   // Fetch restaurants with dishes under ₹250 from backend
   useEffect(() => {
     const fetchRestaurantsUnder250 = async () => {
       try {
         setLoadingRestaurants(true)
-        // Optional: Add zoneId if available (for sorting/filtering, but show all restaurants)
-        const response = await restaurantAPI.getRestaurantsUnder250(zoneId)
-        if (response.data.success && response.data.data.restaurants) {
-          setUnder250Restaurants(response.data.data.restaurants)
-        } else {
-          setUnder250Restaurants([])
+        // Backend already returns all restaurants for this page.
+        // Retry without zoneId if cached zone is stale/invalid.
+        let response
+        try {
+          response = await restaurantAPI.getRestaurantsUnder250(zoneId)
+        } catch (err) {
+          const status = err?.response?.status
+          if (status === 400 && zoneId) {
+            response = await restaurantAPI.getRestaurantsUnder250()
+          } else {
+            throw err
+          }
         }
+
+        const restaurants = response?.data?.data?.restaurants
+        setUnder250Restaurants(Array.isArray(restaurants) ? restaurants : [])
       } catch (error) {
         console.error('Error fetching restaurants under 250:', error)
         setUnder250Restaurants([])
@@ -382,29 +366,9 @@ export default function Under250() {
   return (
 
     <div className={`relative min-h-screen bg-white dark:bg-[#0a0a0a] ${shouldShowGrayscale ? 'grayscale opacity-75' : ''}`}>
-      {/* Banner Section with Navbar */}
-      <div className="relative w-full overflow-hidden min-h-[39vh] lg:min-h-[50vh] md:pt-16">
-        {/* Banner Image */}
-        {bannerImage && (
-          <div className="absolute top-0 left-0 right-0 bottom-0 z-0">
-            <OptimizedImage
-              src={bannerImage}
-              alt="Under 250 Banner"
-              className="w-full h-full"
-              objectFit="cover"
-              priority={true}
-              sizes="100vw"
-            />
-          </div>
-        )}
-        {!bannerImage && !loadingBanner && (
-          <div className="absolute top-0 left-0 right-0 bottom-0 z-0 bg-gradient-to-br from-green-100 to-blue-100 dark:from-green-900 dark:to-blue-900" />
-        )}
-
-        {/* Navbar */}
-        <div className="relative z-20 pt-2 sm:pt-3 lg:pt-4">
-          <PageNavbar textColor="black" zIndex={20} showProfile={true} />
-        </div>
+      {/* Navbar */}
+      <div className="relative z-20 pt-2 sm:pt-3 lg:pt-4">
+        <PageNavbar textColor="black" zIndex={20} showProfile={true} />
       </div>
 
       {/* Content Section */}

@@ -275,6 +275,20 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
 
   const [expandedSections, setExpandedSections] = useState(getInitialExpandedState)
 
+  const buildCollapsedSectionsState = () => {
+    const state = {}
+    menuData.forEach((entry) => {
+      if (entry.type === "section") {
+        entry.items.forEach((subItem) => {
+          if (subItem.type === "expandable") {
+            state[subItem.label.toLowerCase().replace(/\s+/g, "")] = false
+          }
+        })
+      }
+    })
+    return state
+  }
+
   // Filter menu items based on search query
   const filteredMenuData = useMemo(() => {
     if (!searchQuery.trim()) {
@@ -380,6 +394,13 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
     }
   }, [expandedSections, platform])
 
+  // Keep dashboard sidebar compact like the target layout
+  useEffect(() => {
+    if (location.pathname === "/admin") {
+      setExpandedSections(buildCollapsedSectionsState())
+    }
+  }, [location.pathname, platform, menuData])
+
   const toggleSection = (sectionKey) => {
     setExpandedSections(prev => ({
       ...prev,
@@ -401,7 +422,7 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
           }}
           className={cn(
             "flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all duration-300 ease-out menu-item-animate text-left",
-            isInSection ? "text-sm font-semibold" : "text-sm",
+            isInSection ? "text-[12px] font-semibold" : "text-[12px]",
             isActive(item.path)
               ? "bg-white/10 text-white border border-white/15 font-semibold"
               : "text-neutral-300 hover:bg-white/5 hover:text-white",
@@ -433,7 +454,7 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
             <button
               onClick={() => toggleSection(sectionKey)}
               className={cn(
-                "w-full flex items-center justify-center px-2 py-2 rounded-lg transition-all duration-300 ease-out text-sm font-medium",
+                "w-full flex items-center justify-center px-2 py-2 rounded-lg transition-all duration-300 ease-out text-[12px] font-medium",
                 "text-white hover:bg-white/5"
               )}
               title={item.label}
@@ -449,7 +470,7 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
           <button
             onClick={() => toggleSection(sectionKey)}
             className={cn(
-              "w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg transition-all duration-300 ease-out text-sm font-medium text-left",
+              "w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg transition-all duration-300 ease-out text-[12px] font-medium text-left",
               "text-white hover:bg-white/5"
             )}
           >
@@ -475,7 +496,7 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
                       }
                     }}
                     className={cn(
-                      "flex items-center gap-2 px-3 py-1.5 rounded-md transition-all duration-300 ease-out text-sm font-normal text-left",
+                      "flex items-center gap-2 px-3 py-1.5 rounded-md transition-all duration-300 ease-out text-[11px] font-normal text-left",
                       isActive(subItem.path, allSubPaths)
                         ? "bg-white/10 text-white font-semibold"
                         : "text-neutral-300 hover:bg-white/5 hover:text-white"
@@ -575,7 +596,7 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
           "transform transition-all duration-300 ease-in-out",
           "lg:translate-x-0",
           isOpen ? "translate-x-0" : "-translate-x-full",
-          isCollapsed ? "w-20" : "w-80"
+          isCollapsed ? "w-20" : "w-72"
         )}
       >
       {/* Header with Logo and Brand */}
@@ -761,7 +782,7 @@ export default function AdminSidebar({ isOpen = false, onClose, onCollapseChange
                 >
                   {!isCollapsed && (
                     <div className="px-3 py-2 mb-2">
-                      <span className="text-neutral-400 font-bold text-sm uppercase tracking-wider text-left">
+                      <span className="text-neutral-400 font-bold text-[11px] uppercase tracking-wider text-left">
                         {item.label}
                       </span>
                     </div>
