@@ -5,6 +5,7 @@ import GroceryProduct from '../models/GroceryProduct.js';
 import GroceryPlan from '../models/GroceryPlan.js';
 import GroceryPlanOffer from '../models/GroceryPlanOffer.js';
 import Order from '../../order/models/Order.js';
+import Zone from '../../admin/models/Zone.js';
 
 const slugify = (value = '') =>
   value
@@ -59,6 +60,35 @@ const normalizePercentage = (value) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 0;
   return Math.min(100, Math.max(0, parsed));
+};
+
+const isPointInZone = (lat, lng, zoneCoordinates = []) => {
+  if (!Array.isArray(zoneCoordinates) || zoneCoordinates.length < 3) return false;
+  let inside = false;
+
+  for (let i = 0, j = zoneCoordinates.length - 1; i < zoneCoordinates.length; j = i++) {
+    const xi = zoneCoordinates[i]?.longitude;
+    const yi = zoneCoordinates[i]?.latitude;
+    const xj = zoneCoordinates[j]?.longitude;
+    const yj = zoneCoordinates[j]?.latitude;
+
+    if (![xi, yi, xj, yj].every(Number.isFinite)) continue;
+
+    const intersect = ((yi > lat) !== (yj > lat)) &&
+      (lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+
+  return inside;
+};
+
+const resolveStoreZoneId = (store, activeZones = []) => {
+  const lat = Number(store?.location?.latitude ?? store?.location?.coordinates?.[1]);
+  const lng = Number(store?.location?.longitude ?? store?.location?.coordinates?.[0]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  const containingZone = activeZones.find((zone) => isPointInZone(lat, lng, zone.coordinates));
+  return containingZone?._id ? containingZone._id.toString() : null;
 };
 
 export const getCategories = async (req, res) => {
@@ -160,10 +190,31 @@ export const getSubcategories = async (req, res) => {
 
 export const getProducts = async (req, res) => {
   try {
-    const { categoryId, subcategoryId, limit, activeOnly = 'true' } = req.query;
+    const { categoryId, subcategoryId, limit, activeOnly = 'true', zoneId } = req.query;
     const filter = {
       approvalStatus: 'approved', // Only show approved products on public /grocery page
     };
+
+    let userZone = null;
+    if (zoneId) {
+      if (!isValidObjectId(zoneId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid zoneId',
+        });
+      }
+      userZone = await Zone.findOne({ _id: zoneId, isActive: true, platform: 'mogrocery' }).lean();
+      if (!userZone) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid or inactive grocery zone. Please detect your zone again.',
+        });
+      }
+    }
+
+    const activeGroceryZones = await Zone.find({ isActive: true, platform: 'mogrocery' })
+      .select('_id coordinates')
+      .lean();
 
     if (activeOnly !== 'false') {
       filter.isActive = true;
@@ -201,7 +252,20 @@ export const getProducts = async (req, res) => {
       query.limit(parsedLimit);
     }
 
-    const products = await query.lean();
+    let products = await query.lean();
+
+    const userZoneId = userZone?._id ? userZone._id.toString() : null;
+    products = products.filter((product) => {
+      const store = product?.storeId;
+      if (!store || typeof store !== 'object') return false;
+      if (store?.isActive === false) return false;
+      if ((store?.platform || 'mogrocery') !== 'mogrocery') return false;
+
+      const storeZoneId = resolveStoreZoneId(store, activeGroceryZones);
+      if (!storeZoneId) return false;
+      if (userZoneId && storeZoneId !== userZoneId) return false;
+      return true;
+    });
 
     return res.status(200).json({
       success: true,
@@ -444,19 +508,49 @@ export const deleteSubcategory = async (req, res) => {
 export const getProductById = async (req, res) => {
   try {
     const { id } = req.params;
+    const { zoneId } = req.query;
     if (!isValidObjectId(id)) {
       return res.status(400).json({ success: false, message: 'Invalid product id' });
+    }
+
+    let userZone = null;
+    if (zoneId) {
+      if (!isValidObjectId(zoneId)) {
+        return res.status(400).json({ success: false, message: 'Invalid zoneId' });
+      }
+      userZone = await Zone.findOne({ _id: zoneId, isActive: true, platform: 'mogrocery' }).lean();
+      if (!userZone) {
+        return res.status(400).json({ success: false, message: 'Invalid or inactive grocery zone. Please detect your zone again.' });
+      }
     }
 
     const product = await GroceryProduct.findById(id)
       .populate('category', 'name slug section')
       .populate('subcategories', 'name slug')
       .populate('subcategory', 'name slug')
-      .populate('storeId', 'name location address')
+      .populate('storeId', 'name location address platform isActive')
       .lean();
 
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
+    }
+
+    const activeGroceryZones = await Zone.find({ isActive: true, platform: 'mogrocery' })
+      .select('_id coordinates')
+      .lean();
+
+    if (!product?.storeId || product.storeId.isActive === false || (product.storeId.platform && product.storeId.platform !== 'mogrocery')) {
+      return res.status(404).json({ success: false, message: 'Product not available in active stores' });
+    }
+
+    const storeZoneId = resolveStoreZoneId(product?.storeId, activeGroceryZones);
+    if (!storeZoneId) {
+      return res.status(404).json({ success: false, message: 'Product not available in service zones' });
+    }
+
+    const userZoneId = userZone?._id ? userZone._id.toString() : null;
+    if (userZoneId && storeZoneId !== userZoneId) {
+      return res.status(403).json({ success: false, message: 'This product is not available in your zone' });
     }
 
     return res.status(200).json({ success: true, data: product });

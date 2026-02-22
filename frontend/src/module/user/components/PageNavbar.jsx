@@ -4,6 +4,7 @@ import { ChevronDown, ShoppingCart, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "../hooks/useLocation";
 import { useCart } from "../context/CartContext";
+import { useProfile } from "../context/ProfileContext";
 import { useLocationSelector } from "./UserLayout";
 import { FaLocationDot } from "react-icons/fa6";
 import {
@@ -21,6 +22,7 @@ export default function PageNavbar({
 }) {
   const { location, loading, requestLocation } = useLocation();
   const { getFoodCartCount } = useCart();
+  const { userProfile } = useProfile();
   const { openLocationSelector } = useLocationSelector();
   const cartCount = getFoodCartCount();
   const [logoUrl, setLogoUrl] = useState(null);
@@ -1229,6 +1231,17 @@ export default function PageNavbar({
     textColor === "white" ? "ring-white/30" : "ring-gray-800/30";
 
   const zIndexClass = zIndex === 50 ? "z-50" : "z-20";
+  const profileImageUrl =
+    (typeof userProfile?.profileImage === "string" &&
+      userProfile.profileImage.trim()) ||
+    (typeof userProfile?.profileImage?.url === "string" &&
+      userProfile.profileImage.url.trim()) ||
+    "";
+  const profileInitial =
+    userProfile?.name?.trim()?.charAt(0)?.toUpperCase() ||
+    userProfile?.phone?.trim()?.charAt(0)?.toUpperCase() ||
+    userProfile?.email?.trim()?.charAt(0)?.toUpperCase() ||
+    "U";
 
   return (
     <nav
@@ -1358,9 +1371,17 @@ export default function PageNavbar({
                 <div
                   className={`h-full w-full rounded-full bg-white flex items-center justify-center shadow-lg ring-2 ${ringColor}`}
                 >
-                  <span className="text-black text-xs sm:text-sm font-extrabold">
-                    A
-                  </span>
+                  {profileImageUrl ? (
+                    <img
+                      src={profileImageUrl}
+                      alt="Profile"
+                      className="h-full w-full rounded-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-black text-xs sm:text-sm font-extrabold">
+                      {profileInitial}
+                    </span>
+                  )}
                 </div>
               </Button>
             </Link>

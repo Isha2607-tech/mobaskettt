@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import WishlistButton from "@/components/WishlistButton";
 import { useCart } from "../../user/context/CartContext";
+import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
+import { useZone } from "../../user/hooks/useZone";
 
 import imgStrawberry from "@/assets/grocery&kitchen/strawberry2.jpeg";
 
@@ -78,6 +80,8 @@ export default function FoodDetailPage() {
   const { id } = useParams();
   const { addToCart, groceryCart, updateQuantityByPlatform } = useCart();
   const [similarProducts, setSimilarProducts] = useState([]);
+  const { location: userLocation } = useUserLocation();
+  const { zoneId } = useZone(userLocation, "mogrocery");
 
   const [product, setProduct] = useState(
     normalizeProduct(
@@ -126,7 +130,9 @@ export default function FoodDetailPage() {
 
       try {
         setIsLoading(true);
-        const response = await api.get(`/grocery/products/${id}`);
+        const response = await api.get(`/grocery/products/${id}`, {
+          params: zoneId ? { zoneId } : {}
+        });
         const data = response?.data?.data;
         if (data) {
           setProduct(normalizeProduct(data, id));
@@ -148,7 +154,7 @@ export default function FoodDetailPage() {
       if (!categoryId) return;
       try {
         const response = await api.get("/grocery/products", {
-          params: { categoryId, limit: 12 },
+          params: { categoryId, limit: 12, ...(zoneId ? { zoneId } : {}) },
         });
         const data = response?.data?.data;
         if (Array.isArray(data)) {
@@ -166,7 +172,7 @@ export default function FoodDetailPage() {
       }
     };
     fetchSimilar();
-  }, [product?.categoryId, productId]);
+  }, [product?.categoryId, productId, zoneId]);
 
   const calculateUnitPrice = (price, weight) => {
     if (!weight || !price) return null;

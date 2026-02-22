@@ -28,6 +28,9 @@ export default function Under250() {
   const [showSortPopup, setShowSortPopup] = useState(false)
   const [selectedSort, setSelectedSort] = useState(null)
   const [under30MinsFilter, setUnder30MinsFilter] = useState(false)
+  const [priceRange, setPriceRange] = useState({ min: 0, max: 250 })
+  const [draftMinPrice, setDraftMinPrice] = useState("")
+  const [draftMaxPrice, setDraftMaxPrice] = useState("250")
   const [showItemDetail, setShowItemDetail] = useState(false)
   const [selectedItem, setSelectedItem] = useState(null)
   const [quantities, setQuantities] = useState({})
@@ -54,17 +57,62 @@ export default function Under250() {
     setShowSortPopup(false)
   }
 
+  const applyPriceRange = () => {
+    const parsedMin = draftMinPrice === "" ? 0 : Number(draftMinPrice)
+    const parsedMax = draftMaxPrice === "" ? 250 : Number(draftMaxPrice)
+
+    if (!Number.isFinite(parsedMin) || !Number.isFinite(parsedMax)) {
+      toast.error("Please enter a valid price range")
+      return
+    }
+
+    const clampedMin = Math.max(0, Math.min(250, parsedMin))
+    const clampedMax = Math.max(0, Math.min(250, parsedMax))
+
+    if (clampedMin > clampedMax) {
+      toast.error("Minimum price cannot be greater than maximum price")
+      return
+    }
+
+    setPriceRange({ min: clampedMin, max: clampedMax })
+  }
+
+  const resetPriceRange = () => {
+    setDraftMinPrice("")
+    setDraftMaxPrice("250")
+    setPriceRange({ min: 0, max: 250 })
+  }
+
+  const sanitizePriceInput = (value) => {
+    if (value === "") return ""
+    return value.replace(/[^\d]/g, "")
+  }
+
+  const handleDraftMinChange = (e) => {
+    setDraftMinPrice(sanitizePriceInput(e.target.value))
+  }
+
+  const handleDraftMaxChange = (e) => {
+    setDraftMaxPrice(sanitizePriceInput(e.target.value))
+  }
+
+  const handlePriceInputKeyDown = (e) => {
+    if (e.key === "Enter") {
+      applyPriceRange()
+    }
+  }
+
   // Helper function to parse delivery time (e.g., "12-15 mins" -> 12 or average)
   const parseDeliveryTime = (deliveryTime) => {
     if (!deliveryTime) return 999 // Default high value for sorting
-    const match = deliveryTime.match(/(\d+)/)
-    if (match) {
-      return parseInt(match[1])
-    }
     // Try to find range (e.g., "12-15 mins")
     const rangeMatch = deliveryTime.match(/(\d+)\s*-\s*(\d+)/)
     if (rangeMatch) {
       return (parseInt(rangeMatch[1]) + parseInt(rangeMatch[2])) / 2 // Average
+    }
+    const match = deliveryTime.match(/(\d+)/)
+    if (match) {
+      return parseInt(match[1])
     }
     return 999
   }
@@ -82,6 +130,45 @@ export default function Under250() {
   // Sort and filter restaurants based on selected sort and filters
   const sortedAndFilteredRestaurants = useMemo(() => {
     let filtered = [...under250Restaurants]
+
+    // Apply category filter on menu items and keep restaurants with matching dishes
+    if (activeCategory !== null) {
+      const selectedCategory = categories.find((category) => category.id === activeCategory)
+      const selectedCategoryName = selectedCategory?.name?.toLowerCase().trim()
+
+      filtered = filtered
+        .map((restaurant) => {
+          const menuItems = Array.isArray(restaurant.menuItems) ? restaurant.menuItems : []
+          const filteredMenuItems = menuItems.filter((item) => {
+            const itemCategory = String(item?.category || "").toLowerCase().trim()
+            return selectedCategoryName
+              ? itemCategory === selectedCategoryName || itemCategory.includes(selectedCategoryName)
+              : true
+          })
+          return {
+            ...restaurant,
+            menuItems: filteredMenuItems,
+          }
+        })
+        .filter((restaurant) => (restaurant.menuItems?.length || 0) > 0)
+    }
+
+    // Apply custom price range filter on menu items and keep restaurants with matching dishes
+    const min = Number(priceRange.min) || 0
+    const max = Number(priceRange.max) || 250
+    const hasValidRange = Number.isFinite(min) && Number.isFinite(max) && min <= max
+
+    if (hasValidRange) {
+      filtered = filtered
+        .map((restaurant) => ({
+          ...restaurant,
+          menuItems: (restaurant.menuItems || []).filter((item) => {
+            const numericPrice = Number(item?.price) || 0
+            return numericPrice >= min && numericPrice <= max
+          }),
+        }))
+        .filter((restaurant) => (restaurant.menuItems?.length || 0) > 0)
+    }
 
     // Apply "Under 30 mins" filter
     if (under30MinsFilter) {
@@ -128,7 +215,7 @@ export default function Under250() {
     }
 
     return filtered
-  }, [under250Restaurants, selectedSort, under30MinsFilter])
+  }, [under250Restaurants, selectedSort, under30MinsFilter, activeCategory, categories, priceRange])
 
   // Fetch restaurants with dishes under ₹250 from backend
   useEffect(() => {
@@ -388,11 +475,12 @@ export default function Under250() {
             <div className="flex-shrink-0">
               <motion.div 
                 className="flex flex-col items-center gap-2 w-[62px] sm:w-24 md:w-28"
+                onClick={() => setActiveCategory(null)}
                 whileHover={{ scale: 1.1, y: -4 }}
                 whileTap={{ scale: 0.95 }}
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
               >
-                <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all">
+                <div className={`w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all ${activeCategory === null ? 'ring-2 ring-green-600' : ''}`}>
                   <OptimizedImage
                     src={offerImage}
                     alt="All"
@@ -409,32 +497,31 @@ export default function Under250() {
             </div>
             {categories.map((category, index) => {
               const isActive = activeCategory === category.id
-              const categorySlug = category.slug || category.name.toLowerCase().replace(/\s+/g, '-')
               return (
                 <div key={category.id || category.slug || `under250-cat-${index}`} className="flex-shrink-0">
-                  <Link to={`/user/category/${categorySlug}`}>
-                    <motion.div
-                      className="flex flex-col items-center gap-2 w-[62px] sm:w-24 md:w-28"
-                      onClick={() => setActiveCategory(category.id)}
-                      whileHover={{ scale: 1.1, y: -4 }}
-                      whileTap={{ scale: 0.95 }}
-                      transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                    >
-                      <div className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all">
-                        <OptimizedImage
-                          src={category.image}
-                          alt={category.name}
-                          className="w-full h-full bg-white rounded-full"
-                          objectFit="cover"
-                          sizes="(max-width: 640px) 62px, (max-width: 768px) 96px, 112px"
-                          placeholder="blur"
-                        />
-                      </div>
-                      <span className={`text-xs sm:text-sm md:text-base font-semibold text-gray-800 dark:text-gray-200 text-center pb-1 ${isActive ? 'border-b-2 border-green-600' : ''}`}>
-                        {category.name.length > 7 ? `${category.name.slice(0, 7)}...` : category.name}
-                      </span>
-                    </motion.div>
-                  </Link>
+                  <motion.div
+                    className="flex flex-col items-center gap-2 w-[62px] sm:w-24 md:w-28"
+                    onClick={() =>
+                      setActiveCategory((prev) => (prev === category.id ? null : category.id))
+                    }
+                    whileHover={{ scale: 1.1, y: -4 }}
+                    whileTap={{ scale: 0.95 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                  >
+                    <div className={`w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-md transition-all ${isActive ? 'ring-2 ring-green-600' : ''}`}>
+                      <OptimizedImage
+                        src={category.image}
+                        alt={category.name}
+                        className="w-full h-full bg-white rounded-full"
+                        objectFit="cover"
+                        sizes="(max-width: 640px) 62px, (max-width: 768px) 96px, 112px"
+                        placeholder="blur"
+                      />
+                    </div>
+                    <span className={`text-xs sm:text-sm md:text-base font-semibold text-gray-800 dark:text-gray-200 text-center pb-1 ${isActive ? 'border-b-2 border-green-600' : ''}`}>
+                      {category.name.length > 7 ? `${category.name.slice(0, 7)}...` : category.name}
+                    </span>
+                  </motion.div>
                 </div>
               )
             })}
@@ -442,7 +529,7 @@ export default function Under250() {
         </section>
 
         <section className="py-2 sm:py-3 md:py-4">
-          <div className="flex items-center gap-2 md:gap-3">
+          <div className="flex flex-wrap items-center gap-2 md:gap-3">
             <Button
               variant="outline"
               onClick={() => setShowSortPopup(true)}
@@ -466,6 +553,43 @@ export default function Under250() {
               <Timer className="h-3 w-3 sm:h-4 sm:w-4 md:h-5 md:w-5" />
               <span className="text-xs sm:text-sm md:text-base font-medium">Under 30 mins</span>
             </Button>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="0"
+                value={draftMinPrice}
+                onChange={handleDraftMinChange}
+                onKeyDown={handlePriceInputKeyDown}
+                placeholder="Min Rs"
+                className="h-8 sm:h-9 md:h-10 w-24 sm:w-28 md:w-32 px-2 sm:px-3 rounded-md bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300 text-xs sm:text-sm md:text-base"
+              />
+              <span className="text-gray-500 text-xs sm:text-sm">to</span>
+              <input
+                type="number"
+                min="0"
+                value={draftMaxPrice}
+                onChange={handleDraftMaxChange}
+                onKeyDown={handlePriceInputKeyDown}
+                placeholder="Max Rs"
+                className="h-8 sm:h-9 md:h-10 w-24 sm:w-28 md:w-32 px-2 sm:px-3 rounded-md bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300 text-xs sm:text-sm md:text-base"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={applyPriceRange}
+                className="h-8 sm:h-9 md:h-10 px-3 rounded-md text-xs sm:text-sm"
+              >
+                Apply
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={resetPriceRange}
+                className="h-8 sm:h-9 md:h-10 px-3 rounded-md text-xs sm:text-sm"
+              >
+                Reset
+              </Button>
+            </div>
           </div>
         </section>
 

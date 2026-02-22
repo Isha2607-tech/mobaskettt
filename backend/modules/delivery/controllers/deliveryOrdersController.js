@@ -4,6 +4,7 @@ import Delivery from '../models/Delivery.js';
 import Order from '../../order/models/Order.js';
 import Payment from '../../payment/models/Payment.js';
 import Restaurant from '../../restaurant/models/Restaurant.js';
+import Zone from '../../admin/models/Zone.js';
 import DeliveryWallet from '../models/DeliveryWallet.js';
 import DeliveryBoyCommission from '../../admin/models/DeliveryBoyCommission.js';
 import RestaurantWallet from '../../restaurant/models/RestaurantWallet.js';
@@ -67,6 +68,68 @@ const terminalOrderActionMessage = (order, actionLabel) => {
     return `Order is already delivered. Cannot ${actionLabel}.`;
   }
   return `Order is not valid to ${actionLabel}.`;
+};
+
+const isPointInZoneBoundary = (lat, lng, zoneCoordinates = []) => {
+  if (!Array.isArray(zoneCoordinates) || zoneCoordinates.length < 3) return false;
+  let inside = false;
+
+  for (let i = 0, j = zoneCoordinates.length - 1; i < zoneCoordinates.length; j = i++) {
+    const xi = zoneCoordinates[i]?.longitude;
+    const yi = zoneCoordinates[i]?.latitude;
+    const xj = zoneCoordinates[j]?.longitude;
+    const yj = zoneCoordinates[j]?.latitude;
+
+    if (![xi, yi, xj, yj].every(Number.isFinite)) continue;
+
+    const intersect = ((yi > lat) !== (yj > lat)) &&
+      (lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+
+  return inside;
+};
+
+const getPlatformZoneQuery = (platform = 'mofood') => (
+  platform === 'mogrocery'
+    ? { isActive: true, platform: 'mogrocery' }
+    : { isActive: true, $or: [{ platform: 'mofood' }, { platform: { $exists: false } }] }
+);
+
+const emitOrderClaimedToOtherPartners = async (orderLike, claimedByDeliveryId, assignmentInfo = {}) => {
+  try {
+    const serverModule = await import('../../../server.js');
+    const io = serverModule.getIO ? serverModule.getIO() : null;
+    if (!io) return;
+
+    const deliveryNamespace = io.of('/delivery');
+    const notifiedIds = Array.from(new Set([
+      ...(Array.isArray(assignmentInfo?.priorityDeliveryPartnerIds) ? assignmentInfo.priorityDeliveryPartnerIds : []),
+      ...(Array.isArray(assignmentInfo?.expandedDeliveryPartnerIds) ? assignmentInfo.expandedDeliveryPartnerIds : [])
+    ].map((id) => String(id)).filter(Boolean)));
+
+    const targetIds = notifiedIds.filter((id) => id !== String(claimedByDeliveryId));
+    if (targetIds.length === 0) return;
+
+    const payload = {
+      orderId: orderLike?.orderId || null,
+      orderMongoId: orderLike?._id?.toString?.() || null,
+      claimedBy: String(claimedByDeliveryId),
+      reason: 'accepted_by_other_delivery_partner'
+    };
+
+    for (const deliveryId of targetIds) {
+      const roomVariations = [
+        `delivery:${deliveryId}`,
+        ...(mongoose.Types.ObjectId.isValid(deliveryId)
+          ? [`delivery:${new mongoose.Types.ObjectId(deliveryId).toString()}`]
+          : [])
+      ];
+      roomVariations.forEach((room) => deliveryNamespace.to(room).emit('order_unavailable', payload));
+    }
+  } catch (emitError) {
+    logger.warn(`⚠️ Failed to emit order_unavailable to other partners: ${emitError.message}`);
+  }
 };
 
 /**
@@ -331,9 +394,9 @@ export const acceptOrder = asyncHandler(async (req, res) => {
     // Check if order is assigned to this delivery partner
     const orderDeliveryPartnerId = order.deliveryPartnerId?.toString();
     const currentDeliveryId = delivery._id.toString();
+    let claimedDuringThisRequest = false;
 
-    // If order is not assigned, check if this delivery boy was notified (priority-based system)
-    // Also allow acceptance if order is in valid status (preparing/ready) - more permissive
+    // If order is not assigned, accept only if this delivery partner was explicitly notified.
     if (!orderDeliveryPartnerId) {
       console.log(`ℹ️ Order ${order.orderId} is not assigned yet. Checking if this delivery partner was notified...`);
       
@@ -366,11 +429,8 @@ export const acceptOrder = asyncHandler(async (req, res) => {
       const wasNotified = normalizedPriorityIds.includes(normalizedCurrentId) || 
                          normalizedExpandedIds.includes(normalizedCurrentId);
       
-      // Also allow if order is in valid status (preparing/ready) - more permissive for unassigned orders
-      const isValidStatus = order.status === 'preparing' || order.status === 'ready';
-      
-      if (!wasNotified && !isValidStatus) {
-        console.error(`❌ Order ${order.orderId} is not assigned, delivery partner ${currentDeliveryId} was not notified, and order status is ${order.status}`);
+      if (!wasNotified) {
+        console.error(`❌ Order ${order.orderId} is not assigned and delivery partner ${currentDeliveryId} was not notified`);
         console.error(`❌ Full order details:`, {
           orderId: order.orderId,
           orderStatus: order.status,
@@ -383,99 +443,44 @@ export const acceptOrder = asyncHandler(async (req, res) => {
         return errorResponse(res, 403, 'This order is not available for you. It may have been assigned to another delivery partner or you were not notified about it.');
       }
       
-      // Allow acceptance if delivery boy was notified OR order is in valid status
-      if (wasNotified) {
-        console.log(`✅ Delivery partner ${currentDeliveryId} was notified about this order. Assigning order to them...`);
-      } else if (isValidStatus) {
-        console.log(`⚠️ Order ${order.orderId} is not assigned and delivery partner ${currentDeliveryId} was not notified, but order is in valid status (${order.status}). Allowing acceptance and assigning order.`);
-      }
-      
-      // Proceed with assignment (first come first serve)
-      
-      // Reload order as document (not lean) to update it
-      let orderDoc;
-      try {
-        orderDoc = await Order.findOne({
-          $or: [
-            { _id: orderId },
-            { orderId: orderId }
-          ]
-        });
-        
-        if (!orderDoc) {
-          console.error(`❌ Order document not found for ID: ${orderId}`);
-          return errorResponse(res, 404, 'Order not found');
+      console.log(`✅ Delivery partner ${currentDeliveryId} was notified about this order. Trying atomic claim...`);
+
+      const claimedOrder = await Order.findOneAndUpdate(
+        {
+          _id: order._id,
+          status: { $in: ['preparing', 'ready'] },
+          $or: [{ deliveryPartnerId: { $exists: false } }, { deliveryPartnerId: null }]
+        },
+        {
+          $set: {
+            deliveryPartnerId: delivery._id,
+            'assignmentInfo.deliveryPartnerId': currentDeliveryId,
+            'assignmentInfo.assignedAt': new Date(),
+            'assignmentInfo.assignedBy': 'delivery_accept',
+            'assignmentInfo.acceptedFromNotification': true,
+            'assignmentInfo.notificationPhase': 'accepted'
+          }
+        },
+        { new: true }
+      )
+        .populate('restaurantId', 'name location address phone ownerPhone')
+        .populate('userId', 'name phone')
+        .lean();
+
+      if (!claimedOrder) {
+        const latestOrder = await Order.findById(order._id).select('deliveryPartnerId status orderId').lean();
+        if (latestOrder?.deliveryPartnerId && String(latestOrder.deliveryPartnerId) !== currentDeliveryId) {
+          return errorResponse(res, 409, 'Order was accepted by another delivery partner.');
         }
-      } catch (findError) {
-        console.error(`❌ Error finding order document: ${findError.message}`);
-        console.error(`❌ Error stack: ${findError.stack}`);
-        return errorResponse(res, 500, 'Error finding order. Please try again.');
-      }
-      
-      // Check again if order was assigned in the meantime (race condition)
-      if (orderDoc.deliveryPartnerId) {
-        const assignedId = orderDoc.deliveryPartnerId.toString();
-        if (assignedId !== currentDeliveryId) {
-          console.error(`❌ Order ${order.orderId} was just assigned to another delivery partner ${assignedId}`);
-          return errorResponse(res, 403, 'Order was just assigned to another delivery partner. Please try another order.');
+        if (latestOrder && !['preparing', 'ready'].includes(latestOrder.status)) {
+          return errorResponse(res, 409, `Order is no longer available to accept. Current status: ${latestOrder.status}.`);
         }
+        return errorResponse(res, 409, 'Order is no longer available to accept.');
       }
-      
-      // Assign order to this delivery partner
-      try {
-        orderDoc.deliveryPartnerId = delivery._id;
-        orderDoc.assignmentInfo = {
-          ...(orderDoc.assignmentInfo || {}),
-          deliveryPartnerId: currentDeliveryId,
-          assignedAt: new Date(),
-          assignedBy: 'delivery_accept',
-          acceptedFromNotification: true
-        };
-        await orderDoc.save();
-        console.log(`✅ Order ${order.orderId} assigned to delivery partner ${currentDeliveryId} upon acceptance`);
-      } catch (saveError) {
-        console.error(`❌ Error saving order assignment: ${saveError.message}`);
-        console.error(`❌ Error stack: ${saveError.stack}`);
-        // Log validation errors if present
-        if (saveError.errors) {
-          console.error(`❌ Validation errors:`, JSON.stringify(saveError.errors, null, 2));
-        }
-        if (saveError.name === 'ValidationError') {
-          const validationMessages = Object.values(saveError.errors || {}).map(err => err.message).join(', ');
-          return errorResponse(res, 400, `Validation error: ${validationMessages || saveError.message}`);
-        }
-        return errorResponse(res, 500, 'Failed to assign order. Please try again.');
-      }
-      
-      // Reload order with populated data (use orderDoc._id to ensure we get the updated order)
-      const updatedOrderId = orderDoc._id || orderId;
-      try {
-        order = await Order.findOne({
-          $or: [
-            { _id: updatedOrderId },
-            { orderId: orderId }
-          ]
-        })
-          .populate('restaurantId', 'name location address phone ownerPhone')
-          .populate('userId', 'name phone')
-          .lean();
-        
-        if (!order) {
-          console.error(`❌ Order not found after assignment: ${updatedOrderId}`);
-          return errorResponse(res, 500, 'Order not found after assignment. Please try again.');
-        }
-      } catch (reloadError) {
-        console.error(`❌ Error reloading order after assignment: ${reloadError.message}`);
-        console.error(`❌ Error stack: ${reloadError.stack}`);
-        return errorResponse(res, 500, 'Error reloading order. Please try again.');
-      }
-      
-      // Update orderDeliveryPartnerId after assignment
-      const updatedOrderDeliveryPartnerId = order.deliveryPartnerId?.toString();
-      if (updatedOrderDeliveryPartnerId !== currentDeliveryId) {
-        console.error(`❌ Order assignment failed - order still not assigned to ${currentDeliveryId}, got ${updatedOrderDeliveryPartnerId}`);
-        return errorResponse(res, 500, 'Failed to assign order. Please try again.');
-      }
+
+      order = claimedOrder;
+      claimedDuringThisRequest = true;
+      await emitOrderClaimedToOtherPartners(order, currentDeliveryId, order.assignmentInfo || {});
     } else if (orderDeliveryPartnerId !== currentDeliveryId) {
       console.error(`❌ Order ${order.orderId} is assigned to ${orderDeliveryPartnerId}, but current delivery partner is ${currentDeliveryId}`);
       return errorResponse(res, 403, 'Order is assigned to another delivery partner');
@@ -597,6 +602,43 @@ export const acceptOrder = asyncHandler(async (req, res) => {
         console.error(`❌ Error fetching delivery partner location: ${deliveryLocationError.message}`);
         return errorResponse(res, 500, 'Error getting delivery partner location. Please try again.');
       }
+    }
+
+    // Enforce strict zone match between restaurant and delivery partner location.
+    try {
+      const restaurantId = order.restaurantId?._id || order.restaurantId;
+      const restaurantMeta = restaurantId
+        ? await Restaurant.findById(restaurantId).select('platform').lean()
+        : null;
+      const platform = restaurantMeta?.platform === 'mogrocery' ? 'mogrocery' : 'mofood';
+      const activeZones = await Zone.find(getPlatformZoneQuery(platform)).select('_id coordinates').lean();
+
+      const restaurantZone = activeZones.find((z) => isPointInZoneBoundary(Number(restaurantLat), Number(restaurantLng), z.coordinates));
+      const deliveryZone = activeZones.find((z) => isPointInZoneBoundary(Number(deliveryLat), Number(deliveryLng), z.coordinates));
+
+      if (!restaurantZone || !deliveryZone || String(restaurantZone._id) !== String(deliveryZone._id)) {
+        if (claimedDuringThisRequest) {
+          await Order.updateOne(
+            { _id: order._id, deliveryPartnerId: delivery._id },
+            {
+              $set: {
+                deliveryPartnerId: null,
+                'assignmentInfo.deliveryPartnerId': null,
+                'assignmentInfo.assignedAt': null,
+                'assignmentInfo.notificationPhase': 'expanded'
+              }
+            }
+          );
+        }
+        return errorResponse(
+          res,
+          403,
+          'You are not in the same service zone as this order. Move to the correct zone to accept this order.'
+        );
+      }
+    } catch (zoneValidationError) {
+      console.error(`❌ Error validating delivery zone before acceptance: ${zoneValidationError.message}`);
+      return errorResponse(res, 500, 'Failed to validate delivery zone. Please try again.');
     }
 
     // Validate coordinates before calculating route

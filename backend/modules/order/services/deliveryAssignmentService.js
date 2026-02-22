@@ -53,7 +53,7 @@ async function resolveRestaurantPlatformAndZone(restaurantId) {
   try {
     if (mongoose.Types.ObjectId.isValid(restaurantIdString)) {
       restaurant = await Restaurant.findById(restaurantIdString)
-        .select('_id restaurantId platform slug')
+        .select('_id restaurantId platform slug location')
         .lean();
     }
 
@@ -61,7 +61,7 @@ async function resolveRestaurantPlatformAndZone(restaurantId) {
       restaurant = await Restaurant.findOne({
         $or: [{ restaurantId: restaurantIdString }, { slug: restaurantIdString }]
       })
-        .select('_id restaurantId platform slug')
+        .select('_id restaurantId platform slug location')
         .lean();
     }
   } catch {
@@ -83,6 +83,13 @@ async function resolveRestaurantPlatformAndZone(restaurantId) {
 
   zone =
     activeZones.find((z) => restaurantIdCandidates.has(String(z.restaurantId || ''))) || null;
+
+  if (!zone && restaurant?.location?.coordinates?.length >= 2) {
+    const [restaurantLng, restaurantLat] = restaurant.location.coordinates;
+    if (Number.isFinite(restaurantLat) && Number.isFinite(restaurantLng)) {
+      zone = activeZones.find((z) => isPointInZoneBoundary(restaurantLat, restaurantLng, z.coordinates)) || null;
+    }
+  }
 
   return { platform, zone, activeZones };
 }
@@ -138,7 +145,7 @@ export async function findNearestDeliveryBoys(restaurantLat, restaurantLng, rest
     }
 
     const deliveryPartners = await Delivery.find(deliveryQuery)
-      .select('_id name phone availability.currentLocation availability.lastLocationUpdate status isActive zoneId')
+      .select('_id name phone availability.currentLocation availability.lastLocationUpdate availability.zones status isActive')
       .lean();
 
     console.log(`📊 Found ${deliveryPartners?.length || 0} online delivery partners`);
@@ -162,10 +169,13 @@ export async function findNearestDeliveryBoys(restaurantLat, restaurantLng, rest
 
         // Zone filtering (same as findNearestDeliveryBoy)
         if (zone) {
-          if (partner.zoneId && partner.zoneId.toString() !== zone._id.toString()) {
+          const partnerZoneIds = Array.isArray(partner.availability?.zones)
+            ? partner.availability.zones.map((z) => String(z))
+            : [];
+          if (partnerZoneIds.length > 0 && !partnerZoneIds.includes(String(zone._id))) {
             return null;
           }
-          if (!partner.zoneId && zone.coordinates && zone.coordinates.length >= 3) {
+          if (partnerZoneIds.length === 0 && zone.coordinates && zone.coordinates.length >= 3) {
             if (!isPointInZoneBoundary(lat, lng, zone.coordinates)) return null;
           }
         } else if (activeZones.length > 0) {
@@ -182,7 +192,9 @@ export async function findNearestDeliveryBoys(restaurantLat, restaurantLng, rest
           distance,
           latitude: lat,
           longitude: lng,
-          zoneId: partner.zoneId || null
+          zoneId: Array.isArray(partner.availability?.zones) && partner.availability.zones.length > 0
+            ? String(partner.availability.zones[0])
+            : null
         };
       })
       .filter(partner => partner !== null && partner.distance <= priorityDistance)
@@ -251,7 +263,7 @@ export async function findNearestDeliveryBoy(restaurantLat, restaurantLng, resta
 
     // Find all online delivery partners (with zone filter if applicable)
     const deliveryPartners = await Delivery.find(deliveryQuery)
-      .select('_id name phone availability.currentLocation availability.lastLocationUpdate status isActive zoneId')
+      .select('_id name phone availability.currentLocation availability.lastLocationUpdate availability.zones status isActive')
       .lean();
 
     console.log(`📊 Found ${deliveryPartners?.length || 0} online delivery partners in database`);
@@ -290,15 +302,16 @@ export async function findNearestDeliveryBoy(restaurantLat, restaurantLng, resta
 
         // Filter by zone if zone exists
         if (zone) {
-          // Option A: Check zoneId match (when zoneId is added to Delivery model)
-          if (partner.zoneId && partner.zoneId.toString() !== zone._id.toString()) {
-            console.log(`⚠️ Delivery partner ${partner._id} not in zone ${zone.name} (partner zone: ${partner.zoneId}, required zone: ${zone._id})`);
+          const partnerZoneIds = Array.isArray(partner.availability?.zones)
+            ? partner.availability.zones.map((z) => String(z))
+            : [];
+
+          if (partnerZoneIds.length > 0 && !partnerZoneIds.includes(String(zone._id))) {
+            console.log(`⚠️ Delivery partner ${partner._id} not in zone ${zone.name} (partner zones: ${partnerZoneIds.join(',')}, required zone: ${zone._id})`);
             return null; // Skip delivery partners not in the restaurant's zone
           }
 
-          // Option B: Geo-spatial check (point-in-polygon) if zoneId not available
-          // Simple point-in-polygon using ray casting algorithm
-          if (!partner.zoneId && zone.coordinates && zone.coordinates.length >= 3) {
+          if (partnerZoneIds.length === 0 && zone.coordinates && zone.coordinates.length >= 3) {
             if (!isPointInZoneBoundary(lat, lng, zone.coordinates)) {
               console.log(`⚠️ Delivery partner ${partner._id} location (${lat}, ${lng}) not within zone ${zone.name} boundary`);
               return null;
@@ -322,7 +335,9 @@ export async function findNearestDeliveryBoy(restaurantLat, restaurantLng, resta
           distance,
           latitude: lat,
           longitude: lng,
-          zoneId: partner.zoneId || null
+          zoneId: Array.isArray(partner.availability?.zones) && partner.availability.zones.length > 0
+            ? String(partner.availability.zones[0])
+            : null
         };
       })
       .filter(partner => partner !== null && partner.distance <= maxDistance)

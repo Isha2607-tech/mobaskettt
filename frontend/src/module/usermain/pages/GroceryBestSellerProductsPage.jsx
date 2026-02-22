@@ -5,11 +5,15 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { useCart } from "../../user/context/CartContext";
 import AddToCartAnimation from "../../user/components/AddToCartAnimation";
+import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
+import { useZone } from "../../user/hooks/useZone";
 
 export default function GroceryBestSellerProductsPage() {
   const navigate = useNavigate();
   const { itemType, itemId } = useParams();
   const { addToCart, isInCart } = useCart();
+  const { location } = useUserLocation();
+  const { zoneId } = useZone(location, "mogrocery");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [title, setTitle] = useState("Products");
@@ -28,19 +32,21 @@ export default function GroceryBestSellerProductsPage() {
         if (itemType === "category") {
           const [categoryRes, productsRes] = await Promise.all([
             api.get(`/grocery/categories/${itemId}`),
-            api.get("/grocery/products", { params: { categoryId: itemId } }),
+            api.get("/grocery/products", { params: { categoryId: itemId, ...(zoneId ? { zoneId } : {}) } }),
           ]);
           setTitle(categoryRes?.data?.data?.name || "Category Products");
           setProducts(Array.isArray(productsRes?.data?.data) ? productsRes.data.data : []);
         } else if (itemType === "subcategory") {
           const [subcategoryRes, productsRes] = await Promise.all([
             api.get(`/grocery/subcategories/${itemId}`),
-            api.get("/grocery/products", { params: { subcategoryId: itemId } }),
+            api.get("/grocery/products", { params: { subcategoryId: itemId, ...(zoneId ? { zoneId } : {}) } }),
           ]);
           setTitle(subcategoryRes?.data?.data?.name || "Subcategory Products");
           setProducts(Array.isArray(productsRes?.data?.data) ? productsRes.data.data : []);
         } else if (itemType === "product") {
-          const productRes = await api.get(`/grocery/products/${itemId}`);
+          const productRes = await api.get(`/grocery/products/${itemId}`, {
+            params: zoneId ? { zoneId } : {}
+          });
           const product = productRes?.data?.data;
           setTitle(product?.name || "Product");
           setProducts(product ? [product] : []);
@@ -56,7 +62,7 @@ export default function GroceryBestSellerProductsPage() {
     };
 
     fetchData();
-  }, [itemId, itemType]);
+  }, [itemId, itemType, zoneId]);
 
   const headerTitle = useMemo(() => title || "Products", [title]);
 

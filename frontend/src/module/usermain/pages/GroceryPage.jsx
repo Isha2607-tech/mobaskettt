@@ -25,6 +25,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { useCart } from "../../user/context/CartContext";
 import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
+import { useZone } from "../../user/hooks/useZone";
 import { CategoryFoodsContent } from "./CategoryFoodsPage";
 import AddToCartAnimation from "../../user/components/AddToCartAnimation";
 import api, { restaurantAPI, userAPI } from "@/lib/api";
@@ -39,6 +40,7 @@ const GroceryPage = () => {
   const routerLocation = useRouterLocation();
   const { getGroceryCartCount, addToCart, isInCart } = useCart();
   const { location: userLocation } = useUserLocation();
+  const { zoneId } = useZone(userLocation, "mogrocery");
   const isGroceryCategoriesRoute = routerLocation.pathname === "/grocery/categories";
   const itemCount = getGroceryCartCount();
   const [activeTab, setActiveTab] = useState("All");
@@ -410,7 +412,7 @@ const GroceryPage = () => {
     const fetchProducts = async () => {
       try {
         const response = await api.get("/grocery/products", {
-          params: { page: 1, limit: 1000 },
+          params: { page: 1, limit: 1000, ...(zoneId ? { zoneId } : {}) },
         });
         const products = Array.isArray(response?.data?.data) ? response.data.data : [];
         setAllProducts(products);
@@ -427,7 +429,11 @@ const GroceryPage = () => {
   useEffect(() => {
     const fetchGroceryStores = async () => {
       try {
-        const response = await restaurantAPI.getRestaurants({ limit: 200 });
+        const response = await restaurantAPI.getRestaurants({
+          limit: 200,
+          platform: "mogrocery",
+          ...(zoneId ? { zoneId } : {}),
+        });
         const restaurants = Array.isArray(response?.data?.data?.restaurants)
           ? response.data.data.restaurants
           : [];
@@ -446,7 +452,7 @@ const GroceryPage = () => {
     };
 
     fetchGroceryStores();
-  }, []);
+  }, [zoneId]);
 
   useEffect(() => {
     let timer = null;
@@ -497,7 +503,7 @@ const GroceryPage = () => {
       orderSnapshotRef.current = new Map();
       setActiveGroceryOrder(null);
     };
-  }, []);
+  }, [zoneId]);
 
   useEffect(() => {
     const loadWishlist = () => {

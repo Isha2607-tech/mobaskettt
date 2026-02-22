@@ -303,6 +303,19 @@ export const useDeliveryNotifications = () => {
       playNotificationSound();
     });
 
+    socketRef.current.on('order_unavailable', (payload) => {
+      console.log('ℹ️ Order marked unavailable:', payload);
+      setNewOrder((currentOrder) => {
+        if (!currentOrder) return currentOrder;
+        const currentOrderId = currentOrder.orderId || currentOrder.orderMongoId || currentOrder.mongoId;
+        const unavailableOrderId = payload?.orderId || payload?.orderMongoId;
+        if (String(currentOrderId) === String(unavailableOrderId)) {
+          return null;
+        }
+        return currentOrder;
+      });
+    });
+
     return () => {
       if (socketRef.current) {
         socketRef.current.disconnect();

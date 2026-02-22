@@ -5,12 +5,16 @@ import api from "@/lib/api";
 import { toast } from "sonner";
 import { useCart } from "../../user/context/CartContext";
 import AddToCartAnimation from "../../user/components/AddToCartAnimation";
+import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
+import { useZone } from "../../user/hooks/useZone";
 
 export default function GrocerySubcategoryProductsPage() {
   const navigate = useNavigate();
   const { subcategoryId } = useParams();
   const { addToCart, getGroceryCartCount, isInCart } = useCart();
   const cartCount = getGroceryCartCount();
+  const { location } = useUserLocation();
+  const { zoneId } = useZone(location, "mogrocery");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [subcategory, setSubcategory] = useState(null);
@@ -24,7 +28,7 @@ export default function GrocerySubcategoryProductsPage() {
 
         const [subcategoryRes, productsRes] = await Promise.all([
           api.get(`/grocery/subcategories/${subcategoryId}`),
-          api.get("/grocery/products", { params: { subcategoryId } }),
+          api.get("/grocery/products", { params: { subcategoryId, ...(zoneId ? { zoneId } : {}) } }),
         ]);
 
         setSubcategory(subcategoryRes?.data?.data || null);
@@ -41,7 +45,7 @@ export default function GrocerySubcategoryProductsPage() {
     if (subcategoryId) {
       fetchData();
     }
-  }, [subcategoryId]);
+  }, [subcategoryId, zoneId]);
 
   const title = useMemo(() => subcategory?.name || "Subcategory Products", [subcategory]);
 

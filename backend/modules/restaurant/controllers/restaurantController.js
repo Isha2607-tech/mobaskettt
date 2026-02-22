@@ -92,6 +92,22 @@ function getRestaurantZoneId(restaurantLat, restaurantLng, activeZones) {
   return null;
 }
 
+function getRestaurantPlatform(restaurant) {
+  return restaurant?.platform === 'mogrocery' ? 'mogrocery' : 'mofood';
+}
+
+function normalizePlatformFilter(value) {
+  if (value === 'mogrocery') return 'mogrocery';
+  if (value === 'mofood') return 'mofood';
+  return null;
+}
+
+function getActiveZoneQueryByPlatform(platform = 'mofood') {
+  return platform === 'mogrocery'
+    ? { isActive: true, platform: 'mogrocery' }
+    : { isActive: true, $or: [{ platform: 'mofood' }, { platform: { $exists: false } }] };
+}
+
 // Get all restaurants (for user module)
 export const getRestaurants = async (req, res) => {
   try {
@@ -105,21 +121,36 @@ export const getRestaurants = async (req, res) => {
       maxDistance,
       maxPrice,
       hasOffers,
+      platform,
       zoneId // User's zone ID (optional - if provided, filters by zone)
     } = req.query;
+    const requestedPlatform = normalizePlatformFilter(platform);
     
     // Optional: Zone-based filtering - if zoneId is provided, validate and filter by zone
     let userZone = null;
     if (zoneId) {
       // Validate zone exists and is active
       userZone = await Zone.findById(zoneId).lean();
-      if (!userZone || !userZone.isActive || (userZone.platform && userZone.platform !== 'mofood')) {
+      if (!userZone || !userZone.isActive) {
         return errorResponse(res, 400, 'Invalid or inactive zone. Please detect your zone again.');
+      }
+      if (requestedPlatform && userZone.platform && userZone.platform !== requestedPlatform) {
+        return errorResponse(res, 400, 'Selected zone does not match the requested platform.');
       }
     }
     
+    const userZoneIdNormalized = userZone?._id ? userZone._id.toString() : null;
+    const activeZones = requestedPlatform
+      ? await Zone.find(getActiveZoneQueryByPlatform(requestedPlatform)).lean()
+      : await Zone.find({ isActive: true }).lean();
+    const mofoodZones = activeZones.filter((zone) => normalizePlatformFilter(zone?.platform || 'mofood') !== 'mogrocery');
+    const mogroceryZones = activeZones.filter((zone) => normalizePlatformFilter(zone?.platform) === 'mogrocery');
+
     // Build query
     const query = { isActive: true };
+    if (requestedPlatform) {
+      query.platform = requestedPlatform;
+    }
     
     // Cuisine filter
     if (cuisine) {
@@ -197,16 +228,28 @@ export const getRestaurants = async (req, res) => {
       }
     }
     
-    // Fetch restaurants - Show ALL restaurants regardless of zone
+    // Fetch restaurants
     let restaurants = await Restaurant.find(query)
       .select('-owner -createdAt -updatedAt -password')
       .sort(sortObj)
       .limit(parseInt(limit))
       .skip(parseInt(offset))
       .lean();
-    
-    // Note: We show all restaurants regardless of zone. Zone-based filtering is removed.
-    // Users in any zone will see all restaurants.
+
+    restaurants = restaurants.filter((restaurant) => {
+      const restaurantPlatform = getRestaurantPlatform(restaurant);
+      if (requestedPlatform && restaurantPlatform !== requestedPlatform) return false;
+
+      const lat = Number(restaurant?.location?.latitude ?? restaurant?.location?.coordinates?.[1]);
+      const lng = Number(restaurant?.location?.longitude ?? restaurant?.location?.coordinates?.[0]);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+
+      const platformZones = restaurantPlatform === 'mogrocery' ? mogroceryZones : mofoodZones;
+      const restaurantZoneId = getRestaurantZoneId(lat, lng, platformZones);
+      if (!restaurantZoneId) return false;
+      if (userZoneIdNormalized && restaurantZoneId !== userZoneIdNormalized) return false;
+      return true;
+    });
     
     // Apply string-based filters that can't be done in MongoDB query
     if (maxDeliveryTime) {
@@ -924,14 +967,25 @@ export const getRestaurantsWithDishesUnder250 = async (req, res) => {
       }
     };
 
-    // Get all active restaurants - Show ALL restaurants regardless of zone
+    const userZoneIdNormalized = userZone?._id ? userZone._id.toString() : null;
+    const activeZones = await Zone.find(getActiveZoneQueryByPlatform('mofood')).lean();
+
+    // Get all active restaurants
     let restaurants = await Restaurant.find({ isActive: true })
       .select('-owner -createdAt -updatedAt')
       .lean()
       .limit(100); // Limit to first 100 restaurants for performance
 
-    // Note: We show all restaurants regardless of zone. Zone-based filtering is removed.
-    // Users in any zone will see all restaurants.
+    restaurants = restaurants.filter((restaurant) => {
+      const lat = Number(restaurant?.location?.latitude ?? restaurant?.location?.coordinates?.[1]);
+      const lng = Number(restaurant?.location?.longitude ?? restaurant?.location?.coordinates?.[0]);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+
+      const restaurantZoneId = getRestaurantZoneId(lat, lng, activeZones);
+      if (!restaurantZoneId) return false;
+      if (userZoneIdNormalized && restaurantZoneId !== userZoneIdNormalized) return false;
+      return true;
+    });
 
     // Process restaurants in parallel (batch processing for better performance)
     const batchSize = 10; // Process 10 restaurants at a time
