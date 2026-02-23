@@ -530,11 +530,16 @@ export function CategoryFoodsContent({
                       className="absolute bottom-1 right-2 bg-white border border-[#facd01] text-gray-900 text-[10px] font-black px-4 py-1 rounded shadow-sm hover:bg-[#facd01] transition-colors z-20"
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (!item?.storeId) {
+                          toast.error("Store information missing for this product.");
+                          return;
+                        }
                         addToCart({
                           ...item,
                           categoryId: String(item?.category || selectedCategory || "").trim(),
-                          restaurantId: "grocery-store", // Default for grocery
+                          restaurantId: String(item.storeId).trim(),
                           restaurant: "MoGrocery",
+                          platform: "mogrocery",
                         });
 
                         // Custom React Toastify style toast

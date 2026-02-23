@@ -1,7 +1,9 @@
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { Search, Download, ChevronDown, Eye, Settings, ArrowUpDown, Loader2, X, MapPin, Phone, Mail, Clock, Star, Building2, User, FileText, CreditCard, Calendar, Image as ImageIcon, ExternalLink, ShieldX, AlertTriangle, Trash2, Plus } from "lucide-react"
-import { adminAPI, restaurantAPI } from "../../../../lib/api"
+import { adminAPI, restaurantAPI, uploadAPI } from "../../../../lib/api"
+import { getGoogleMapsApiKey } from "@/lib/utils/googleMapsApiKey"
+import { Loader as GoogleMapsLoader } from "@googlemaps/js-api-loader"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { exportRestaurantsToPDF } from "../../components/restaurants/restaurantsExportUtils"
 import { usePlatform } from "../../context/PlatformContext"
@@ -28,6 +30,35 @@ export default function RestaurantsList() {
   const [banning, setBanning] = useState(false)
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState(null) // { restaurant }
   const [deleting, setDeleting] = useState(false)
+  const [editRestaurantDialog, setEditRestaurantDialog] = useState(false)
+  const [editingRestaurant, setEditingRestaurant] = useState(null)
+  const [savingEditRestaurant, setSavingEditRestaurant] = useState(false)
+  const [uploadingRestaurantImage, setUploadingRestaurantImage] = useState(false)
+  const [editMapLoading, setEditMapLoading] = useState(false)
+  const [editMapError, setEditMapError] = useState("")
+  const [editRestaurantImageFile, setEditRestaurantImageFile] = useState(null)
+  const [editRestaurantImagePreview, setEditRestaurantImagePreview] = useState("")
+  const [editForm, setEditForm] = useState({
+    name: "",
+    ownerName: "",
+    ownerPhone: "",
+    ownerEmail: "",
+    addressLine1: "",
+    addressLine2: "",
+    area: "",
+    city: "",
+    state: "",
+    pincode: "",
+    latitude: "",
+    longitude: "",
+    address: "",
+  })
+  const [mapInstances, setMapInstances] = useState({
+    map: null,
+    marker: null,
+    geocoder: null,
+  })
+  const editMapRef = useRef(null)
 
   // Format Restaurant ID to REST format (e.g., REST422829)
   const formatRestaurantId = (id) => {
@@ -123,6 +154,16 @@ export default function RestaurantsList() {
     
     fetchRestaurants()
   }, [])
+
+  useEffect(() => {
+    if (!editRestaurantDialog || !editingRestaurant?._id) return
+    const timer = setTimeout(() => {
+      initializeEditMap(editingRestaurant)
+    }, 80)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editRestaurantDialog, editingRestaurant?._id])
+
   const [filters, setFilters] = useState({
     all: "All",
     businessModel: "",
@@ -162,6 +203,138 @@ export default function RestaurantsList() {
 
     return result
   }, [restaurants, searchQuery, filters])
+
+  const parseAddressComponents = (components = []) => {
+    const byType = (type) => components.find((c) => c.types?.includes(type))
+    const streetNumber = byType("street_number")?.long_name || ""
+    const route = byType("route")?.long_name || ""
+    const sublocality =
+      byType("sublocality_level_1")?.long_name ||
+      byType("sublocality")?.long_name ||
+      byType("neighborhood")?.long_name ||
+      ""
+    const city =
+      byType("locality")?.long_name ||
+      byType("administrative_area_level_2")?.long_name ||
+      byType("administrative_area_level_3")?.long_name ||
+      ""
+    const state = byType("administrative_area_level_1")?.long_name || ""
+    const pincode = byType("postal_code")?.long_name || ""
+
+    return {
+      addressLine1: [streetNumber, route].filter(Boolean).join(" ").trim(),
+      area: sublocality || city,
+      city,
+      state,
+      pincode,
+    }
+  }
+
+  const reverseGeocodeAndFillAddress = (lat, lng, geocoderInstance = null) => {
+    const geocoder = geocoderInstance || mapInstances.geocoder
+    if (!geocoder || !window.google?.maps) return
+
+    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+      if (status !== "OK" || !Array.isArray(results) || results.length === 0) return
+      const best = results[0]
+      const parsed = parseAddressComponents(best.address_components || [])
+      setEditForm((prev) => ({
+        ...prev,
+        addressLine1: parsed.addressLine1 || prev.addressLine1 || "",
+        area: parsed.area || prev.area || "",
+        city: parsed.city || prev.city || "",
+        state: parsed.state || prev.state || "",
+        pincode: parsed.pincode || prev.pincode || "",
+        address: best.formatted_address || prev.address || "",
+      }))
+    })
+  }
+
+  const setEditCoordinates = (lat, lng, shouldReverseGeocode = false, geocoderInstance = null) => {
+    const normalizedLat = Number(lat)
+    const normalizedLng = Number(lng)
+    if (!Number.isFinite(normalizedLat) || !Number.isFinite(normalizedLng)) return
+
+    setEditForm((prev) => ({
+      ...prev,
+      latitude: normalizedLat.toFixed(6),
+      longitude: normalizedLng.toFixed(6),
+    }))
+
+    if (mapInstances.marker) {
+      mapInstances.marker.setPosition({ lat: normalizedLat, lng: normalizedLng })
+    }
+    if (mapInstances.map) {
+      mapInstances.map.panTo({ lat: normalizedLat, lng: normalizedLng })
+    }
+
+    if (shouldReverseGeocode) {
+      reverseGeocodeAndFillAddress(normalizedLat, normalizedLng, geocoderInstance)
+    }
+  }
+
+  const initializeEditMap = async (restaurantData) => {
+    if (!editMapRef.current) return
+
+    try {
+      setEditMapLoading(true)
+      setEditMapError("")
+
+      let googleLib = window.google
+      if (!googleLib?.maps) {
+        const apiKey = await getGoogleMapsApiKey()
+        if (!apiKey) {
+          setEditMapError("Google Maps API key is missing")
+          return
+        }
+        const loader = new GoogleMapsLoader({
+          apiKey,
+          version: "weekly",
+          libraries: ["places"],
+        })
+        googleLib = await loader.load()
+      }
+
+      const lat = Number(restaurantData?.location?.latitude)
+      const lng = Number(restaurantData?.location?.longitude)
+      const hasCoordinates = Number.isFinite(lat) && Number.isFinite(lng)
+      const center = hasCoordinates ? { lat, lng } : { lat: 22.7196, lng: 75.8577 }
+
+      const map = new googleLib.maps.Map(editMapRef.current, {
+        center,
+        zoom: hasCoordinates ? 16 : 12,
+        mapTypeControl: false,
+        streetViewControl: false,
+      })
+
+      const geocoder = new googleLib.maps.Geocoder()
+      const marker = new googleLib.maps.Marker({
+        map,
+        position: center,
+        draggable: true,
+      })
+
+      map.addListener("click", (event) => {
+        const clickedLat = event?.latLng?.lat?.()
+        const clickedLng = event?.latLng?.lng?.()
+        setEditCoordinates(clickedLat, clickedLng, true, geocoder)
+      })
+
+      marker.addListener("dragend", (event) => {
+        const draggedLat = event?.latLng?.lat?.()
+        const draggedLng = event?.latLng?.lng?.()
+        setEditCoordinates(draggedLat, draggedLng, true, geocoder)
+      })
+
+      setMapInstances({ map, marker, geocoder })
+      setEditCoordinates(center.lat, center.lng, !hasCoordinates, geocoder)
+    } catch (mapError) {
+      console.error("Failed to initialize edit map:", mapError)
+      setEditMapError("Failed to load map")
+    } finally {
+      setEditMapLoading(false)
+    }
+  }
 
   const handleToggleStatus = async (id) => {
     try {
@@ -273,6 +446,158 @@ export default function RestaurantsList() {
   const closeDetailsModal = () => {
     setSelectedRestaurant(null)
     setRestaurantDetails(null)
+  }
+
+  const handleEditRestaurant = async (restaurant) => {
+    try {
+      let restaurantData = restaurant?.originalData
+      if (!restaurantData?._id) {
+        const response = await adminAPI.getRestaurantById(restaurant._id || restaurant.id)
+        restaurantData = response?.data?.data?.restaurant || response?.data?.data || restaurant
+      }
+
+      setEditingRestaurant(restaurantData)
+      setEditRestaurantImageFile(null)
+      setEditRestaurantImagePreview(restaurantData?.profileImage?.url || restaurantData?.logo || "")
+      setEditForm({
+        name: restaurantData?.name || "",
+        ownerName: restaurantData?.ownerName || "",
+        ownerPhone: restaurantData?.ownerPhone || restaurantData?.phone || "",
+        ownerEmail: restaurantData?.ownerEmail || restaurantData?.email || "",
+        addressLine1: restaurantData?.location?.addressLine1 || "",
+        addressLine2: restaurantData?.location?.addressLine2 || "",
+        area: restaurantData?.location?.area || "",
+        city: restaurantData?.location?.city || "",
+        state: restaurantData?.location?.state || "",
+        pincode: restaurantData?.location?.pincode || restaurantData?.location?.zipCode || "",
+        latitude: Number.isFinite(Number(restaurantData?.location?.latitude))
+          ? Number(restaurantData.location.latitude).toFixed(6)
+          : "",
+        longitude: Number.isFinite(Number(restaurantData?.location?.longitude))
+          ? Number(restaurantData.location.longitude).toFixed(6)
+          : "",
+        address: restaurantData?.location?.address || restaurantData?.location?.formattedAddress || "",
+      })
+      setEditRestaurantDialog(true)
+    } catch (err) {
+      console.error("Error loading restaurant for edit:", err)
+      alert("Failed to load restaurant details for editing")
+    }
+  }
+
+  const handleRestaurantImageSelection = (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (!file.type?.startsWith("image/")) {
+      alert("Please select an image file")
+      return
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Please select an image smaller than 10MB")
+      return
+    }
+
+    const previewUrl = URL.createObjectURL(file)
+    setEditRestaurantImageFile(file)
+    setEditRestaurantImagePreview(previewUrl)
+  }
+
+  const handleSaveRestaurantEdit = async () => {
+    if (!editingRestaurant?._id) return
+
+    const lat = Number(editForm.latitude)
+    const lng = Number(editForm.longitude)
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      alert("Please select a valid map location")
+      return
+    }
+
+    try {
+      setSavingEditRestaurant(true)
+      let uploadedProfileImage = null
+
+      if (editRestaurantImageFile) {
+        setUploadingRestaurantImage(true)
+        const uploadResponse = await uploadAPI.uploadMedia(editRestaurantImageFile, {
+          folder: "appzeto/restaurants",
+        })
+        uploadedProfileImage = uploadResponse?.data?.data || null
+      }
+
+      const payload = {
+        name: editForm.name,
+        ownerName: editForm.ownerName,
+        ownerPhone: editForm.ownerPhone,
+        ownerEmail: editForm.ownerEmail,
+        location: {
+          addressLine1: editForm.addressLine1,
+          addressLine2: editForm.addressLine2,
+          area: editForm.area,
+          city: editForm.city,
+          state: editForm.state,
+          pincode: editForm.pincode,
+          zipCode: editForm.pincode,
+          postalCode: editForm.pincode,
+          address:
+            editForm.address ||
+            [editForm.addressLine1, editForm.area, editForm.city, editForm.state, editForm.pincode]
+              .filter(Boolean)
+              .join(", "),
+          formattedAddress:
+            editForm.address ||
+            [editForm.addressLine1, editForm.area, editForm.city, editForm.state, editForm.pincode]
+              .filter(Boolean)
+              .join(", "),
+          latitude: lat,
+          longitude: lng,
+          coordinates: [lng, lat],
+        },
+      }
+
+      if (uploadedProfileImage?.url) {
+        payload.profileImage = {
+          url: uploadedProfileImage.url,
+          publicId: uploadedProfileImage.publicId || "",
+        }
+      }
+
+      const response = await adminAPI.updateRestaurant(editingRestaurant._id, payload)
+      const updatedRestaurant = response?.data?.data?.restaurant || response?.data?.data
+
+      setRestaurants((prev) =>
+        prev.map((restaurant) =>
+          restaurant._id === editingRestaurant._id
+            ? {
+                ...restaurant,
+                name: updatedRestaurant?.name || restaurant.name,
+                ownerName: updatedRestaurant?.ownerName || restaurant.ownerName,
+                ownerPhone: updatedRestaurant?.ownerPhone || updatedRestaurant?.phone || restaurant.ownerPhone,
+                zone: updatedRestaurant?.location?.area || updatedRestaurant?.location?.city || restaurant.zone,
+                logo: updatedRestaurant?.profileImage?.url || updatedRestaurant?.logo || restaurant.logo,
+                originalData: updatedRestaurant || restaurant.originalData,
+              }
+            : restaurant
+        )
+      )
+
+      if (selectedRestaurant?._id === editingRestaurant._id) {
+        setRestaurantDetails(updatedRestaurant || restaurantDetails)
+      }
+
+      setEditRestaurantDialog(false)
+      setEditingRestaurant(null)
+      setEditRestaurantImageFile(null)
+      setEditRestaurantImagePreview("")
+      alert("Restaurant updated successfully")
+    } catch (err) {
+      console.error("Error updating restaurant:", err)
+      alert(err?.response?.data?.message || "Failed to update restaurant")
+    } finally {
+      setSavingEditRestaurant(false)
+      setUploadingRestaurantImage(false)
+    }
   }
 
   // Handle ban/unban restaurant
@@ -633,6 +958,13 @@ export default function RestaurantsList() {
                               <Eye className="w-4 h-4" />
                             </button>
                             <button
+                              onClick={() => handleEditRestaurant(restaurant)}
+                              className="p-1.5 rounded text-amber-600 hover:bg-amber-50 transition-colors"
+                              title="Edit Restaurant"
+                            >
+                              <Settings className="w-4 h-4" />
+                            </button>
+                            <button
                               onClick={() => handleBanRestaurant(restaurant)}
                               className={`p-1.5 rounded transition-colors ${
                                 !restaurant.status
@@ -669,12 +1001,21 @@ export default function RestaurantsList() {
             {/* Modal Header */}
             <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
               <h2 className="text-2xl font-bold text-slate-900">Restaurant Details</h2>
-              <button
-                onClick={closeDetailsModal}
-                className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                <X className="w-5 h-5 text-slate-600" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleEditRestaurant(selectedRestaurant)}
+                  className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 hover:bg-slate-50 flex items-center gap-1.5"
+                >
+                  <Settings className="w-4 h-4" />
+                  Edit
+                </button>
+                <button
+                  onClick={closeDetailsModal}
+                  className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
+                >
+                  <X className="w-5 h-5 text-slate-600" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Content */}
@@ -1301,6 +1642,222 @@ export default function RestaurantsList() {
                   <p className="text-sm text-slate-500">Unable to load restaurant details</p>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Restaurant Modal */}
+      {editRestaurantDialog && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+          onClick={() => {
+            if (!savingEditRestaurant) {
+              setEditRestaurantDialog(false)
+              setEditingRestaurant(null)
+            }
+          }}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[92vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-slate-900">Edit Restaurant</h2>
+              <button
+                onClick={() => {
+                  if (!savingEditRestaurant) {
+                    setEditRestaurantDialog(false)
+                    setEditingRestaurant(null)
+                  }
+                }}
+                className="p-2 hover:bg-slate-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div className="border border-slate-200 rounded-xl p-4">
+                <h3 className="text-sm font-bold text-slate-900 mb-3">Restaurant Image</h3>
+                <div className="flex items-center gap-4">
+                  <img
+                    src={editRestaurantImagePreview || editingRestaurant?.profileImage?.url || editingRestaurant?.logo || ""}
+                    alt={editingRestaurant?.name || "Restaurant"}
+                    className="w-20 h-20 rounded-lg object-cover bg-slate-100 border border-slate-200"
+                  />
+                  <div>
+                    <label className="inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg border border-slate-300 bg-white hover:bg-slate-50 cursor-pointer">
+                      Change Image
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleRestaurantImageSelection}
+                        className="hidden"
+                      />
+                    </label>
+                    <p className="mt-1.5 text-xs text-slate-500">PNG/JPG/WEBP, up to 10MB.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-slate-600">Restaurant Name</label>
+                  <input
+                    type="text"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
+                    className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600">Owner Name</label>
+                  <input
+                    type="text"
+                    value={editForm.ownerName}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, ownerName: e.target.value }))}
+                    className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600">Owner Phone</label>
+                  <input
+                    type="text"
+                    value={editForm.ownerPhone}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, ownerPhone: e.target.value }))}
+                    className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600">Owner Email</label>
+                  <input
+                    type="email"
+                    value={editForm.ownerEmail}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, ownerEmail: e.target.value }))}
+                    className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="border-t pt-5">
+                <h3 className="text-sm font-bold text-slate-900 mb-3">Address</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600">Address Line 1</label>
+                    <input
+                      type="text"
+                      value={editForm.addressLine1}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, addressLine1: e.target.value }))}
+                      className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600">Address Line 2</label>
+                    <input
+                      type="text"
+                      value={editForm.addressLine2}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, addressLine2: e.target.value }))}
+                      className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600">Area</label>
+                    <input
+                      type="text"
+                      value={editForm.area}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, area: e.target.value }))}
+                      className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600">City</label>
+                    <input
+                      type="text"
+                      value={editForm.city}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, city: e.target.value }))}
+                      className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600">State</label>
+                    <input
+                      type="text"
+                      value={editForm.state}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, state: e.target.value }))}
+                      className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600">Pincode</label>
+                    <input
+                      type="text"
+                      value={editForm.pincode}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, pincode: e.target.value }))}
+                      className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600">Latitude</label>
+                    <input
+                      type="number"
+                      step="0.000001"
+                      value={editForm.latitude}
+                      onChange={(e) => setEditCoordinates(e.target.value, editForm.longitude)}
+                      className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600">Longitude</label>
+                    <input
+                      type="number"
+                      step="0.000001"
+                      value={editForm.longitude}
+                      onChange={(e) => setEditCoordinates(editForm.latitude, e.target.value)}
+                      className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-5">
+                <h3 className="text-sm font-bold text-slate-900 mb-2">Pin Location On Map</h3>
+                <p className="text-xs text-slate-500 mb-3">
+                  Click on map or drag marker to change pinpoint location. Address fields auto-update from map.
+                </p>
+                <div className="w-full h-80 rounded-lg border border-slate-300 overflow-hidden bg-slate-100">
+                  <div ref={editMapRef} className="w-full h-full" />
+                </div>
+                {editMapLoading && (
+                  <p className="mt-2 text-xs text-slate-500 flex items-center gap-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Loading map...
+                  </p>
+                )}
+                {editMapError && <p className="mt-2 text-xs text-red-600">{editMapError}</p>}
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 bg-white border-t px-6 py-4 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                disabled={savingEditRestaurant}
+                onClick={() => {
+                  setEditRestaurantDialog(false)
+                  setEditingRestaurant(null)
+                }}
+                className="px-4 py-2 text-sm font-medium rounded-lg border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={savingEditRestaurant}
+                onClick={handleSaveRestaurantEdit}
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+              >
+                {savingEditRestaurant ? (uploadingRestaurantImage ? "Uploading image..." : "Saving...") : "Save Changes"}
+              </button>
             </div>
           </div>
         </div>

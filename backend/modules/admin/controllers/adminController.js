@@ -1139,6 +1139,112 @@ export const updateRestaurantStatus = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Update Restaurant Details
+ * PUT /api/admin/restaurants/:id
+ */
+export const updateRestaurant = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      name,
+      ownerName,
+      ownerPhone,
+      ownerEmail,
+      primaryContactNumber,
+      location,
+      profileImage
+    } = req.body || {};
+
+    const restaurant = await Restaurant.findById(id);
+    if (!restaurant) {
+      return errorResponse(res, 404, 'Restaurant not found');
+    }
+
+    const updateData = {};
+
+    if (name !== undefined) updateData.name = String(name || '').trim();
+    if (ownerName !== undefined) updateData.ownerName = String(ownerName || '').trim();
+    if (ownerPhone !== undefined) updateData.ownerPhone = String(ownerPhone || '').trim();
+    if (ownerEmail !== undefined) updateData.ownerEmail = String(ownerEmail || '').trim();
+    if (primaryContactNumber !== undefined) {
+      updateData.primaryContactNumber = String(primaryContactNumber || '').trim();
+    }
+
+    if (location && typeof location === 'object') {
+      const nextLocation = {
+        ...(restaurant.location?.toObject ? restaurant.location.toObject() : restaurant.location || {}),
+      };
+
+      const locationKeys = [
+        'addressLine1',
+        'addressLine2',
+        'area',
+        'city',
+        'state',
+        'pincode',
+        'zipCode',
+        'postalCode',
+        'address',
+        'formattedAddress',
+        'landmark',
+        'street'
+      ];
+
+      locationKeys.forEach((key) => {
+        if (location[key] !== undefined) {
+          nextLocation[key] = location[key];
+        }
+      });
+
+      const lat = Number(location.latitude);
+      const lng = Number(location.longitude);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        nextLocation.latitude = lat;
+        nextLocation.longitude = lng;
+        nextLocation.coordinates = [lng, lat];
+      } else if (Array.isArray(location.coordinates) && location.coordinates.length >= 2) {
+        const coordLng = Number(location.coordinates[0]);
+        const coordLat = Number(location.coordinates[1]);
+        if (Number.isFinite(coordLat) && Number.isFinite(coordLng)) {
+          nextLocation.latitude = coordLat;
+          nextLocation.longitude = coordLng;
+          nextLocation.coordinates = [coordLng, coordLat];
+        }
+      }
+
+      updateData.location = nextLocation;
+    }
+
+    if (profileImage && typeof profileImage === 'object' && profileImage.url) {
+      updateData.profileImage = {
+        url: profileImage.url,
+        publicId: profileImage.publicId || '',
+      };
+    }
+
+    const updatedRestaurant = await Restaurant.findByIdAndUpdate(
+      id,
+      { $set: updateData },
+      { new: true, runValidators: true }
+    )
+      .select('-password')
+      .lean();
+
+    logger.info(`Restaurant updated: ${id}`, {
+      updatedBy: req.user._id,
+      fields: Object.keys(updateData),
+    });
+
+    return successResponse(res, 200, 'Restaurant updated successfully', {
+      restaurant: updatedRestaurant,
+    });
+  } catch (error) {
+    logger.error(`Error updating restaurant: ${error.message}`, { error: error.stack });
+    return errorResponse(res, 500, 'Failed to update restaurant');
+  }
+});
+
+/**
  * Get Restaurant Join Requests
  * GET /api/admin/restaurants/requests
  * Query params: status (pending, rejected), page, limit, search

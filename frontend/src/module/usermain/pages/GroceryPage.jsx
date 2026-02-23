@@ -1231,6 +1231,10 @@ const GroceryPage = () => {
     const storeId = String(store?._id || store?.id || product?.storeId || "").trim();
     const storeName = String(store?.name || "").trim();
     const storeAddress = getStoreAddress(store);
+    if (!storeId) {
+      toast.error("Store information missing for this product.");
+      return;
+    }
     const categoryId = String(
       product?.category?._id || product?.category?.id || product?.category || ""
     ).trim();
@@ -1249,7 +1253,7 @@ const GroceryPage = () => {
       storeId,
       storeName,
       storeAddress,
-      restaurantId: storeId || "grocery-store",
+      restaurantId: storeId,
       restaurant: storeName || "MoGrocery",
       restaurantAddress: storeAddress || "",
       storeLocation: store?.location || null,

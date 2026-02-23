@@ -21,6 +21,7 @@ import api from "@/lib/api";
 import { orderAPI, restaurantAPI } from "@/lib/api";
 import { initRazorpayPayment } from "@/lib/utils/razorpay";
 import { getCachedSettings, loadBusinessSettings } from "@/lib/utils/businessSettings";
+import { evaluateStoreAvailability } from "@/lib/utils/storeAvailability";
 import appzetoLogo from "@/assets/appzetologo.png";
 import { useProfile } from "../../user/context/ProfileContext";
 import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
@@ -294,7 +295,10 @@ const PlansPage = () => {
   })();
 
   const resolveGroceryRestaurant = async () => {
-    const restaurantsResponse = await restaurantAPI.getRestaurants({ limit: 200 });
+    const restaurantsResponse = await restaurantAPI.getRestaurants({
+      limit: 200,
+      ...(zoneId ? { zoneId } : {}),
+    });
     const restaurants = restaurantsResponse?.data?.data?.restaurants || [];
     const groceryStores = restaurants.filter((r) => r?.platform === "mogrocery" && r?.isActive);
 
@@ -302,8 +306,38 @@ const PlansPage = () => {
       throw new Error("No active grocery store found.");
     }
 
-    const groceryLikeStore =
-      groceryStores.find((r) => /grocery|mart|basket/i.test(r?.name || "")) || groceryStores[0];
+    const prioritizedStores = [
+      ...groceryStores.filter((r) => /grocery|mart|basket/i.test(r?.name || "")),
+      ...groceryStores.filter((r) => !/grocery|mart|basket/i.test(r?.name || "")),
+    ];
+    let groceryLikeStore = null;
+
+    for (const candidate of prioritizedStores) {
+      const candidateId = candidate?._id || candidate?.restaurantId;
+      if (!candidateId) continue;
+      try {
+        const outletTimingsResponse = await api.get(`/restaurant/${String(candidateId)}/outlet-timings`);
+        const outletTimings =
+          outletTimingsResponse?.data?.data?.outletTimings?.timings ||
+          outletTimingsResponse?.data?.outletTimings?.timings ||
+          [];
+        const availability = evaluateStoreAvailability({
+          store: candidate,
+          outletTimings,
+          label: "Store",
+        });
+        if (availability.isAvailable) {
+          groceryLikeStore = candidate;
+          break;
+        }
+      } catch {
+        // Try next store candidate.
+      }
+    }
+
+    if (!groceryLikeStore) {
+      throw new Error("All stores are currently offline. Please try again later.");
+    }
 
     const restaurantId = groceryLikeStore?._id || groceryLikeStore?.restaurantId;
     if (!restaurantId) {

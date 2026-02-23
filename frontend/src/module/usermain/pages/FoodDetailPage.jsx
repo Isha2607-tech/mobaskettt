@@ -221,11 +221,17 @@ export default function FoodDetailPage() {
   const handleAddToCart = (itemToWeight, e) => {
     if (e) e.stopPropagation();
     const targetProduct = itemToWeight || product;
+    const resolvedStoreId = String(targetProduct.restaurantId || targetProduct.storeId || "").trim();
+
+    if (!resolvedStoreId) {
+      toast.error("Store information missing for this product.");
+      return;
+    }
 
     addToCart({
       ...targetProduct,
       id: targetProduct.id || id,
-      restaurantId: targetProduct.restaurantId || targetProduct.storeId || "grocery-store",
+      restaurantId: resolvedStoreId,
       restaurant: targetProduct.restaurant || targetProduct.storeName || "MoGrocery",
       restaurantAddress:
         targetProduct.restaurantAddress || targetProduct.storeAddress || "",

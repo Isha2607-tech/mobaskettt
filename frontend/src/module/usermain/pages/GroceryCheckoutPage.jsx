@@ -215,47 +215,13 @@ export default function GroceryCheckoutPage() {
       return resolved;
     }
 
-    const restaurantsResponse = await restaurantAPI.getRestaurants({
-      limit: 200,
-      ...(zoneId ? { zoneId } : {}),
-    });
-    const restaurants = restaurantsResponse?.data?.data?.restaurants || [];
-    const groceryStores = restaurants.filter((r) => r?.platform === "mogrocery" && r?.isActive);
-
-    if (!groceryStores.length) {
-      throw new Error("No active stores found. Please try again.");
-    }
-
-    const groceryLikeStore =
-      groceryStores.find((r) => /grocery|mart|basket/i.test(r?.name || "")) || groceryStores[0];
-
-    const resolvedRestaurantId = groceryLikeStore?._id || groceryLikeStore?.restaurantId;
-    if (!resolvedRestaurantId) {
-      throw new Error("Unable to resolve store for checkout.");
-    }
-
-    const resolved = {
-      restaurantId: resolvedRestaurantId,
-      restaurantName: groceryLikeStore?.name || cartRestaurantName,
-      restaurantAddress: formatStoreAddress(groceryLikeStore),
-      restaurantLocation: groceryLikeStore?.location || null,
-    };
-    setResolvedRestaurant((prev) =>
-      prev?.restaurantId === resolved.restaurantId &&
-      prev?.restaurantName === resolved.restaurantName &&
-      prev?.restaurantAddress === resolved.restaurantAddress
-        ? prev
-        : resolved,
-    );
-    return resolved;
+    throw new Error("Unable to resolve selected store. Please clear cart and add items again.");
   }, [
     cartRestaurantAddress,
     cartRestaurantId,
     cartRestaurantLocation,
     cartRestaurantName,
-    formatStoreAddress,
     resolvedRestaurant,
-    zoneId,
   ]);
 
   const formattedStoreAddress = useMemo(() => {

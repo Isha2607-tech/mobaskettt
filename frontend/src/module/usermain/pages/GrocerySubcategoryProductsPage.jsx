@@ -73,6 +73,22 @@ export default function GrocerySubcategoryProductsPage() {
   const handleAddToCart = (product, event) => {
     try {
       const image = Array.isArray(product?.images) && product.images[0] ? product.images[0] : "https://via.placeholder.com/200";
+      const storeId = String(product?.storeId?._id || product?.storeId?.id || product?.storeId || "").trim();
+      const storeName = String(product?.storeId?.name || product?.storeName || "").trim();
+      const storeAddress = String(
+        product?.storeAddress ||
+        product?.storeId?.address ||
+        product?.storeId?.location?.formattedAddress ||
+        product?.storeId?.location?.address ||
+        ""
+      ).trim();
+      const storeLocation = product?.storeLocation || product?.storeId?.location || null;
+
+      if (!storeId) {
+        toast.error("Store information missing for this product.");
+        return;
+      }
+
       const sourcePosition = getSourcePosition(event, product?._id || product?.id);
       addToCart({
         id: product?._id || product?.id,
@@ -97,8 +113,15 @@ export default function GrocerySubcategoryProductsPage() {
           subcategoryId ||
           ""
         ).trim(),
-        restaurantId: "grocery-store",
-        restaurant: "MoGrocery",
+        storeId,
+        storeName,
+        storeAddress,
+        storeLocation,
+        restaurantId: storeId,
+        restaurant: storeName || "MoGrocery",
+        restaurantAddress: storeAddress,
+        restaurantLocation: storeLocation,
+        platform: "mogrocery",
       }, sourcePosition);
       toast.success("Added to cart");
     } catch (error) {
@@ -137,6 +160,16 @@ export default function GrocerySubcategoryProductsPage() {
             subcategoryId ||
             ""
           ).trim(),
+          storeId: String(product?.storeId?._id || product?.storeId?.id || product?.storeId || "").trim(),
+          storeName: String(product?.storeId?.name || product?.storeName || "").trim(),
+          storeAddress: String(
+            product?.storeAddress ||
+            product?.storeId?.address ||
+            product?.storeId?.location?.formattedAddress ||
+            product?.storeId?.location?.address ||
+            ""
+          ).trim(),
+          storeLocation: product?.storeLocation || product?.storeId?.location || null,
           platform: "mogrocery",
         },
       },

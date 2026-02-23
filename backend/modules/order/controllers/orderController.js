@@ -2573,10 +2573,46 @@ export const calculateOrder = async (req, res) => {
       });
     }
 
+    if (!restaurantId || restaurantId === 'unknown') {
+      return res.status(400).json({
+        success: false,
+        message: 'Restaurant ID is required'
+      });
+    }
+
+    let restaurant = null;
+    const normalizedRestaurantId = String(restaurantId).trim();
+    if (mongoose.Types.ObjectId.isValid(normalizedRestaurantId) && normalizedRestaurantId.length === 24) {
+      restaurant = await Restaurant.findById(normalizedRestaurantId);
+    }
+    if (!restaurant) {
+      restaurant = await Restaurant.findOne({
+        $or: [
+          { restaurantId: normalizedRestaurantId },
+          { slug: normalizedRestaurantId }
+        ]
+      });
+    }
+
+    if (!restaurant) {
+      return res.status(404).json({
+        success: false,
+        message: 'Restaurant not found'
+      });
+    }
+
+    const availability = await evaluateRestaurantAvailabilityAt(restaurant, new Date());
+    if (!availability.isAvailable) {
+      return res.status(403).json({
+        success: false,
+        message: availability.reason || 'Restaurant is currently unavailable'
+      });
+    }
+
     // Calculate pricing
     const pricing = await calculateOrderPricing({
       items,
-      restaurantId,
+      restaurantId: restaurant._id?.toString() || restaurant.restaurantId || restaurantId,
       deliveryAddress,
       couponCode,
       deliveryFleet: deliveryFleet || 'standard',

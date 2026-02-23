@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useCart } from "../../user/context/CartContext";
-import { adminAPI, orderAPI, restaurantAPI } from "@/lib/api";
+import { adminAPI, orderAPI } from "@/lib/api";
 import { useProfile } from "../../user/context/ProfileContext";
 import { useLocation as useUserLocation } from "../../user/hooks/useLocation";
 import { useZone } from "../../user/hooks/useZone";
@@ -163,37 +163,7 @@ const GroceryCartPage = () => {
       return resolved;
     }
 
-    const restaurantsResponse = await restaurantAPI.getRestaurants({
-      limit: 200,
-      ...(zoneId ? { zoneId } : {}),
-    });
-    const restaurants = restaurantsResponse?.data?.data?.restaurants || [];
-    const groceryStores = restaurants.filter((r) => r?.platform === "mogrocery" && r?.isActive);
-
-    if (!groceryStores.length) {
-      throw new Error("No active grocery store found.");
-    }
-
-    const groceryLikeStore =
-      groceryStores.find((r) => /grocery|mart|basket/i.test(r?.name || "")) || groceryStores[0];
-
-    const resolvedRestaurantId = groceryLikeStore?._id || groceryLikeStore?.restaurantId;
-    if (!resolvedRestaurantId) {
-      throw new Error("Unable to resolve grocery store.");
-    }
-
-    const resolved = {
-      restaurantId: resolvedRestaurantId,
-      restaurantName: groceryLikeStore?.name || cartRestaurantName,
-      restaurantAddress:
-        groceryLikeStore?.address ||
-        groceryLikeStore?.location?.formattedAddress ||
-        groceryLikeStore?.location?.address ||
-        "",
-      restaurantLocation: groceryLikeStore?.location || null,
-    };
-    setResolvedRestaurant(resolved);
-    return resolved;
+    throw new Error("Unable to resolve selected store. Please clear cart and add items again.");
   };
 
   const buildOrderItems = () =>
