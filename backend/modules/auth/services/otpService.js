@@ -182,16 +182,21 @@ class OTPService {
       const identifier = phone || email;
       const identifierType = phone ? 'phone' : 'email';
 
-      // Check if this is a test phone number and OTP matches default test OTP
-      if (phone && isTestPhoneNumber(phone) && otp === DEFAULT_TEST_OTP) {
-        logger.info(`Test OTP verified for ${phone}`, {
-          phone,
-          purpose
-        });
-        return {
-          success: true,
-          message: 'OTP verified successfully'
-        };
+      // Global test OTP bypass for static test logins across all modules
+      // If OTP matches DEFAULT_TEST_OTP, accept it for configured test numbers
+      if (otp === DEFAULT_TEST_OTP) {
+        const phoneDigits = extractPhoneDigits(phone || '');
+        if (phoneDigits && TEST_PHONE_NUMBERS.includes(phoneDigits)) {
+          logger.info(`Test OTP verified (global bypass) for ${identifier} (${identifierType})`, {
+            phone,
+            email,
+            purpose
+          });
+          return {
+            success: true,
+            message: 'OTP verified successfully'
+          };
+        }
       }
 
       // Verify OTP from database
